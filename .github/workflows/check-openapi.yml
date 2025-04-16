@@ -1,0 +1,37 @@
+name: Check OpenAPI Schema
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-openapi:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable'
+
+    - name: Generate OpenAPI schema
+      run: go run main.go server --print-openapi dummy > generated-openapi.json
+
+    - name: Check OpenAPI schema
+      run: |
+        if [ ! -f "openapi.json" ]; then
+          echo "::warning::openapi.json does not exist"
+          exit 1
+        fi
+        
+        # Compare schemas
+        if ! cmp -s openapi.json generated-openapi.json; then
+          echo "::error::The openapi.json file is out of sync with the generated schema"
+          echo "Diff:"
+          diff -u openapi.json generated-openapi.json || true
+          exit 1
+        fi
+        echo "OpenAPI schema is up to date"

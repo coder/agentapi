@@ -1,0 +1,57 @@
+name: Build Release Binaries
+
+on:
+  release:
+    types: [created, published, edited]
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: agentapi
+            asset_name: agentapi-linux-amd64
+            goarch: amd64
+            goos: linux
+          - os: macos-latest
+            artifact_name: agentapi
+            asset_name: agentapi-darwin-amd64
+            goarch: amd64
+            goos: darwin
+          - os: macos-latest
+            artifact_name: agentapi
+            asset_name: agentapi-darwin-arm64
+            goarch: arm64
+            goos: darwin
+          - os: windows-latest
+            artifact_name: agentapi.exe
+            asset_name: agentapi-windows-amd64.exe
+            goarch: amd64
+            goos: windows
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable'
+
+    - name: Build
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: go build -v -o ${{ matrix.artifact_name }} .
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./${{ matrix.artifact_name }}
+        asset_name: ${{ matrix.asset_name }}
+        asset_content_type: application/octet-stream
