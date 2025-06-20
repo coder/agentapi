@@ -6,7 +6,7 @@ require (
 	github.com/ActiveState/termtest/xpty v0.6.0
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/danielgtaylor/huma/v2 v2.32.0
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-chi/cors v1.2.1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
