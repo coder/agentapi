@@ -33,6 +33,7 @@ type Server struct {
 	agentio      *termexec.Process
 	agentType    mf.AgentType
 	emitter      *EventEmitter
+	authConfig   *AuthConfig
 }
 
 func (s *Server) GetOpenAPI() string {
@@ -70,6 +71,10 @@ func NewServer(ctx context.Context, agentType mf.AgentType, process *termexec.Pr
 	})
 	router.Use(corsMiddleware.Handler)
 
+	// Add auth middleware early, before creating the API
+	authConfig := NewAuthConfig()
+	router.Use(authConfig.AuthMiddleware())
+
 	humaConfig := huma.DefaultConfig("AgentAPI", "0.2.3")
 	humaConfig.Info.Description = "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi"
 	api := humachi.New(router, humaConfig)
@@ -95,6 +100,7 @@ func NewServer(ctx context.Context, agentType mf.AgentType, process *termexec.Pr
 		agentio:      process,
 		agentType:    agentType,
 		emitter:      emitter,
+		authConfig:   authConfig,
 	}
 
 	// Register API routes
@@ -117,6 +123,21 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes(chatBasePath string) {
+	// Add security scheme to OpenAPI spec if authentication is required
+	if s.authConfig.Required {
+		s.api.OpenAPI().Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+			"bearerAuth": {
+				Type:         "http",
+				Scheme:       "bearer",
+				Description:  "API key authentication using Bearer token",
+				BearerFormat: "API Key",
+			},
+		}
+		s.api.OpenAPI().Security = []map[string][]string{
+			{"bearerAuth": {}},
+		}
+	}
+
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."

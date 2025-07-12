@@ -5,12 +5,12 @@ import MessageInput from "./message-input";
 import MessageList from "./message-list";
 
 export function Chat() {
-  const { messages, loading, sendMessage } = useChat();
+  const { messages, loading, sendMessage, authRequired, apiKey } = useChat();
 
   return (
     <>
       <MessageList messages={messages} />
-      <MessageInput onSendMessage={sendMessage} disabled={loading} />
+      <MessageInput onSendMessage={sendMessage} disabled={loading || (authRequired && !apiKey)} />
     </>
   );
 }

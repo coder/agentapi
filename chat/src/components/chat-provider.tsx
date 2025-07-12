@@ -46,6 +46,9 @@ interface ChatContextValue {
   messages: (Message | DraftMessage)[];
   loading: boolean;
   serverStatus: ServerStatus;
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  authRequired: boolean;
   sendMessage: (message: string, type?: MessageType) => void;
 }
 
@@ -55,16 +58,52 @@ export function ChatProvider({ children }: PropsWithChildren) {
   const [messages, setMessages] = useState<(Message | DraftMessage)[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [authRequired, setAuthRequired] = useState<boolean>(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const searchParams = useSearchParams();
   const agentAPIUrl = searchParams.get("url") || window.location.origin;
+
+  // Helper function to get headers with optional authentication
+  const getHeaders = () => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+    return headers;
+  };
+
+  // Check if authentication is required on first load
+  useEffect(() => {
+    const checkAuthRequired = async () => {
+      try {
+        const response = await fetch(`${agentAPIUrl}/status`);
+        if (response.status === 401) {
+          setAuthRequired(true);
+        } else {
+          setAuthRequired(false);
+        }
+      } catch (error) {
+        console.warn("Could not check auth requirements:", error);
+      }
+    };
+
+    if (agentAPIUrl) {
+      checkAuthRequired();
+    }
+  }, [agentAPIUrl]);
 
   // Set up SSE connection to the events endpoint
   useEffect(() => {
     // Function to create and set up EventSource
     const setupEventSource = () => {
+      // Close existing connection
       if (eventSourceRef.current) {
+        console.log("Closing existing EventSource connection");
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
 
       // Reset messages when establishing a new connection
@@ -74,11 +113,22 @@ export function ChatProvider({ children }: PropsWithChildren) {
         console.warn(
           "agentAPIUrl is not set, SSE connection cannot be established."
         );
-        setServerStatus("offline"); // Or some other appropriate status
-        return null; // Don't try to connect if URL is empty
+        setServerStatus("offline");
+        return null;
       }
 
-      const eventSource = new EventSource(`${agentAPIUrl}/events`);
+      // If auth is required but no API key provided, don't attempt connection
+      if (authRequired && !apiKey) {
+        console.log("Auth required but no API key provided, skipping SSE connection");
+        setServerStatus("offline");
+        return null;
+      }
+
+      // For SSE, we need to pass API key as a query parameter since EventSource doesn't support custom headers
+      const eventsUrl = apiKey 
+        ? `${agentAPIUrl}/events?api_key=${encodeURIComponent(apiKey)}`
+        : `${agentAPIUrl}/events`;
+      const eventSource = new EventSource(eventsUrl);
       eventSourceRef.current = eventSource;
 
       // Handle message updates
@@ -128,20 +178,31 @@ export function ChatProvider({ children }: PropsWithChildren) {
       eventSource.onopen = () => {
         // Connection is established, but we'll wait for status_change event
         // for the actual server status
-        console.log("EventSource connection established - messages reset");
+        console.log("EventSource connection established:", eventsUrl);
+        setServerStatus("online");
       };
 
       // Handle connection errors
       eventSource.onerror = (error) => {
-        console.error("EventSource error:", error);
+        console.error("EventSource error:", error, "ReadyState:", eventSource.readyState, "URL:", eventsUrl);
         setServerStatus("offline");
 
-        // Try to reconnect after delay
-        setTimeout(() => {
-          if (eventSourceRef.current) {
-            setupEventSource();
-          }
-        }, 3000);
+        // Check if this might be an authentication error
+        if (eventSource.readyState === EventSource.CLOSED) {
+          console.log("EventSource closed immediately - possible auth error");
+          // Don't automatically set authRequired=true here as it might cause loops
+        }
+
+        // Don't auto-reconnect if we have an API key and connection failed
+        // This prevents infinite reconnection loops on auth errors
+        if (!apiKey) {
+          setTimeout(() => {
+            if (eventSourceRef.current === eventSource) {
+              console.log("Attempting to reconnect...");
+              setupEventSource();
+            }
+          }, 3000);
+        }
       };
 
       return eventSource;
@@ -157,7 +218,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
         eventSource.close();
       }
     };
-  }, [agentAPIUrl]);
+  }, [agentAPIUrl, apiKey, authRequired]);
 
   // Send a new message
   const sendMessage = async (
@@ -179,9 +240,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
     try {
       const response = await fetch(`${agentAPIUrl}/message`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getHeaders(),
         body: JSON.stringify({
           content: content,
           type,
@@ -189,6 +248,14 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          setAuthRequired(true);
+          toast.error("Authentication required", {
+            description: "Please provide a valid API key to continue.",
+          });
+          return;
+        }
+
         const errorData = await response.json();
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
@@ -235,6 +302,9 @@ export function ChatProvider({ children }: PropsWithChildren) {
         loading,
         sendMessage,
         serverStatus,
+        apiKey,
+        setApiKey,
+        authRequired,
       }}
     >
       {children}

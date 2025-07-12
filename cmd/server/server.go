@@ -25,6 +25,7 @@ var (
 	chatBasePath string
 	termWidth    uint16
 	termHeight   uint16
+	apiKey       string
 )
 
 type AgentType = msgfmt.AgentType
@@ -86,6 +87,11 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	if termHeight < 10 {
 		return xerrors.Errorf("term height must be at least 10")
+	}
+
+	// Set API key from command line if provided
+	if apiKey != "" {
+		os.Setenv("AGENTAPI_KEY", apiKey)
 	}
 
 	var process *termexec.Process
@@ -156,4 +162,5 @@ func init() {
 	ServerCmd.Flags().StringVarP(&chatBasePath, "chat-base-path", "c", "/chat", "Base path for assets and routes used in the static files of the chat interface")
 	ServerCmd.Flags().Uint16VarP(&termWidth, "term-width", "W", 80, "Width of the emulated terminal")
 	ServerCmd.Flags().Uint16VarP(&termHeight, "term-height", "H", 1000, "Height of the emulated terminal")
+	ServerCmd.Flags().StringVarP(&apiKey, "api-key", "k", "", "API key for authentication. If set, all API endpoints will require this key via Bearer token. Can also be set via AGENTAPI_KEY environment variable.")
 }

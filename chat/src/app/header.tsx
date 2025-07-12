@@ -1,10 +1,10 @@
 "use client";
 
 import { useChat } from "@/components/chat-provider";
-import { ModeToggle } from "../components/mode-toggle";
+import { SettingsMenu } from "../components/settings-menu";
 
 export function Header() {
-  const { serverStatus } = useChat();
+  const { serverStatus, authRequired, apiKey } = useChat();
 
   return (
     <header className="p-4 flex items-center justify-between border-b">
@@ -24,7 +24,12 @@ export function Header() {
             <span className="first-letter:uppercase">{serverStatus}</span>
           </div>
         )}
-        <ModeToggle />
+        {authRequired && !apiKey && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+            API key required
+          </div>
+        )}
+        <SettingsMenu />
       </div>
     </header>
   );
