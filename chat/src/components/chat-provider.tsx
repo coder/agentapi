@@ -1,6 +1,5 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import {
   useState,
   useEffect,
@@ -49,6 +48,8 @@ interface ChatContextValue {
   apiKey: string;
   setApiKey: (key: string) => void;
   authRequired: boolean;
+  baseUrl: string;
+  setBaseUrl: (url: string) => void;
   sendMessage: (message: string, type?: MessageType) => void;
 }
 
@@ -60,9 +61,18 @@ export function ChatProvider({ children }: PropsWithChildren) {
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [apiKey, setApiKey] = useState<string>("");
   const [authRequired, setAuthRequired] = useState<boolean>(false);
+  const [baseUrl, setBaseUrl] = useState<string>("");
+
+  // Initialize baseUrl on client side
+  useEffect(() => {
+    if (typeof window !== "undefined" && !baseUrl) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlFromQuery = searchParams.get("url") || window.location.origin;
+      setBaseUrl(urlFromQuery);
+    }
+  }, [baseUrl]);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const searchParams = useSearchParams();
-  const agentAPIUrl = searchParams.get("url") || window.location.origin;
+  const agentAPIUrl = baseUrl;
 
   // Helper function to get headers with optional authentication
   const getHeaders = () => {
@@ -305,6 +315,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
         apiKey,
         setApiKey,
         authRequired,
+        baseUrl,
+        setBaseUrl,
       }}
     >
       {children}
