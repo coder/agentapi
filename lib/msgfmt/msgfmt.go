@@ -170,7 +170,7 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
 	// In case of Gemini, the user input echoed back is wrapped in a rounded box, so we remove it.
-	if strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
+	if lastUserInputLineIdx+1 < len(msgLines) && strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
 		lastUserInputLineIdx += 1
 	}
 
