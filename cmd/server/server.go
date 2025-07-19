@@ -34,6 +34,7 @@ const (
 	AgentTypeGoose  AgentType = msgfmt.AgentTypeGoose
 	AgentTypeAider  AgentType = msgfmt.AgentTypeAider
 	AgentTypeCodex  AgentType = msgfmt.AgentTypeCodex
+	AgentTypeGemini AgentType = msgfmt.AgentTypeGemini
 	AgentTypeCustom AgentType = msgfmt.AgentTypeCustom
 )
 
@@ -46,6 +47,8 @@ func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 		agentType = AgentTypeGoose
 	case string(AgentTypeAider):
 		agentType = AgentTypeAider
+	case string(AgentTypeGemini):
+		agentType = AgentTypeGemini
 	case string(AgentTypeCustom):
 		agentType = AgentTypeCustom
 	case string(AgentTypeCodex):
@@ -68,6 +71,8 @@ func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 		agentType = AgentTypeAider
 	case string(AgentTypeCodex):
 		agentType = AgentTypeCodex
+	case string(AgentTypeGemini):
+		agentType = AgentTypeGemini
 	default:
 		agentType = AgentTypeCustom
 	}
@@ -137,7 +142,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 var ServerCmd = &cobra.Command{
 	Use:   "server [agent]",
 	Short: "Run the server",
-	Long:  `Run the server with the specified agent (claude, goose, aider, codex)`,
+	Long:  `Run the server with the specified agent (claude, goose, aider, gemini, codex)`,
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

@@ -1,6 +1,8 @@
 package msgfmt
 
-import "strings"
+import (
+	"strings"
+)
 
 const WhiteSpaceChars = " \t\n\r\f\v"
 
@@ -166,6 +168,12 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// Return the original message starting with the first line
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
+
+	// In case of Gemini, the user input echoed back is wrapped in a rounded box, so we remove it.
+	if lastUserInputLineIdx+1 < len(msgLines) && strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
+		lastUserInputLineIdx += 1
+	}
+
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
 }
 
@@ -197,6 +205,7 @@ const (
 	AgentTypeGoose  AgentType = "goose"
 	AgentTypeAider  AgentType = "aider"
 	AgentTypeCodex  AgentType = "codex"
+	AgentTypeGemini AgentType = "gemini"
 	AgentTypeCustom AgentType = "custom"
 )
 
@@ -216,6 +225,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeAider:
 		return formatGenericMessage(message, userInput)
 	case AgentTypeCodex:
+		return formatGenericMessage(message, userInput)
+	case AgentTypeGemini:
 		return formatGenericMessage(message, userInput)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput)
