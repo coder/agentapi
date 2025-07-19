@@ -210,7 +210,6 @@ const (
 )
 
 func formatGenericMessage(message string, userInput string) string {
-	//fmt.Println("Message:", message, "UserInput:", userInput)
 	message = RemoveUserInput(message, userInput)
 	message = removeMessageBox(message)
 	message = trimEmptyLines(message)
