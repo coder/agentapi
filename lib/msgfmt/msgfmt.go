@@ -1,6 +1,8 @@
 package msgfmt
 
-import "strings"
+import (
+	"strings"
+)
 
 const WhiteSpaceChars = " \t\n\r\f\v"
 
@@ -166,6 +168,12 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// Return the original message starting with the first line
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
+
+	// In case of Gemini, the user input echoed back is wrapped in a rounded box, so we remove it.
+	if strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
+		lastUserInputLineIdx += 1
+	}
+
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
 }
 
@@ -201,6 +209,7 @@ const (
 )
 
 func formatGenericMessage(message string, userInput string) string {
+	//fmt.Println("Message:", message, "UserInput:", userInput)
 	message = RemoveUserInput(message, userInput)
 	message = removeMessageBox(message)
 	message = trimEmptyLines(message)
