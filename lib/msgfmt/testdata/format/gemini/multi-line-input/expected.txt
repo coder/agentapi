@@ -1,0 +1,14 @@
+ ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ✔  SearchText 'setInterval\(fetchMessages, 1000\)' in **/*.tsx                                                                                                               │
+ │                                                                                                                                                                              │
+ │    No matches found                                                                                                                                                          │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ✔  SearchText 'checkServerStatus, 250' in **/*.tsx                                                                                                                           │
+ │                                                                                                                                                                              │
+ │    No matches found                                                                                                                                                          │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+✦ I couldn't find that exact code snippet in the project. It's possible it has been modified or is from a file that wasn't included in the initial project listing.
+
+  To help me locate it, could you tell me more about what the code does or what component it might be a part of? For example, is it part of the main chat window, a status indicator,
+  or something else?
