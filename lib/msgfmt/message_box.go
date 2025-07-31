@@ -55,7 +55,8 @@ func removeMessageBox(msg string) string {
 func removeCodexMessageBox(msg string) string {
 	lines := strings.Split(msg, "\n")
 	messageBoxEndIdx := -1
-	messageBoxStartIdx := 0
+	messageBoxStartIdx := -1
+
 	for i := len(lines) - 1; i >= 0; i-- {
 		if messageBoxEndIdx == -1 {
 			if strings.Contains(lines[i], "╰────────") && strings.Contains(lines[i], "───────╯") {
@@ -80,9 +81,16 @@ func removeCodexMessageBox(msg string) string {
 		}
 	}
 
-	if messageBoxEndIdx > messageBoxStartIdx {
-		return strings.Join(lines[messageBoxStartIdx:messageBoxEndIdx], "\n")
+	// If we didn't find messageBoxStartIdx, set it to 0
+	if messageBoxStartIdx == -1 {
+		messageBoxStartIdx = 0
 	}
 
-	return strings.Join(lines, "\n")
+	// If we didn't find messageBoxEndIdx, set it to the end of the lines
+	if messageBoxEndIdx == -1 {
+		messageBoxEndIdx = len(lines) - 1
+	}
+
+	return strings.Join(lines[messageBoxStartIdx:messageBoxEndIdx], "\n")
+
 }
