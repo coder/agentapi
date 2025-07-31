@@ -64,6 +64,7 @@ func removeCodexMessageBox(msg string) string {
 		} else {
 			// We reached the start of the message box (we don't want to show this line), also exit the loop
 			if strings.Contains(lines[i], "╭") && strings.Contains(lines[i], "───────╮") {
+				// We only want this to be i + 1 in case the top of the box is visible
 				messageBoxStartIdx = i + 1
 				break
 			}
@@ -80,7 +81,7 @@ func removeCodexMessageBox(msg string) string {
 	}
 
 	if messageBoxEndIdx > messageBoxStartIdx {
-		return strings.Join(lines[messageBoxStartIdx:max(0, messageBoxEndIdx)], "\n")
+		return strings.Join(lines[messageBoxStartIdx:messageBoxEndIdx], "\n")
 	}
 
 	return strings.Join(lines, "\n")
