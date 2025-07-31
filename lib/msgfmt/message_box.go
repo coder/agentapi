@@ -79,5 +79,9 @@ func removeCodexMessageBox(msg string) string {
 		}
 	}
 
-	return strings.Join(lines[messageBoxStartIdx:max(0, messageBoxEndIdx)], "\n")
+	if messageBoxEndIdx > messageBoxStartIdx {
+		return strings.Join(lines[messageBoxStartIdx:max(0, messageBoxEndIdx)], "\n")
+	}
+
+	return strings.Join(lines, "\n")
 }
