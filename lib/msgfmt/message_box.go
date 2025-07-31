@@ -51,3 +51,33 @@ func removeMessageBox(msg string) string {
 
 	return strings.Join(lines, "\n")
 }
+
+func removeCodexMessageBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	messageBoxEndIdx := -1
+	messageBoxStartIdx := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if messageBoxEndIdx == -1 {
+			if strings.Contains(lines[i], "╰────────") && strings.Contains(lines[i], "───────╯") {
+				messageBoxEndIdx = i
+			}
+		} else {
+			// We reached the start of the message box (we don't want to show this line), also exit the loop
+			if strings.Contains(lines[i], "╭") && strings.Contains(lines[i], "───────╮") {
+				messageBoxStartIdx = i + 1
+				break
+			}
+
+			// We are in between the start and end of the message box, so remove the │ from the start and end of the line, let the trimEmptyLines handle the rest
+			if strings.HasPrefix(lines[i], "│") {
+				lines[i] = strings.TrimPrefix(lines[i], "│")
+			}
+			if strings.HasSuffix(lines[i], "│") {
+				lines[i] = strings.TrimSuffix(lines[i], "│")
+				lines[i] = strings.TrimRight(lines[i], " \t")
+			}
+		}
+	}
+
+	return strings.Join(lines[messageBoxStartIdx:max(0, messageBoxEndIdx)], "\n")
+}

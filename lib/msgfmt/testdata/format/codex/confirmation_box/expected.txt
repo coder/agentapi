@@ -1,19 +1,10 @@
-    thinking for 9s
+Shell Command
+~/Documents/work/agentapi$ git rev-parse --show-toplevel
 
-    command
+Allow command?
 
-    $ git rev-parse --show-toplevel
-
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│Shell Command                                                                                             │
-│                                                                                                          │
-│$ git rev-parse --show-toplevel                                                                           │
-│                                                                                                          │
-│Allow command?                                                                                            │
-│                                                                                                          │
-│  ❯ Yes (y)                                                                                               │
-│    Yes, always approve this exact command for this session (a)                                           │
-│    Edit or give feedback (e)                                                                             │
-│    No, and keep going (n)                                                                                │
-│    No, and stop for now (esc)                                                                            │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ▶ Yes (y)
+    Yes, always approve this exact command for this session (a)
+    Edit or give feedback (e)
+    No, and keep going (n)
+    No, and stop for now (esc)
