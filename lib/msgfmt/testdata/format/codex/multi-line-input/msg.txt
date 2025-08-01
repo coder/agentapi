@@ -1,8 +1,18 @@
-│user                                                                                                                                                                                                     │
-│how are you?                                                                                                                                                                                             │
+│command (code: 127, duration: 10ms)                                                                                                                                                                      │
+│$ bash -lc 'rg -n "func formatCodexMessage"'                                                                                                                                                             │
+│bash: line 1: rg: command not found                                                                                                                                                                      │
+│                                                                                                                                                                                                         │
+│command (code: 0, duration: 8.23s)                                                                                                                                                                       │
+│$ bash -lc 'grep -R "formatCodexMessage" -n .'                                                                                                                                                           │
+│./lib/msgfmt/testdata/format/claude/multi-line-input/user.txt:3:func formatCodexMessage(message string, userInput string) string {                                                                       │
+│./lib/msgfmt/msgfmt.go:219:func formatCodexMessage(message string, userInput string) string {                                                                                                            │
+│./lib/msgfmt/msgfmt.go:236:            return formatCodexMessage(message, userInput)                                                                                                                     │
 │                                                                                                                                                                                                         │
 │codex                                                                                                                                                                                                    │
-│I’m doing great, thanks for asking! How can I help you today?                                                                                                                                            │
+│The formatCodexMessage function is defined in:                                                                                                                                                           │
+│                                                                                                                                                                                                         │
+│lib/msgfmt/msgfmt.go (around line 219)                                                                                                                                                                   │
+│                                                                                                                                                                                                         │
 │                                                                                                                                                                                                         │
 │                                                                                                                                                                                                         │
 │                                                                                                                                                                                                         │
@@ -13,5 +23,5 @@
 │                                                                                                                                                                                                         │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ send a message — 99% context left                                                                                                                                                                       │
+│ send a message — 97% context left                                                                                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────Enter to send | Ctrl+D to quit | Ctrl+J for newline╯

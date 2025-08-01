@@ -54,6 +54,9 @@ You can use AgentAPI:
 
 Run an HTTP server that lets you control an agent. If you'd like to start an agent with additional arguments, pass the full agent command after the `--` flag.
 
+> [!NOTE]
+> When using Codex, make sure to explicitly specify the agent type (for example, `agentapi server -- codex`) after the `--` flag when starting the server.
+
 ```bash
 agentapi server -- claude --allowedTools "Bash(git*) Edit Replace"
 ```

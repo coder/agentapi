@@ -1,17 +1,2 @@
-    thinking for 9s
-
-    command
-
-    $ git rev-parse --show-toplevel
-
-    command.stdout (code: 0, duration: 0s)
-
-    /Users/hugodutka/dev/agentapi
-
-
-    codex
-    The current Git repository root is at:
-
-    /Users/hugodutka/dev/agentapi
-
-    Let me know if you need anything else!
+codex
+I’m doing great, thanks for asking! How can I help you today?
