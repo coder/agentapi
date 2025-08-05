@@ -206,6 +206,7 @@ const (
 	AgentTypeAider  AgentType = "aider"
 	AgentTypeCodex  AgentType = "codex"
 	AgentTypeGemini AgentType = "gemini"
+	AgentTypeAmp    AgentType = "amp"
 	AgentTypeCustom AgentType = "custom"
 )
 
@@ -235,6 +236,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeCodex:
 		return formatCodexMessage(message, userInput)
 	case AgentTypeGemini:
+		return formatGenericMessage(message, userInput)
+	case AgentTypeAmp:
 		return formatGenericMessage(message, userInput)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput)

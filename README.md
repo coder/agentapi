@@ -1,9 +1,8 @@
 # AgentAPI
 
-Control [Claude Code](https://github.com/anthropics/claude-code), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli) and [Codex](https://github.com/openai/codex) with an HTTP API.
+Control [Claude Code](https://github.com/anthropics/claude-code), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli) and [Codex](https://github.com/openai/codex) with an HTTP API.
 
 ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
-
 
 You can use AgentAPI:
 

@@ -36,6 +36,7 @@ const (
 	AgentTypeAider  AgentType = msgfmt.AgentTypeAider
 	AgentTypeCodex  AgentType = msgfmt.AgentTypeCodex
 	AgentTypeGemini AgentType = msgfmt.AgentTypeGemini
+	AgentTypeAmp    AgentType = msgfmt.AgentTypeAmp
 	AgentTypeCustom AgentType = msgfmt.AgentTypeCustom
 )
 
@@ -46,6 +47,7 @@ var agentTypeMap = map[AgentType]bool{
 	AgentTypeAider:  true,
 	AgentTypeCodex:  true,
 	AgentTypeGemini: true,
+	AgentTypeAmp:    true,
 	AgentTypeCustom: true,
 }
 

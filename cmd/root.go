@@ -12,7 +12,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:     "agentapi",
 	Short:   "AgentAPI CLI",
-	Long:    `AgentAPI - HTTP API for Claude Code, Goose, Aider, Gemini and Codex`,
+	Long:    `AgentAPI - HTTP API for Claude Code, Goose, Aider, Gemini, Sourcegraph Amp and Codex`,
 	Version: "0.3.2",
 }
 
