@@ -59,8 +59,15 @@ func (s *Server) GetOpenAPI() string {
 // because the action of taking a snapshot takes time too.
 const snapshotInterval = 25 * time.Millisecond
 
+type ServerConfig struct {
+	AgentType    mf.AgentType
+	Process      *termexec.Process
+	Port         int
+	ChatBasePath string
+}
+
 // NewServer creates a new server instance
-func NewServer(ctx context.Context, agentType mf.AgentType, process *termexec.Process, port int, chatBasePath string) *Server {
+func NewServer(ctx context.Context, config ServerConfig) *Server {
 	router := chi.NewMux()
 
 	corsMiddleware := cors.New(cors.Options{
@@ -73,14 +80,14 @@ func NewServer(ctx context.Context, agentType mf.AgentType, process *termexec.Pr
 	})
 	router.Use(corsMiddleware.Handler)
 
-	humaConfig := huma.DefaultConfig("AgentAPI", "0.3.2")
+	humaConfig := huma.DefaultConfig("AgentAPI", "0.3.3")
 	humaConfig.Info.Description = "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi"
 	api := humachi.New(router, humaConfig)
 	formatMessage := func(message string, userInput string) string {
-		return mf.FormatAgentMessage(agentType, message, userInput)
+		return mf.FormatAgentMessage(config.AgentType, message, userInput)
 	}
 	conversation := st.NewConversation(ctx, st.ConversationConfig{
-		AgentIO: process,
+		AgentIO: config.Process,
 		GetTime: func() time.Time {
 			return time.Now()
 		},
@@ -92,13 +99,13 @@ func NewServer(ctx context.Context, agentType mf.AgentType, process *termexec.Pr
 	s := &Server{
 		router:       router,
 		api:          api,
-		port:         port,
+		port:         config.Port,
 		conversation: conversation,
 		logger:       logctx.From(ctx),
-		agentio:      process,
-		agentType:    agentType,
+		agentio:      config.Process,
+		agentType:    config.AgentType,
 		emitter:      emitter,
-		chatBasePath: strings.TrimSuffix(chatBasePath, "/"),
+		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 	}
 
 	// Register API routes
