@@ -12,8 +12,8 @@ import (
 var rootCmd = &cobra.Command{
 	Use:     "agentapi",
 	Short:   "AgentAPI CLI",
-	Long:    `AgentAPI - HTTP API for Claude Code, Goose, Aider, Gemini, Sourcegraph Amp and Codex`,
-	Version: "0.3.2",
+	Long:    `AgentAPI - HTTP API for Claude Code, Goose, Aider, Gemini and Codex`,
+	Version: "0.3.3",
 }
 
 func Execute() {
@@ -25,6 +25,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(server.ServerCmd)
+	rootCmd.AddCommand(server.CreateServerCmd())
 	rootCmd.AddCommand(attach.AttachCmd)
 }

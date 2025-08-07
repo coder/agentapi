@@ -46,7 +46,12 @@ func TestOpenAPISchema(t *testing.T) {
 	t.Parallel()
 
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv := httpapi.NewServer(ctx, msgfmt.AgentTypeClaude, nil, 0, "/chat")
+	srv := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:    msgfmt.AgentTypeClaude,
+		Process:      nil,
+		Port:         0,
+		ChatBasePath: "/chat",
+	})
 	currentSchemaStr := srv.GetOpenAPI()
 	var currentSchema any
 	if err := json.Unmarshal([]byte(currentSchemaStr), &currentSchema); err != nil {
@@ -90,7 +95,12 @@ func TestServer_redirectToChat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tCtx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s := httpapi.NewServer(tCtx, msgfmt.AgentTypeClaude, nil, 0, tc.chatBasePath)
+			s := httpapi.NewServer(tCtx, httpapi.ServerConfig{
+				AgentType:    msgfmt.AgentTypeClaude,
+				Process:      nil,
+				Port:         0,
+				ChatBasePath: tc.chatBasePath,
+			})
 			tsServer := httptest.NewServer(s.Handler())
 			t.Cleanup(tsServer.Close)
 
