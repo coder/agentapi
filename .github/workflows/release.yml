@@ -2,7 +2,7 @@ name: Build Release Binaries
 
 on:
   release:
-    types: [created, published, edited]
+    types: [published]
   push:
     branches: [ main ]
   workflow_dispatch:
