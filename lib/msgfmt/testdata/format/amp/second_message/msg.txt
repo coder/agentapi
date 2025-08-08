@@ -1,0 +1,10 @@
+┃ How are you?
+
+∴ Thinking
+  The user is asking a simple social greeting "How are you?". This is a casual question about my state/wellbeing. I should respond concisely and
+directly as per my instructions to keep responses short (fewer than 4 lines unless asked for detail). I don't need to use any tools for this simple
+greeting.
+
+  I should avoid elaborate explanations or summaries, and just give a brief, direct response.
+
+I'm ready to help you with your coding tasks. What would you like to work on?

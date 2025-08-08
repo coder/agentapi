@@ -1,0 +1,33 @@
+┃ Which file is this code from?
+┃
+┃   ```ts
+┃   // Set up polling for messages and server status
+┃   useEffect(() => {
+┃     // Check server status initially
+┃     checkServerStatus();
+┃
+┃     // Set up polling intervals
+┃     const messageInterval = setInterval(fetchMessages, 1000);
+┃     const statusInterval = setInterval(checkServerStatus, 250);
+┃
+┃     // Clean up intervals on component unmount
+┃     return () => {
+┃       clearInterval(messageInterval);
+┃       clearInterval(statusInterval);
+┃     };
+┃   }, []);
+┃   ```
+
+∴ Thinking
+  The user is asking me to identify which file contains this specific TypeScript code snippet. The code shows a useEffect hook that sets up polling
+for messages and server status. I need to search for this code in the codebase to find the file it belongs to.
+
+  I should use the Grep tool to search for some unique parts of this code to locate the file.
+
+✓ Grep Set up polling for messages and server status
+
+✓ Grep const messageInterval = setInterval\(fetchMessages, 1000\)
+
+✓ List Directory /mnt/c/Users/Username/test-amp
+
+No files found in the workspace containing this code.
