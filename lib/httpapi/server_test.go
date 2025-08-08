@@ -46,12 +46,15 @@ func TestOpenAPISchema(t *testing.T) {
 	t.Parallel()
 
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv := httpapi.NewServer(ctx, httpapi.ServerConfig{
-		AgentType:    msgfmt.AgentTypeClaude,
-		Process:      nil,
-		Port:         0,
-		ChatBasePath: "/chat",
+	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:      msgfmt.AgentTypeClaude,
+		Process:        nil,
+		Port:           0,
+		ChatBasePath:   "/chat",
+		AllowedHosts:   []string{"*"},
+		AllowedOrigins: []string{"*"},
 	})
+	require.NoError(t, err)
 	currentSchemaStr := srv.GetOpenAPI()
 	var currentSchema any
 	if err := json.Unmarshal([]byte(currentSchemaStr), &currentSchema); err != nil {
@@ -95,12 +98,15 @@ func TestServer_redirectToChat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tCtx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s := httpapi.NewServer(tCtx, httpapi.ServerConfig{
-				AgentType:    msgfmt.AgentTypeClaude,
-				Process:      nil,
-				Port:         0,
-				ChatBasePath: tc.chatBasePath,
+			s, err := httpapi.NewServer(tCtx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   tc.chatBasePath,
+				AllowedHosts:   []string{"*"},
+				AllowedOrigins: []string{"*"},
 			})
+			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
 			t.Cleanup(tsServer.Close)
 
@@ -117,6 +123,389 @@ func TestServer_redirectToChat(t *testing.T) {
 			require.Equal(t, tc.expectedResponseCode, resp.StatusCode, "expected %d status code", tc.expectedResponseCode)
 			loc := resp.Header.Get("Location")
 			require.Equal(t, tc.expectedLocation, loc, "expected Location %q, got %q", tc.expectedLocation, loc)
+		})
+	}
+}
+
+func TestServer_AllowedHosts(t *testing.T) {
+	cases := []struct {
+		name               string
+		allowedHosts       []string
+		hostHeader         string
+		expectedStatusCode int
+		expectedErrorMsg   string
+	}{
+		{
+			name:               "wildcard hosts - any host allowed",
+			allowedHosts:       []string{"*"},
+			hostHeader:         "example.com",
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:               "wildcard hosts - another host allowed",
+			allowedHosts:       []string{"*"},
+			hostHeader:         "malicious.com",
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:               "specific hosts - valid host allowed",
+			allowedHosts:       []string{"localhost", "app.example.com"},
+			hostHeader:         "localhost:3000",
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:               "specific hosts - another valid host allowed",
+			allowedHosts:       []string{"localhost", "app.example.com"},
+			hostHeader:         "app.example.com",
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:               "specific hosts - invalid host rejected",
+			allowedHosts:       []string{"localhost", "app.example.com"},
+			hostHeader:         "malicious.com",
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErrorMsg:   "Invalid host header. Allowed hosts: localhost, app.example.com",
+		},
+		{
+			name:               "empty hosts - any host allowed",
+			allowedHosts:       []string{},
+			hostHeader:         "anything.com",
+			expectedStatusCode: http.StatusOK,
+		},
+        {
+            name:               "ipv6 literal allowed - no port",
+            allowedHosts:       []string{"2001:db8::1"},
+            hostHeader:         "[2001:db8::1]",
+            expectedStatusCode: http.StatusOK,
+        },
+        {
+            name:               "ipv6 literal allowed - with port",
+            allowedHosts:       []string{"2001:db8::1"},
+            hostHeader:         "[2001:db8::1]:1234",
+            expectedStatusCode: http.StatusOK,
+        },
+        {
+            name:               "ipv6 bracketed configured allowed - with port",
+            allowedHosts:       []string{"[2001:db8::1]"},
+            hostHeader:         "[2001:db8::1]:80",
+            expectedStatusCode: http.StatusOK,
+        },
+        {
+            name:               "ipv6 literal invalid host rejected",
+            allowedHosts:       []string{"2001:db8::1"},
+            hostHeader:         "[2001:db8::2]",
+            expectedStatusCode: http.StatusBadRequest,
+            expectedErrorMsg:   "Invalid host header. Allowed hosts: 2001:db8::1",
+        },
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   "/chat",
+				AllowedHosts:   tc.allowedHosts,
+				AllowedOrigins: []string{"https://example.com"}, // Set a default to isolate host testing
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			req, err := http.NewRequest("GET", tsServer.URL+"/status", nil)
+			require.NoError(t, err)
+
+			if tc.hostHeader != "" {
+				req.Host = tc.hostHeader
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = resp.Body.Close()
+			})
+
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode,
+				"expected status code %d, got %d", tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectedErrorMsg != "" {
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.Contains(t, string(body), tc.expectedErrorMsg)
+			}
+		})
+	}
+}
+
+func TestServer_CORSPreflightWithHosts(t *testing.T) {
+	cases := []struct {
+		name               string
+		allowedHosts       []string
+		hostHeader         string
+		originHeader       string
+		expectedStatusCode int
+		expectCORSHeaders  bool
+	}{
+		{
+			name:               "preflight with wildcard hosts",
+			allowedHosts:       []string{"*"},
+			hostHeader:         "example.com",
+			originHeader:       "https://example.com",
+			expectedStatusCode: http.StatusOK,
+			expectCORSHeaders:  true,
+		},
+		{
+			name:               "preflight with specific valid host",
+			allowedHosts:       []string{"localhost"},
+			hostHeader:         "localhost:3000",
+			originHeader:       "https://localhost:3000",
+			expectedStatusCode: http.StatusOK,
+			expectCORSHeaders:  true,
+		},
+		{
+			name:               "preflight with invalid host",
+			allowedHosts:       []string{"localhost"},
+			hostHeader:         "malicious.com",
+			originHeader:       "https://malicious.com",
+			expectedStatusCode: http.StatusBadRequest,
+			expectCORSHeaders:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   "/chat",
+				AllowedHosts:   tc.allowedHosts,
+				AllowedOrigins: []string{"*"}, // Set wildcard origins to isolate host testing
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			// Test CORS preflight request
+			req, err := http.NewRequest("OPTIONS", tsServer.URL+"/status", nil)
+			require.NoError(t, err)
+
+			if tc.hostHeader != "" {
+				req.Host = tc.hostHeader
+			}
+			if tc.originHeader != "" {
+				req.Header.Set("Origin", tc.originHeader)
+			}
+			req.Header.Set("Access-Control-Request-Method", "GET")
+			req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = resp.Body.Close()
+			})
+
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode,
+				"expected status code %d, got %d", tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectCORSHeaders {
+				allowMethods := resp.Header.Get("Access-Control-Allow-Methods")
+				require.Contains(t, allowMethods, "GET", "expected GET in allowed methods")
+
+				allowHeaders := resp.Header.Get("Access-Control-Allow-Headers")
+				require.Contains(t, allowHeaders, "Content-Type", "expected Content-Type in allowed headers")
+			}
+		})
+	}
+}
+
+func TestServer_CORSOrigins(t *testing.T) {
+	cases := []struct {
+		name                   string
+		allowedOrigins         []string
+		originHeader           string
+		expectedStatusCode     int
+		expectedCORSOrigin     string
+		expectCORSOriginHeader bool
+	}{
+		{
+			name:                   "wildcard origins - any origin allowed",
+			allowedOrigins:         []string{"*"},
+			originHeader:           "https://example.com",
+			expectedStatusCode:     http.StatusOK,
+			expectedCORSOrigin:     "*",
+			expectCORSOriginHeader: true,
+		},
+		{
+			name:                   "wildcard origins - malicious origin allowed",
+			allowedOrigins:         []string{"*"},
+			originHeader:           "http://malicious.com",
+			expectedStatusCode:     http.StatusOK,
+			expectedCORSOrigin:     "*",
+			expectCORSOriginHeader: true,
+		},
+		{
+			name:                   "specific origins - valid origin allowed https",
+			allowedOrigins:         []string{"https://localhost:3000", "http://app.example.com"},
+			originHeader:           "https://localhost:3000",
+			expectedStatusCode:     http.StatusOK,
+			expectedCORSOrigin:     "https://localhost:3000",
+			expectCORSOriginHeader: true,
+		},
+		{
+			name:                   "specific origins - valid origin allowed http",
+			allowedOrigins:         []string{"https://localhost:3000", "http://app.example.com"},
+			originHeader:           "http://app.example.com",
+			expectedStatusCode:     http.StatusOK,
+			expectedCORSOrigin:     "http://app.example.com",
+			expectCORSOriginHeader: true,
+		},
+		{
+			name:                   "specific origins - invalid origin rejected",
+			allowedOrigins:         []string{"https://localhost:3000", "http://app.example.com"},
+			originHeader:           "https://malicious.com",
+			expectedStatusCode:     http.StatusOK, // Server allows request - CORS is enforced by browser
+			expectCORSOriginHeader: false,
+		},
+		{
+			name:               "no origin header - request not coming from a browser",
+			allowedOrigins:     []string{"https://example.com"},
+			originHeader:       "",
+			expectedStatusCode: http.StatusOK,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   "/chat",
+				AllowedHosts:   []string{"*"}, // Set wildcard to isolate CORS testing
+				AllowedOrigins: tc.allowedOrigins,
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			req, err := http.NewRequest("GET", tsServer.URL+"/status", nil)
+			require.NoError(t, err)
+
+			if tc.originHeader != "" {
+				req.Header.Set("Origin", tc.originHeader)
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = resp.Body.Close()
+			})
+
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode,
+				"expected status code %d, got %d", tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectCORSOriginHeader {
+				corsOrigin := resp.Header.Get("Access-Control-Allow-Origin")
+				require.Equal(t, tc.expectedCORSOrigin, corsOrigin,
+					"expected CORS origin %q, got %q", tc.expectedCORSOrigin, corsOrigin)
+			} else if tc.expectedStatusCode == http.StatusOK && tc.originHeader != "" {
+				corsOrigin := resp.Header.Get("Access-Control-Allow-Origin")
+				require.Empty(t, corsOrigin, "expected no CORS origin header, got %q", corsOrigin)
+			}
+		})
+	}
+}
+
+func TestServer_CORSPreflightOrigins(t *testing.T) {
+	cases := []struct {
+		name               string
+		allowedOrigins     []string
+		originHeader       string
+		expectedStatusCode int
+		expectCORSHeaders  bool
+	}{
+		{
+			name:               "preflight with wildcard origins",
+			allowedOrigins:     []string{"*"},
+			originHeader:       "https://example.com",
+			expectedStatusCode: http.StatusOK,
+			expectCORSHeaders:  true,
+		},
+		{
+			name:               "preflight with specific valid origin",
+			allowedOrigins:     []string{"https://localhost:3000"},
+			originHeader:       "https://localhost:3000",
+			expectedStatusCode: http.StatusOK,
+			expectCORSHeaders:  true,
+		},
+		{
+			name:               "preflight with invalid origin",
+			allowedOrigins:     []string{"https://localhost:3000"},
+			originHeader:       "https://malicious.com",
+			expectedStatusCode: http.StatusOK, // Request succeeds but no CORS headers
+			expectCORSHeaders:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   "/chat",
+				AllowedHosts:   []string{"*"}, // Set wildcard to isolate CORS testing
+				AllowedOrigins: tc.allowedOrigins,
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			req, err := http.NewRequest("OPTIONS", tsServer.URL+"/status", nil)
+			require.NoError(t, err)
+
+			if tc.originHeader != "" {
+				req.Header.Set("Origin", tc.originHeader)
+			}
+			req.Header.Set("Access-Control-Request-Method", "GET")
+			req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = resp.Body.Close()
+			})
+
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode,
+				"expected status code %d, got %d", tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectCORSHeaders {
+				allowMethods := resp.Header.Get("Access-Control-Allow-Methods")
+				require.Contains(t, allowMethods, "GET", "expected GET in allowed methods")
+
+				allowHeaders := resp.Header.Get("Access-Control-Allow-Headers")
+				require.Contains(t, allowHeaders, "Content-Type", "expected Content-Type in allowed headers")
+
+				corsOrigin := resp.Header.Get("Access-Control-Allow-Origin")
+				require.NotEmpty(t, corsOrigin, "expected CORS origin header for valid preflight")
+			} else if tc.originHeader != "" {
+				corsOrigin := resp.Header.Get("Access-Control-Allow-Origin")
+				require.Empty(t, corsOrigin, "expected no CORS origin header for invalid origin")
+			}
 		})
 	}
 }
