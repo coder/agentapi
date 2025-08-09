@@ -241,6 +241,97 @@ func TestServer_AllowedHosts(t *testing.T) {
 	}
 }
 
+func TestServer_UseXForwardedHost(t *testing.T) {
+	cases := []struct {
+		name                 string
+		allowedHosts         []string
+		useXForwardedHost    bool
+		hostHeader           string
+		xForwardedHostHeader string
+		expectedStatusCode   int
+		expectedErrorMsg     string
+	}{
+		{
+			name:               "disabled flag ignores X-Forwarded-Host",
+			allowedHosts:       []string{"app.example.com"},
+			useXForwardedHost:  false,
+			hostHeader:         "malicious.com",
+			xForwardedHostHeader: "app.example.com",
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErrorMsg:   "Invalid host header. Allowed hosts: app.example.com",
+		},
+		{
+			name:                 "enabled flag uses X-Forwarded-Host",
+			allowedHosts:         []string{"app.example.com"},
+			useXForwardedHost:    true,
+			hostHeader:           "malicious.com",
+			xForwardedHostHeader: "app.example.com",
+			expectedStatusCode:   http.StatusOK,
+		},
+		{
+			name:                 "enabled with port in X-Forwarded-Host",
+			allowedHosts:         []string{"app.example.com"},
+			useXForwardedHost:    true,
+			hostHeader:           "malicious.com",
+			xForwardedHostHeader: "app.example.com:443",
+			expectedStatusCode:   http.StatusOK,
+		},
+		{
+			name:                 "enabled with IPv6 literal in X-Forwarded-Host",
+			allowedHosts:         []string{"2001:db8::1"},
+			useXForwardedHost:    true,
+			hostHeader:           "malicious.com",
+			xForwardedHostHeader: "[2001:db8::1]:8443",
+			expectedStatusCode:   http.StatusOK,
+		},
+		{
+			name:                 "enabled with comma-separated X-Forwarded-Host takes first",
+			allowedHosts:         []string{"first.example.com"},
+			useXForwardedHost:    true,
+			hostHeader:           "malicious.com",
+			xForwardedHostHeader: "first.example.com, other.example.com",
+			expectedStatusCode:   http.StatusOK,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:         msgfmt.AgentTypeClaude,
+				Process:           nil,
+				Port:              0,
+				ChatBasePath:      "/chat",
+				AllowedHosts:      tc.allowedHosts,
+				AllowedOrigins:    []string{"https://example.com"}, // isolate
+				UseXForwardedHost: tc.useXForwardedHost,
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			req, err := http.NewRequest("GET", tsServer.URL+"/status", nil)
+			require.NoError(t, err)
+			if tc.hostHeader != "" {
+				req.Host = tc.hostHeader
+			}
+			if tc.xForwardedHostHeader != "" {
+				req.Header.Set("X-Forwarded-Host", tc.xForwardedHostHeader)
+			}
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = resp.Body.Close() })
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+			if tc.expectedErrorMsg != "" {
+				b, _ := io.ReadAll(resp.Body)
+				require.Contains(t, string(b), tc.expectedErrorMsg)
+			}
+		})
+	}
+}
+
 func TestServer_CORSPreflightWithHosts(t *testing.T) {
 	cases := []struct {
 		name               string

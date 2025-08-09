@@ -157,6 +157,7 @@ func TestServerCmd_AllArgs_Defaults(t *testing.T) {
 		{"term-height default", FlagTermHeight, uint16(1000), func() any { return viper.GetUint16(FlagTermHeight) }},
 		{"allowed-hosts default", FlagAllowedHosts, []string{"localhost"}, func() any { return viper.GetStringSlice(FlagAllowedHosts) }},
 		{"allowed-origins default", FlagAllowedOrigins, []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, func() any { return viper.GetStringSlice(FlagAllowedOrigins) }},
+		{"use-x-forwarded-host default", FlagUseXForwardedHost, false, func() any { return viper.GetBool(FlagUseXForwardedHost) }},
 	}
 
 	for _, tt := range tests {
@@ -191,6 +192,7 @@ func TestServerCmd_AllEnvVars(t *testing.T) {
 		{"AGENTAPI_TERM_HEIGHT", "AGENTAPI_TERM_HEIGHT", "500", uint16(500), func() any { return viper.GetUint16(FlagTermHeight) }},
 		{"AGENTAPI_ALLOWED_HOSTS", "AGENTAPI_ALLOWED_HOSTS", "localhost example.com", []string{"localhost", "example.com"}, func() any { return viper.GetStringSlice(FlagAllowedHosts) }},
 		{"AGENTAPI_ALLOWED_ORIGINS", "AGENTAPI_ALLOWED_ORIGINS", "https://example.com http://localhost:3000", []string{"https://example.com", "http://localhost:3000"}, func() any { return viper.GetStringSlice(FlagAllowedOrigins) }},
+		{"AGENTAPI_USE_X_FORWARDED_HOST", "AGENTAPI_USE_X_FORWARDED_HOST", "true", true, func() any { return viper.GetBool(FlagUseXForwardedHost) }},
 	}
 
 	for _, tt := range tests {
@@ -267,6 +269,13 @@ func TestServerCmd_ArgsPrecedenceOverEnv(t *testing.T) {
 			[]string{"--allowed-origins", "https://cli-example.com"},
 			[]string{"https://cli-example.com"},
 			func() any { return viper.GetStringSlice(FlagAllowedOrigins) },
+		},
+		{
+			"use-x-forwarded-host: CLI overrides env",
+			"AGENTAPI_USE_X_FORWARDED_HOST", "false",
+			[]string{"--use-x-forwarded-host"},
+			true,
+			func() any { return viper.GetBool(FlagUseXForwardedHost) },
 		},
 	}
 

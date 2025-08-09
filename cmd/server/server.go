@@ -171,12 +171,13 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-		AgentType:      agentType,
-		Process:        process,
-		Port:           port,
-		ChatBasePath:   viper.GetString(FlagChatBasePath),
-		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
-		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
+		AgentType:         agentType,
+		Process:           process,
+		Port:              port,
+		ChatBasePath:      viper.GetString(FlagChatBasePath),
+		AllowedHosts:      viper.GetStringSlice(FlagAllowedHosts),
+		AllowedOrigins:    viper.GetStringSlice(FlagAllowedOrigins),
+		UseXForwardedHost: viper.GetBool(FlagUseXForwardedHost),
 	})
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
@@ -230,15 +231,16 @@ type flagSpec struct {
 }
 
 const (
-	FlagType           = "type"
-	FlagPort           = "port"
-	FlagPrintOpenAPI   = "print-openapi"
-	FlagChatBasePath   = "chat-base-path"
-	FlagTermWidth      = "term-width"
-	FlagTermHeight     = "term-height"
-	FlagAllowedHosts   = "allowed-hosts"
-	FlagAllowedOrigins = "allowed-origins"
-	FlagExit           = "exit"
+	FlagType               = "type"
+	FlagPort               = "port"
+	FlagPrintOpenAPI       = "print-openapi"
+	FlagChatBasePath       = "chat-base-path"
+	FlagTermWidth          = "term-width"
+	FlagTermHeight         = "term-height"
+	FlagAllowedHosts       = "allowed-hosts"
+	FlagAllowedOrigins     = "allowed-origins"
+	FlagUseXForwardedHost  = "use-x-forwarded-host"
+	FlagExit               = "exit"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -283,6 +285,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagAllowedHosts, "a", []string{"localhost"}, "HTTP allowed hosts (hostnames only, no ports). Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_HOSTS env var", "stringSlice"},
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
+		{FlagUseXForwardedHost, "", false, "Use X-Forwarded-Host header for host authorization (behind trusted proxies)", "bool"},
 	}
 
 	for _, spec := range flagSpecs {

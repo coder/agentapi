@@ -62,12 +62,13 @@ func (s *Server) GetOpenAPI() string {
 const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
+	AgentType          mf.AgentType
+	Process            *termexec.Process
+	Port               int
+	ChatBasePath       string
+	AllowedHosts       []string
+	AllowedOrigins     []string
+	UseXForwardedHost  bool
 }
 
 func parseAllowedHosts(hosts []string) ([]string, error) {
@@ -145,7 +146,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	badHostHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid host header. Allowed hosts: "+strings.Join(allowedHosts, ", "), http.StatusBadRequest)
 	})
-	router.Use(hostAuthorizationMiddleware(allowedHosts, badHostHandler))
+	router.Use(hostAuthorizationMiddleware(allowedHosts, config.UseXForwardedHost, badHostHandler))
 
 	corsMiddleware := cors.New(cors.Options{
 		AllowedOrigins:   allowedOrigins,
@@ -198,8 +199,9 @@ func (s *Server) Handler() http.Handler {
 
 // hostAuthorizationMiddleware enforces that the request Host header matches one of the allowed
 // hosts, ignoring any port in the comparison. If allowedHosts is empty, all hosts are allowed.
-// Always uses url.Parse("http://" + r.Host) to robustly extract the hostname (handles IPv6).
-func hostAuthorizationMiddleware(allowedHosts []string, badHostHandler http.Handler) func(next http.Handler) http.Handler {
+// If useXForwardedHost is true and the X-Forwarded-Host header is present, that header is used
+// as the source of host. Hostname is extracted via url.Parse to handle IPv6 and strip ports.
+func hostAuthorizationMiddleware(allowedHosts []string, useXForwardedHost bool, badHostHandler http.Handler) func(next http.Handler) http.Handler {
 	// Copy for safety; also build a map for O(1) lookups with case-insensitive keys.
 	allowed := make(map[string]struct{}, len(allowedHosts))
 	for _, h := range allowedHosts {
@@ -211,13 +213,24 @@ func hostAuthorizationMiddleware(allowedHosts []string, badHostHandler http.Hand
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Extract hostname from the Host header using url.Parse; ignore any port.
-			hostHeader := r.Host
-			if hostHeader == "" {
+			// Choose header source
+			rawHost := r.Host
+			if useXForwardedHost {
+				if xfhs := r.Header.Values("X-Forwarded-Host"); len(xfhs) > 0 {
+					// Use the first value and trim anything after a comma
+					h := xfhs[0]
+					if idx := strings.IndexByte(h, ','); idx >= 0 {
+						h = h[:idx]
+					}
+					rawHost = strings.TrimSpace(h)
+				}
+			}
+			if rawHost == "" {
 				badHostHandler.ServeHTTP(w, r)
 				return
 			}
-			if u, err := url.Parse("http://" + hostHeader); err == nil {
+			// Extract hostname via url.Parse; ignore any port.
+			if u, err := url.Parse("http://" + rawHost); err == nil {
 				hostname := u.Hostname()
 				if _, ok := allowed[strings.ToLower(hostname)]; ok {
 					next.ServeHTTP(w, r)
