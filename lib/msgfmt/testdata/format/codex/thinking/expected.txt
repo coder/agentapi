@@ -1,13 +1,1 @@
->_ You are using OpenAI Codex in ~/Documents/work/agentapi
-
- To get started, describe a task or try one of these commands:
-
- /init - create an AGENTS.md file with instructions for Codex
- /status - show current session configuration and token usage
- /diff - show git diff (including untracked files)
- /prompts - show example prompts
-
-user
-Think for a very long time and tell me all about Theory of Relativity.
-
 ▌ • Working (3s • Ctrl C to interrupt)

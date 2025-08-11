@@ -8,7 +8,7 @@ import (
 // ───────────────
 // >
 // ───────────────
-// Used by Goose, and Aider.
+// Used by Claude Code, Goose, and Aider.
 func findGreaterThanMessageBox(lines []string) int {
 	for i := len(lines) - 1; i >= max(len(lines)-6, 0); i-- {
 		if strings.Contains(lines[i], ">") {
