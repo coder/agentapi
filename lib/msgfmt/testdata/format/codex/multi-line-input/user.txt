@@ -1,4 +1,7 @@
-Which file is this function from?
-```go
-func formatCodexMessage(message string, userInput string) string {}
-```
+Which file has this snippet
+func formatCodexMessage(message string, userInput string) string {
+        message = RemoveUserInput(message, userInput)
+        message = removeCodexInputBox(message)
+        message = trimEmptyLines(message)
+        return message
+}

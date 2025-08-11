@@ -1,27 +1,31 @@
-│command (code: 127, duration: 10ms)                                                                                                                                                                      │
-│$ bash -lc 'rg -n "func formatCodexMessage"'                                                                                                                                                             │
-│bash: line 1: rg: command not found                                                                                                                                                                      │
-│                                                                                                                                                                                                         │
-│command (code: 0, duration: 8.23s)                                                                                                                                                                       │
-│$ bash -lc 'grep -R "formatCodexMessage" -n .'                                                                                                                                                           │
-│./lib/msgfmt/testdata/format/claude/multi-line-input/user.txt:3:func formatCodexMessage(message string, userInput string) string {                                                                       │
-│./lib/msgfmt/msgfmt.go:219:func formatCodexMessage(message string, userInput string) string {                                                                                                            │
-│./lib/msgfmt/msgfmt.go:236:            return formatCodexMessage(message, userInput)                                                                                                                     │
-│                                                                                                                                                                                                         │
-│codex                                                                                                                                                                                                    │
-│The formatCodexMessage function is defined in:                                                                                                                                                           │
-│                                                                                                                                                                                                         │
-│lib/msgfmt/msgfmt.go (around line 219)                                                                                                                                                                   │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-│                                                                                                                                                                                                         │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ send a message — 97% context left                                                                                                                                                                       │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────Enter to send | Ctrl+D to quit | Ctrl+J for newline╯
+>_ You are using OpenAI Codex in ~/Documents/work/agentapi
+
+ To get started, describe a task or try one of these commands:
+
+ /init - create an AGENTS.md file with instructions for Codex
+ /status - show current session configuration and token usage
+ /diff - show git diff (including untracked files)
+ /prompts - show example prompts
+
+user
+Which file has this snippet
+func formatCodexMessage(message string, userInput string) string {
+        message = RemoveUserInput(message, userInput)
+        message = removeCodexInputBox(message)
+        message = trimEmptyLines(message)
+        return message
+}
+
+⚡ Ran command grep -R formatCodexMessage -n .
+  ⎿ ./lib/msgfmt/testdata/format/codex/multi-line-input/user.txt:3:func formatCodexMessage(message string, userInput string) string {}
+    ./lib/msgfmt/testdata/format/codex/multi-line-input/msg.txt:2:│$ bash -lc 'rg -n "func formatCodexMessage"'                                                                                                                                                             │
+    ./lib/msgfmt/testdata/format/codex/multi-line-input/msg.txt:6:│$ bash -lc 'grep -R "formatCodexMessage" -n .'                                                                                                                                                           │
+    ... +12 lines
+
+codex
+The `formatCodexMessage` function is defined in:
+
+`lib/msgfmt/msgfmt.go` (around line 219)
+
+▌ Ask Codex to do anything                                                                                                                                                                                
+ Ctrl+C again to quit   12437 tokens used   96% context left 

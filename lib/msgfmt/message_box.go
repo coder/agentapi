@@ -8,7 +8,7 @@ import (
 // ───────────────
 // >
 // ───────────────
-// Used by Claude Code, Goose, and Aider.
+// Used by Goose, and Aider.
 func findGreaterThanMessageBox(lines []string) int {
 	for i := len(lines) - 1; i >= max(len(lines)-6, 0); i-- {
 		if strings.Contains(lines[i], ">") {
@@ -25,7 +25,6 @@ func findGreaterThanMessageBox(lines []string) int {
 // ───────────────
 // |
 // ───────────────
-// Used by OpenAI Codex.
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
 		if strings.Contains(lines[i], "───────────────") &&
@@ -52,40 +51,12 @@ func removeMessageBox(msg string) string {
 	return strings.Join(lines, "\n")
 }
 
-func removeCodexMessageBox(msg string) string {
+func removeCodexInputBox(msg string) string {
 	lines := strings.Split(msg, "\n")
-	messageBoxEndIdx := -1
-	messageBoxStartIdx := -1
-
-	for i := len(lines) - 1; i >= 0; i-- {
-		if messageBoxEndIdx == -1 {
-			if strings.Contains(lines[i], "╰────────") && strings.Contains(lines[i], "───────╯") {
-				messageBoxEndIdx = i
-			}
-		} else {
-			// We reached the start of the message box (we don't want to show this line), also exit the loop
-			if strings.Contains(lines[i], "╭") && strings.Contains(lines[i], "───────╮") {
-				// We only want this to be i in case the top of the box is visible
-				messageBoxStartIdx = i
-				break
-			}
-
-			// We are in between the start and end of the message box, so remove the │ from the start and end of the line, let the trimEmptyLines handle the rest
-			if strings.HasPrefix(lines[i], "│") {
-				lines[i] = strings.TrimPrefix(lines[i], "│")
-			}
-			if strings.HasSuffix(lines[i], "│") {
-				lines[i] = strings.TrimSuffix(lines[i], "│")
-				lines[i] = strings.TrimRight(lines[i], " \t")
-			}
-		}
+	// Remove the input box, we need to match the exact pattern, because thinking follows the same pattern of ▌ followed by text
+	if len(lines)-2 >= 0 && strings.Contains(lines[len(lines)-2], "▌ Ask Codex to do anything") {
+		idx := len(lines) - 2
+		lines = append(lines[:idx], lines[idx+1:]...)
 	}
-
-	// If we didn't find messageBoxEndIdx, set it to the end of the lines
-	if messageBoxEndIdx == -1 {
-		messageBoxEndIdx = len(lines)
-	}
-
-	return strings.Join(lines[messageBoxStartIdx+1:messageBoxEndIdx], "\n")
-
+	return strings.Join(lines, "\n")
 }

@@ -218,8 +218,7 @@ func formatGenericMessage(message string, userInput string) string {
 
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput)
-	message = removeMessageBox(message)
-	message = removeCodexMessageBox(message)
+	message = removeCodexInputBox(message)
 	message = trimEmptyLines(message)
 	return message
 }

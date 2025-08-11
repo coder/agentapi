@@ -1,28 +1,9 @@
-╭Messages (tab to focus)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│OpenAI Codex v0.10.0 (research preview)                                                                                                                                                                  │
-│                                                                                                                                                                                                         │
-│codex session 790ba389-ab4d-47be-bb16-9cc7f36bcf2b                                                                                                                                                       │
-│workdir: /Users/jkmr/Documents/work/agentapi                                                                                                                                                             │
-│model: codex-mini-latest                                                                                                                                                                                 │
-│provider: openai                                                                                                                                                                                         │
-│approval: untrusted                                                                                                                                                                                      │
-│sandbox: read-only                                                                                                                                                                                       │
-│reasoning effort: medium                                                                                                                                                                                 │
-│reasoning summaries: auto                                                                                                                                                                                │
-│                                                                                                                                                                                                         │
-│user                                                                                                                                                                                                     │
-│what repository are you in?                                                                                                                                                                              │
-│                                                                                                                                                                                                         │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭Review───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│Shell Command                                                                                                                                                                                            │
-│~/Documents/work/agentapi$ git rev-parse --show-toplevel                                                                                                                                                 │
-│                                                                                                                                                                                                         │
-│Allow command?                                                                                                                                                                                           │
-│                                                                                                                                                                                                         │
-│  ▶ Yes (y)                                                                                                                                                                                              │
-│    Yes, always approve this exact command for this session (a)                                                                                                                                          │
-│    Edit or give feedback (e)                                                                                                                                                                            │
-│    No, and keep going (n)                                                                                                                                                                               │
-│    No, and stop for now (esc)                                                                                                                                                                           │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+> You are running Codex in /Users/jkmr
+
+  Since this folder is not version controlled, we recommend requiring
+  approval of all edits and commands.
+
+  1. Allow Codex to work in this folder without asking for approval
+> 2. Require approval of edits and commands
+
+  Press Enter to continue

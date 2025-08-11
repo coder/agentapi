@@ -1,10 +1,10 @@
-OpenAI Codex v0.10.0 (research preview)
+>_ You are using OpenAI Codex in ~
 
-codex session 56576d81-529d-42f3-843b-78d870054a75
-workdir: /Users/jkmr/Documents/work/agentapi
-model: codex-mini-latest
-provider: openai
-approval: untrusted
-sandbox: read-only
-reasoning effort: medium
-reasoning summaries: auto
+ To get started, describe a task or try one of these commands:
+
+ /init - create an AGENTS.md file with instructions for Codex
+ /status - show current session configuration and token usage
+ /diff - show git diff (including untracked files)
+ /prompts - show example prompts
+
+ ⏎ send   Shift+⏎ newline   Ctrl+C quit

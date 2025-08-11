@@ -1,2 +1,22 @@
+>_ You are using OpenAI Codex in ~/Documents/work/agentapi
+
+ To get started, describe a task or try one of these commands:
+
+ /init - create an AGENTS.md file with instructions for Codex
+ /status - show current session configuration and token usage
+ /diff - show git diff (including untracked files)
+ /prompts - show example prompts
+
+user
+How many untracked files are there?
+
+⚡ Ran command git status --porcelain
+  ⎿  M cmd/server/server.go
+     M lib/msgfmt/message_box.go
+     M lib/msgfmt/msgfmt.go
+    ... +2 lines
+
 codex
-I’m doing great, thanks for asking! How can I help you today?
+There are 2 untracked files (`.env` and `forge.yaml`).
+
+ ⏎ send   Ctrl+J newline   Ctrl+C quit   18724 tokens used   96% context left

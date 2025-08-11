@@ -74,9 +74,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	if termHeight < 10 {
 		return xerrors.Errorf("term height must be at least 10")
-	} else if agentType == AgentTypeCodex && termHeight > 930 {
-		logger.Warn(fmt.Sprintf("Term height is set to %d which may cause issues with Codex. Setting it to 930 instead.", termHeight))
-		termHeight = 930 // codex has a bug where the TUI distorts the screen if the height is too large, see: https://github.com/openai/codex/issues/1608
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
