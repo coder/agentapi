@@ -140,6 +140,22 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 	return msgIdx
 }
 
+// skipTrailingInputBoxLine skips the next line if it contains any of the markers.
+// In case of Gemini and Cursor, the user input is echoed back in a box
+// This function searches for the markers passed by the caller and skips the next line if it contains all of them.
+func skipTrailingInputBoxLine(lines []string, lastUserInputLineIdx *int, markers ...string) {
+	if *lastUserInputLineIdx+1 >= len(lines) {
+		return
+	}
+	line := lines[*lastUserInputLineIdx+1]
+	for _, m := range markers {
+		if !strings.Contains(line, m) {
+			return
+		}
+	}
+	*lastUserInputLineIdx++
+}
+
 // RemoveUserInput removes the user input from the message.
 // Goose, Aider, and Claude Code echo back the user's input to
 // make it visible in the terminal. This function makes a best effort
@@ -169,10 +185,8 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
-	// In case of Gemini, the user input echoed back is wrapped in a rounded box, so we remove it.
-	if lastUserInputLineIdx+1 < len(msgLines) && strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
-		lastUserInputLineIdx += 1
-	}
+	skipTrailingInputBoxLine(msgLines, &lastUserInputLineIdx, "╯", "╰") // Gemini
+	skipTrailingInputBoxLine(msgLines, &lastUserInputLineIdx, "┘", "└") // Cursor
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
 }
@@ -207,6 +221,7 @@ const (
 	AgentTypeCodex  AgentType = "codex"
 	AgentTypeGemini AgentType = "gemini"
 	AgentTypeAmp    AgentType = "amp"
+	AgentTypeCursor AgentType = "cursor"
 	AgentTypeCustom AgentType = "custom"
 )
 
@@ -237,6 +252,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeGemini:
 		return formatGenericMessage(message, userInput)
 	case AgentTypeAmp:
+		return formatGenericMessage(message, userInput)
+	case AgentTypeCursor:
 		return formatGenericMessage(message, userInput)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput)
