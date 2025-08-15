@@ -167,7 +167,7 @@ func skipTrailingInputBoxLine(lines []string, currentIdx int, markers ...string)
 // For instance, if there are any leading or trailing lines with only whitespace,
 // and each line of the input in msgRaw is preceded by a character like `>`,
 // these lines will not be removed.
-func RemoveUserInput(msgRaw string, userInputRaw string) string {
+func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) string {
 	if userInputRaw == "" {
 		return msgRaw
 	}
@@ -188,13 +188,17 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
 	// Skip Gemini trailing input box line
-	if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
-		lastUserInputLineIdx = idx
+	if agentType == AgentTypeGemini {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
+			lastUserInputLineIdx = idx
+		}
 	}
 
 	// Skip Cursor trailing input box line
-	if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
-		lastUserInputLineIdx = idx
+	if agentType == AgentTypeCursor {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
+			lastUserInputLineIdx = idx
+		}
 	}
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
@@ -234,15 +238,15 @@ const (
 	AgentTypeCustom AgentType = "custom"
 )
 
-func formatGenericMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput)
+func formatGenericMessage(message string, userInput string, agentType AgentType) string {
+	message = RemoveUserInput(message, userInput, agentType)
 	message = removeMessageBox(message)
 	message = trimEmptyLines(message)
 	return message
 }
 
 func formatCodexMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput)
+	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexInputBox(message)
 	message = trimEmptyLines(message)
 	return message
@@ -251,21 +255,21 @@ func formatCodexMessage(message string, userInput string) string {
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
 	switch agentType {
 	case AgentTypeClaude:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeGoose:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAider:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCodex:
 		return formatCodexMessage(message, userInput)
 	case AgentTypeGemini:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAmp:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCursor:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCustom:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	default:
 		return message
 	}
