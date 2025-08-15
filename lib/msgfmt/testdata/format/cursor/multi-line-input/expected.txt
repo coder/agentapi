@@ -1,0 +1,24 @@
+  I’m going to search the codebase for the function name and related identifiers to locate the file containing that snippet.
+
+  ⬢ Searched 4 searches
+    … 1 earlier item hidden
+    Searched "removeCodexInputBox" in .
+    Searched "RemoveUserInput\(" in .
+    Searched "trimEmptyLines\(" in .
+
+  Scanning relevant Go files to confirm the exact location and provide a precise citation.
+
+  ⬢ Read lib/msgfmt/msgfmt.go
+
+  It’s in lib/msgfmt/msgfmt.go.
+
+   lib/msgfmt/msgfmt.go lines 235-240
+
+   235 │ func formatCodexMessage(message string, userInput string) string {
+   236 │     message = RemoveUserInput(message, userInput)
+   237 │     message = removeCodexInputBox(message)
+   238 │     message = trimEmptyLines(message)
+   239 │     return message
+   240 │ }
+
+  • Found in lib/msgfmt/msgfmt.go (lines 235–240).
