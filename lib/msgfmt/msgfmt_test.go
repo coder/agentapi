@@ -188,7 +188,7 @@ func TestRemoveUserInput(t *testing.T) {
 			assert.NoError(t, err)
 			expected, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "expected.txt"))
 			assert.NoError(t, err)
-			assert.Equal(t, string(expected), RemoveUserInput(string(msg), string(userInput)))
+			assert.Equal(t, string(expected), RemoveUserInput(string(msg), string(userInput), AgentTypeCustom))
 		})
 	}
 }
