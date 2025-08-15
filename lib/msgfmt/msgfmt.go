@@ -187,15 +187,12 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
-	// Skip Gemini trailing input box line
+	// Skip Gemini/Cursor trailing input box line
 	if agentType == AgentTypeGemini {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
 			lastUserInputLineIdx = idx
 		}
-	}
-
-	// Skip Cursor trailing input box line
-	if agentType == AgentTypeCursor {
+	} else if agentType == AgentTypeCursor {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
 			lastUserInputLineIdx = idx
 		}
