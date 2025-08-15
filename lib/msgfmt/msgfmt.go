@@ -140,21 +140,22 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 	return msgIdx
 }
 
-// skipTrailingInputBoxLine skips the next line if it contains any of the markers.
-// In case of Gemini and Cursor, the user input is echoed back in a box
-// This function searches for the markers passed by the caller and skips the next line 
-// if it contains all of them in the same order.
-func skipTrailingInputBoxLine(lines []string, lastUserInputLineIdx *int, markers ...string) {
-	if *lastUserInputLineIdx+1 >= len(lines) {
-		return
+// skipTrailingInputBoxLine checks if the next line contains all the given markers
+// and returns the incremented index if found. In case of Gemini and Cursor, the user
+// input is echoed back in a box. This function searches for the markers passed by the
+// caller and returns (currentIdx+1, true) if the next line contains all of them in the same order,
+// otherwise returns (currentIdx, false).
+func skipTrailingInputBoxLine(lines []string, currentIdx int, markers ...string) (idx int, found bool) {
+	if currentIdx+1 >= len(lines) {
+		return currentIdx, false
 	}
-	line := lines[*lastUserInputLineIdx+1]
+	line := lines[currentIdx+1]
 	for _, m := range markers {
 		if !strings.Contains(line, m) {
-			return
+			return currentIdx, false
 		}
 	}
-	*lastUserInputLineIdx++
+	return currentIdx + 1, true
 }
 
 // RemoveUserInput removes the user input from the message.
@@ -186,8 +187,15 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
-	skipTrailingInputBoxLine(msgLines, &lastUserInputLineIdx, "╯", "╰") // Gemini
-	skipTrailingInputBoxLine(msgLines, &lastUserInputLineIdx, "┘", "└") // Cursor
+	// Skip Gemini trailing input box line
+	if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
+		lastUserInputLineIdx = idx
+	}
+
+	// Skip Cursor trailing input box line
+	if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
+		lastUserInputLineIdx = idx
+	}
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
 }
