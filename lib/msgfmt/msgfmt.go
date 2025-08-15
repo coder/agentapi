@@ -142,7 +142,8 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 
 // skipTrailingInputBoxLine skips the next line if it contains any of the markers.
 // In case of Gemini and Cursor, the user input is echoed back in a box
-// This function searches for the markers passed by the caller and skips the next line if it contains all of them.
+// This function searches for the markers passed by the caller and skips the next line 
+// if it contains all of them in the same order.
 func skipTrailingInputBoxLine(lines []string, lastUserInputLineIdx *int, markers ...string) {
 	if *lastUserInputLineIdx+1 >= len(lines) {
 		return
