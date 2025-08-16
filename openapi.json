@@ -270,13 +270,18 @@
       "StatusChangeBody": {
         "additionalProperties": false,
         "properties": {
+          "agent_type": {
+            "description": "Type of the agent being used by the server.",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Agent status"
           }
         },
         "required": [
-          "status"
+          "status",
+          "agent_type"
         ],
         "type": "object"
       },
@@ -292,13 +297,18 @@
             "readOnly": true,
             "type": "string"
           },
+          "agent_type": {
+            "description": "Type of the agent being used by the server.",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
           }
         },
         "required": [
-          "status"
+          "status",
+          "agent_type"
         ],
         "type": "object"
       }
@@ -326,32 +336,6 @@
                       {
                         "properties": {
                           "data": {
-                            "$ref": "#/components/schemas/MessageUpdateBody"
-                          },
-                          "event": {
-                            "const": "message_update",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event message_update",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
                             "$ref": "#/components/schemas/StatusChangeBody"
                           },
                           "event": {
@@ -373,6 +357,32 @@
                           "event"
                         ],
                         "title": "Event status_change",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/MessageUpdateBody"
+                          },
+                          "event": {
+                            "const": "message_update",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event message_update",
                         "type": "object"
                       }
                     ]

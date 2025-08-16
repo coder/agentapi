@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import {useSearchParams} from "next/navigation";
 import {
   useState,
   useEffect,
@@ -9,7 +9,7 @@ import {
   PropsWithChildren,
   useContext,
 } from "react";
-import { toast } from "sonner";
+import {toast} from "sonner";
 
 interface Message {
   id: number;
@@ -32,6 +32,7 @@ interface MessageUpdateEvent {
 
 interface StatusChangeEvent {
   status: string;
+  agent_type: string;
 }
 
 function isDraftMessage(message: Message | DraftMessage): boolean {
@@ -42,11 +43,29 @@ type MessageType = "user" | "raw";
 
 export type ServerStatus = "stable" | "running" | "offline" | "unknown";
 
+export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "custom" | "unknown";
+
+export type ColorAbbreviatePair = {
+  displayName: string;
+  color: string;
+}
+
+export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, ColorAbbreviatePair> = {
+  claude: {color: "bg-blue-300 ring-blue-300/35", displayName: "Claude Code"},
+  goose: {color: "bg-green-300 ring-green-300/35", displayName: "Goose"},
+  aider: {color: "bg-yellow-300 ring-yellow-300/35", displayName: "Aider"},
+  gemini: {color: "bg-purple-300 ring-purple-300/35", displayName: "Gemini"},
+  amp: {color: "bg-pink-300 ring-pink-300/35", displayName: "Amp"},
+  codex: {color: "bg-orange-300 ring-orange-300/35", displayName: "Codex"},
+  custom: {color: "bg-gray-300 ring-gray-300/35", displayName: "Custom"}
+}
+
 interface ChatContextValue {
   messages: (Message | DraftMessage)[];
   loading: boolean;
   serverStatus: ServerStatus;
   sendMessage: (message: string, type?: MessageType) => void;
+  agentType: AgentType;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -86,10 +105,11 @@ const useAgentAPIUrl = (): string => {
   return agentAPIURL;
 };
 
-export function ChatProvider({ children }: PropsWithChildren) {
+export function ChatProvider({children}: PropsWithChildren) {
   const [messages, setMessages] = useState<(Message | DraftMessage)[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
+  const [agentType, setAgentType] = useState<AgentType>("custom");
   const eventSourceRef = useRef<EventSource | null>(null);
   const agentAPIUrl = useAgentAPIUrl();
 
@@ -155,6 +175,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
       // Handle status changes
       eventSource.addEventListener("status_change", (event) => {
         const data: StatusChangeEvent = JSON.parse(event.data);
+        console.log(data)
         if (data.status === "stable") {
           setServerStatus("stable");
         } else if (data.status === "running") {
@@ -162,6 +183,9 @@ export function ChatProvider({ children }: PropsWithChildren) {
         } else {
           setServerStatus("unknown");
         }
+
+        // Set agent type
+        setAgentType(data.agent_type === "" ? "unknown" : data.agent_type as AgentType);
       });
 
       // Handle connection open (server is online)
@@ -211,7 +235,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
     if (type === "user") {
       setMessages((prevMessages) => [
         ...prevMessages,
-        { role: "user", content },
+        {role: "user", content},
       ]);
       setLoading(true);
     }
@@ -235,7 +259,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
         const messages =
           "errors" in errorData
             ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              errorData.errors.map((e: any) => e.message).join(", ")
+            errorData.errors.map((e: any) => e.message).join(", ")
             : "";
 
         const fullDetail = `${detail}: ${messages}`;
@@ -250,7 +274,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
       const messages =
         "errors" in error
           ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error.errors.map((e: any) => e.message).join("\n")
+          error.errors.map((e: any) => e.message).join("\n")
           : "";
 
       const fullDetail = `${detail}: ${messages}`;
@@ -275,6 +299,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
         loading,
         sendMessage,
         serverStatus,
+        agentType,
       }}
     >
       {children}
