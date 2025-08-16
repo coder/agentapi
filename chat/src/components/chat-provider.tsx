@@ -45,12 +45,12 @@ export type ServerStatus = "stable" | "running" | "offline" | "unknown";
 
 export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "custom" | "unknown";
 
-export type ColorAbbreviatePair = {
+export type AgentColorDisplayNamePair = {
   displayName: string;
   color: string;
 }
 
-export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, ColorAbbreviatePair> = {
+export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, AgentColorDisplayNamePair> = {
   claude: {color: "bg-blue-300 ring-blue-300/35", displayName: "Claude Code"},
   goose: {color: "bg-green-300 ring-green-300/35", displayName: "Goose"},
   aider: {color: "bg-yellow-300 ring-yellow-300/35", displayName: "Aider"},
