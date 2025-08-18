@@ -57,8 +57,8 @@ export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, AgentCo
   gemini: {color: "bg-purple-300 ring-purple-300/35", displayName: "Gemini"},
   amp: {color: "bg-pink-300 ring-pink-300/35", displayName: "Amp"},
   codex: {color: "bg-orange-300 ring-orange-300/35", displayName: "Codex"},
-  cursor: {color: "bg-violet-300 ring-violet-300/35", displayName: "Cursor Agent"},
-  "cursor-agent": {color: "bg-violet-300 ring-violet-300/35", displayName: "Cursor Agent"},
+  cursor: {color: "bg-lime-300 ring-lime-300/35", displayName: "Cursor Agent"},
+  "cursor-agent": {color: "bg-lime-300 ring-lime-300/35", displayName: "Cursor Agent"},
   custom: {color: "bg-gray-300 ring-gray-300/35", displayName: "Custom"}
 }
 
