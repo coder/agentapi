@@ -43,7 +43,7 @@ type MessageType = "user" | "raw";
 
 export type ServerStatus = "stable" | "running" | "offline" | "unknown";
 
-export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "custom" | "unknown";
+export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "cursor" | "cursor-agent" | "custom" | "unknown";
 
 export type AgentColorDisplayNamePair = {
   displayName: string;
@@ -57,6 +57,8 @@ export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, AgentCo
   gemini: {color: "bg-purple-300 ring-purple-300/35", displayName: "Gemini"},
   amp: {color: "bg-pink-300 ring-pink-300/35", displayName: "Amp"},
   codex: {color: "bg-orange-300 ring-orange-300/35", displayName: "Codex"},
+  cursor: {color: "bg-violet-300 ring-violet-300/35", displayName: "Cursor Agent"},
+  "cursor-agent": {color: "bg-violet-300 ring-violet-300/35", displayName: "Cursor Agent"},
   custom: {color: "bg-gray-300 ring-gray-300/35", displayName: "Custom"}
 }
 
@@ -175,7 +177,6 @@ export function ChatProvider({children}: PropsWithChildren) {
       // Handle status changes
       eventSource.addEventListener("status_change", (event) => {
         const data: StatusChangeEvent = JSON.parse(event.data);
-        console.log(data)
         if (data.status === "stable") {
           setServerStatus("stable");
         } else if (data.status === "running") {
