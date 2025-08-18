@@ -17,7 +17,7 @@ jobs:
           go-version: "stable"
 
       - name: Test
-        run: go test -count=1 -v ./...
+        run: CGO_ENABLED=0 go test -count=1 -v ./...
 
   lint:
     runs-on: ubuntu-latest

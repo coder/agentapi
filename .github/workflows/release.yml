@@ -50,7 +50,7 @@ jobs:
           read -r goos goarch artifact_name <<< "$variant"
 
           echo "Building for GOOS=$goos GOARCH=$goarch..."
-          GOOS=$goos GOARCH=$goarch BINPATH="out/$artifact_name" make build
+          CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch BINPATH="out/$artifact_name" make build
         done
 
     - name: Upload Build Artifact

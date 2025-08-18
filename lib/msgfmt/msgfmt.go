@@ -140,6 +140,24 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 	return msgIdx
 }
 
+// skipTrailingInputBoxLine checks if the next line contains all the given markers
+// and returns the incremented index if found. In case of Gemini and Cursor, the user
+// input is echoed back in a box. This function searches for the markers passed by the
+// caller and returns (currentIdx+1, true) if the next line contains all of them,
+// otherwise returns (currentIdx, false).
+func skipTrailingInputBoxLine(lines []string, currentIdx int, markers ...string) (idx int, found bool) {
+	if currentIdx+1 >= len(lines) {
+		return currentIdx, false
+	}
+	line := lines[currentIdx+1]
+	for _, m := range markers {
+		if !strings.Contains(line, m) {
+			return currentIdx, false
+		}
+	}
+	return currentIdx + 1, true
+}
+
 // RemoveUserInput removes the user input from the message.
 // Goose, Aider, and Claude Code echo back the user's input to
 // make it visible in the terminal. This function makes a best effort
@@ -149,7 +167,7 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 // For instance, if there are any leading or trailing lines with only whitespace,
 // and each line of the input in msgRaw is preceded by a character like `>`,
 // these lines will not be removed.
-func RemoveUserInput(msgRaw string, userInputRaw string) string {
+func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) string {
 	if userInputRaw == "" {
 		return msgRaw
 	}
@@ -169,9 +187,15 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
-	// In case of Gemini, the user input echoed back is wrapped in a rounded box, so we remove it.
-	if lastUserInputLineIdx+1 < len(msgLines) && strings.Contains(msgLines[lastUserInputLineIdx+1], "╯") && strings.Contains(msgLines[lastUserInputLineIdx+1], "╰") {
-		lastUserInputLineIdx += 1
+	// Skip Gemini/Cursor trailing input box line
+	if agentType == AgentTypeGemini {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
+			lastUserInputLineIdx = idx
+		}
+	} else if agentType == AgentTypeCursorAgent || agentType == AgentTypeCursor {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
+			lastUserInputLineIdx = idx
+		}
 	}
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
@@ -201,24 +225,26 @@ func trimEmptyLines(message string) string {
 type AgentType string
 
 const (
-	AgentTypeClaude AgentType = "claude"
-	AgentTypeGoose  AgentType = "goose"
-	AgentTypeAider  AgentType = "aider"
-	AgentTypeCodex  AgentType = "codex"
-	AgentTypeGemini AgentType = "gemini"
-	AgentTypeAmp    AgentType = "amp"
-	AgentTypeCustom AgentType = "custom"
+	AgentTypeClaude      AgentType = "claude"
+	AgentTypeGoose       AgentType = "goose"
+	AgentTypeAider       AgentType = "aider"
+	AgentTypeCodex       AgentType = "codex"
+	AgentTypeGemini      AgentType = "gemini"
+	AgentTypeAmp         AgentType = "amp"
+	AgentTypeCursorAgent AgentType = "cursor-agent"
+	AgentTypeCursor      AgentType = "cursor"
+	AgentTypeCustom      AgentType = "custom"
 )
 
-func formatGenericMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput)
+func formatGenericMessage(message string, userInput string, agentType AgentType) string {
+	message = RemoveUserInput(message, userInput, agentType)
 	message = removeMessageBox(message)
 	message = trimEmptyLines(message)
 	return message
 }
 
 func formatCodexMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput)
+	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexInputBox(message)
 	message = trimEmptyLines(message)
 	return message
@@ -227,19 +253,23 @@ func formatCodexMessage(message string, userInput string) string {
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
 	switch agentType {
 	case AgentTypeClaude:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeGoose:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAider:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCodex:
 		return formatCodexMessage(message, userInput)
 	case AgentTypeGemini:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAmp:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeCursorAgent:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeCursor:
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCustom:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	default:
 		return message
 	}
