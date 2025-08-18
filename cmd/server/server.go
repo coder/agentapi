@@ -23,26 +23,28 @@ import (
 type AgentType = msgfmt.AgentType
 
 const (
-	AgentTypeClaude AgentType = msgfmt.AgentTypeClaude
-	AgentTypeGoose  AgentType = msgfmt.AgentTypeGoose
-	AgentTypeAider  AgentType = msgfmt.AgentTypeAider
-	AgentTypeCodex  AgentType = msgfmt.AgentTypeCodex
-	AgentTypeGemini AgentType = msgfmt.AgentTypeGemini
-	AgentTypeAmp    AgentType = msgfmt.AgentTypeAmp
-	AgentTypeCursor AgentType = msgfmt.AgentTypeCursor
-	AgentTypeCustom AgentType = msgfmt.AgentTypeCustom
+	AgentTypeClaude      AgentType = msgfmt.AgentTypeClaude
+	AgentTypeGoose       AgentType = msgfmt.AgentTypeGoose
+	AgentTypeAider       AgentType = msgfmt.AgentTypeAider
+	AgentTypeCodex       AgentType = msgfmt.AgentTypeCodex
+	AgentTypeGemini      AgentType = msgfmt.AgentTypeGemini
+	AgentTypeAmp         AgentType = msgfmt.AgentTypeAmp
+	AgentTypeCursorAgent AgentType = msgfmt.AgentTypeCursorAgent
+	AgentTypeCursor      AgentType = msgfmt.AgentTypeCursor
+	AgentTypeCustom      AgentType = msgfmt.AgentTypeCustom
 )
 
 // exhaustiveness of this map is checked by the exhaustive linter
 var agentTypeMap = map[AgentType]bool{
-	AgentTypeClaude: true,
-	AgentTypeGoose:  true,
-	AgentTypeAider:  true,
-	AgentTypeCodex:  true,
-	AgentTypeGemini: true,
-	AgentTypeAmp:    true,
-	AgentTypeCursor: true,
-	AgentTypeCustom: true,
+	AgentTypeClaude:      true,
+	AgentTypeGoose:       true,
+	AgentTypeAider:       true,
+	AgentTypeCodex:       true,
+	AgentTypeGemini:      true,
+	AgentTypeAmp:         true,
+	AgentTypeCursorAgent: true,
+	AgentTypeCursor:      true,
+	AgentTypeCustom:      true,
 }
 
 func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
