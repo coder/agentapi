@@ -231,7 +231,7 @@ const (
 	AgentTypeCodex  AgentType = "codex"
 	AgentTypeGemini AgentType = "gemini"
 	AgentTypeAmp    AgentType = "amp"
-	AgentTypeCursor AgentType = "cursor"
+	AgentTypeCursor AgentType = "cursor-agent"
 	AgentTypeCustom AgentType = "custom"
 )
 
