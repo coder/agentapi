@@ -31,6 +31,7 @@ const (
 	AgentTypeAmp         AgentType = msgfmt.AgentTypeAmp
 	AgentTypeCursorAgent AgentType = msgfmt.AgentTypeCursorAgent
 	AgentTypeCursor      AgentType = msgfmt.AgentTypeCursor
+	AgentTypeAuggie      AgentType = msgfmt.AgentTypeAuggie
 	AgentTypeCustom      AgentType = msgfmt.AgentTypeCustom
 )
 
@@ -44,6 +45,7 @@ var agentTypeMap = map[AgentType]bool{
 	AgentTypeAmp:         true,
 	AgentTypeCursorAgent: true,
 	AgentTypeCursor:      true,
+	AgentTypeAuggie:      true,
 	AgentTypeCustom:      true,
 }
 

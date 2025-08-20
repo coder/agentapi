@@ -233,6 +233,7 @@ const (
 	AgentTypeAmp         AgentType = "amp"
 	AgentTypeCursorAgent AgentType = "cursor-agent"
 	AgentTypeCursor      AgentType = "cursor"
+	AgentTypeAuggie      AgentType = "auggie"
 	AgentTypeCustom      AgentType = "custom"
 )
 
@@ -267,6 +268,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeCursorAgent:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCursor:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAuggie:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput, agentType)
