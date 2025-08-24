@@ -127,7 +127,7 @@ export default function MessageList({ messages }: MessageListProps) {
                 {message.role !== "user" && message.content === "" ? (
                   <LoadingDots />
                 ) : (
-                  message.content.trim()
+                  message.content.trimEnd()
                 )}
               </div>
             </div>
