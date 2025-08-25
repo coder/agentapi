@@ -94,6 +94,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			ProgramArgs:    argsToPass[1:],
 			TerminalWidth:  termWidth,
 			TerminalHeight: termHeight,
+			AgentType:      agentType,
 		})
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
