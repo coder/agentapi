@@ -265,7 +265,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
 		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
+			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status(), s.agentType)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
@@ -329,6 +329,7 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 
 	resp := &StatusResponse{}
 	resp.Body.Status = agentStatus
+	resp.Body.AgentType = s.agentType
 
 	return resp, nil
 }

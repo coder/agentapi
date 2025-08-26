@@ -3,6 +3,7 @@ package httpapi
 import (
 	"time"
 
+	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/util"
 	"github.com/danielgtaylor/huma/v2"
@@ -35,7 +36,8 @@ type Message struct {
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
-		Status AgentStatus `json:"status" doc:"Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."`
+		Status    AgentStatus  `json:"status" doc:"Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."`
+		AgentType mf.AgentType `json:"agent_type" doc:"Type of the agent being used by the server."`
 	}
 }
 

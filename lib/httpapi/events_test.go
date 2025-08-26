@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/stretchr/testify/assert"
 )
@@ -51,11 +52,11 @@ func TestEventEmitter(t *testing.T) {
 			Payload: MessageUpdateBody{Id: 2, Message: "What's up?", Role: st.ConversationRoleAgent, Time: now},
 		}, newEvent)
 
-		emitter.UpdateStatusAndEmitChanges(st.ConversationStatusStable)
+		emitter.UpdateStatusAndEmitChanges(st.ConversationStatusStable, mf.AgentTypeAider)
 		newEvent = <-ch
 		assert.Equal(t, Event{
 			Type:    EventTypeStatusChange,
-			Payload: StatusChangeBody{Status: AgentStatusStable},
+			Payload: StatusChangeBody{Status: AgentStatusStable, AgentType: mf.AgentTypeAider},
 		}, newEvent)
 	})
 
