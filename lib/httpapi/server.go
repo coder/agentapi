@@ -188,6 +188,23 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	})
 	router.Use(corsMiddleware.Handler)
 
+	// Add SSE middleware to prevent proxy buffering
+	sseMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/events") || strings.HasSuffix(r.URL.Path, "/screen") {
+				// Disable proxy buffering for SSE endpoints
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
+				w.Header().Set("X-Accel-Buffering", "no") // nginx
+				w.Header().Set("X-Proxy-Buffering", "no") // generic proxy
+				w.Header().Set("Connection", "keep-alive")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	router.Use(sseMiddleware)
+
 	humaConfig := huma.DefaultConfig("AgentAPI", "0.6.1")
 	humaConfig.Info.Description = "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi"
 	api := humachi.New(router, humaConfig)
@@ -388,6 +405,7 @@ func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.
 			return
 		}
 	}
+
 	for {
 		select {
 		case event, ok := <-ch:
