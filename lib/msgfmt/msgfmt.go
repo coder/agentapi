@@ -196,6 +196,13 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
 			lastUserInputLineIdx = idx
 		}
+	} else if agentType == AgentTypeOpencode {
+		// skip +2 lines after the input
+		//   ┃  jkmr (08:46 PM)                                                     ┃
+		//   ┃                                                                      ┃
+		if lastUserInputLineIdx+2 < len(msgLines) {
+			lastUserInputLineIdx += 2
+		}
 	}
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
@@ -234,6 +241,7 @@ const (
 	AgentTypeCursorAgent AgentType = "cursor-agent"
 	AgentTypeCursor      AgentType = "cursor"
 	AgentTypeAuggie      AgentType = "auggie"
+	AgentTypeOpencode    AgentType = "opencode"
 	AgentTypeCustom      AgentType = "custom"
 )
 
@@ -247,6 +255,13 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexInputBox(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
+func formatOpencodeMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	message = removeOpencodeMessageBox(message)
 	message = trimEmptyLines(message)
 	return message
 }
@@ -271,6 +286,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAuggie:
 		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeOpencode:
+		return formatOpencodeMessage(message, userInput)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput, agentType)
 	default:

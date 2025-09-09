@@ -60,3 +60,21 @@ func removeCodexInputBox(msg string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+func removeOpencodeMessageBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	// Check the last 3 lines for
+	//
+	//  ┃                                                                      ┃
+	//  ┃ >                                                                    ┃
+	//  ┃                                                                      ┃
+	// We only check for the first ┃ and then an empty line above it as sometimes the full block load within a snapshot this leads to ..
+	for i := len(lines) - 1; i >= 1; i-- {
+		if strings.TrimSpace(lines[i-1]) == "" &&
+			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
+			lines = lines[:i-1]
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
+}

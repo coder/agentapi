@@ -65,7 +65,7 @@ agentapi server -- goose
 ```
 
 > [!NOTE]
-> When using Codex, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+> When using Codex, Opencode, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
 
 An OpenAPI schema is available in [openapi.json](openapi.json).
 

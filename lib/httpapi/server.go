@@ -196,7 +196,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatAgentMessage(config.AgentType, message, userInput)
 	}
 	conversation := st.NewConversation(ctx, st.ConversationConfig{
-		AgentIO: config.Process,
+		AgentType: config.AgentType,
+		AgentIO:   config.Process,
 		GetTime: func() time.Time {
 			return time.Now()
 		},
