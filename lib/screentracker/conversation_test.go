@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/stretchr/testify/assert"
 
 	st "github.com/coder/agentapi/lib/screentracker"
@@ -353,12 +354,12 @@ func TestMessages(t *testing.T) {
 var testdataDir embed.FS
 
 func TestFindNewMessage(t *testing.T) {
-	assert.Equal(t, "", st.FindNewMessage("123456", "123456"))
-	assert.Equal(t, "1234567", st.FindNewMessage("123456", "1234567"))
-	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42"))
-	assert.Equal(t, "12342", st.FindNewMessage("123", "12342\n   \n \n \n"))
-	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42\n   \n \n \n"))
-	assert.Equal(t, "42", st.FindNewMessage("89", "42"))
+	assert.Equal(t, "", st.FindNewMessage("123456", "123456", msgfmt.AgentTypeCustom))
+	assert.Equal(t, "1234567", st.FindNewMessage("123456", "1234567", msgfmt.AgentTypeCustom))
+	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42", msgfmt.AgentTypeCustom))
+	assert.Equal(t, "12342", st.FindNewMessage("123", "12342\n   \n \n \n", msgfmt.AgentTypeCustom))
+	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42\n   \n \n \n", msgfmt.AgentTypeCustom))
+	assert.Equal(t, "42", st.FindNewMessage("89", "42", msgfmt.AgentTypeCustom))
 
 	dir := "testdata/diff"
 	cases, err := testdataDir.ReadDir(dir)
@@ -371,7 +372,7 @@ func TestFindNewMessage(t *testing.T) {
 			assert.NoError(t, err)
 			expected, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "expected.txt"))
 			assert.NoError(t, err)
-			assert.Equal(t, string(expected), st.FindNewMessage(string(before), string(after)))
+			assert.Equal(t, string(expected), st.FindNewMessage(string(before), string(after), msgfmt.AgentTypeCustom))
 		})
 	}
 }
