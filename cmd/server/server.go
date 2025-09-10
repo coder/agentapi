@@ -23,48 +23,44 @@ import (
 type AgentType = msgfmt.AgentType
 
 const (
-	AgentTypeClaude      AgentType = msgfmt.AgentTypeClaude
-	AgentTypeGoose       AgentType = msgfmt.AgentTypeGoose
-	AgentTypeAider       AgentType = msgfmt.AgentTypeAider
-	AgentTypeCodex       AgentType = msgfmt.AgentTypeCodex
-	AgentTypeGemini      AgentType = msgfmt.AgentTypeGemini
-	AgentTypeAmp         AgentType = msgfmt.AgentTypeAmp
-	AgentTypeCursorAgent AgentType = msgfmt.AgentTypeCursorAgent
-	AgentTypeCursor      AgentType = msgfmt.AgentTypeCursor
-	AgentTypeAuggie      AgentType = msgfmt.AgentTypeAuggie
-	AgentTypeAmazonQ     AgentType = msgfmt.AgentTypeAmazonQ
-	AgentTypeQ           AgentType = msgfmt.AgentTypeQ
-	AgentTypeCustom      AgentType = msgfmt.AgentTypeCustom
+	AgentTypeClaude  AgentType = msgfmt.AgentTypeClaude
+	AgentTypeGoose   AgentType = msgfmt.AgentTypeGoose
+	AgentTypeAider   AgentType = msgfmt.AgentTypeAider
+	AgentTypeCodex   AgentType = msgfmt.AgentTypeCodex
+	AgentTypeGemini  AgentType = msgfmt.AgentTypeGemini
+	AgentTypeAmp     AgentType = msgfmt.AgentTypeAmp
+	AgentTypeCursor  AgentType = msgfmt.AgentTypeCursor
+	AgentTypeAuggie  AgentType = msgfmt.AgentTypeAuggie
+	AgentTypeAmazonQ AgentType = msgfmt.AgentTypeAmazonQ
+	AgentTypeCustom  AgentType = msgfmt.AgentTypeCustom
 )
 
-// exhaustiveness of this map is checked by the exhaustive linter
-var agentTypeMap = map[AgentType]bool{
-	AgentTypeClaude:      true,
-	AgentTypeGoose:       true,
-	AgentTypeAider:       true,
-	AgentTypeCodex:       true,
-	AgentTypeGemini:      true,
-	AgentTypeAmp:         true,
-	AgentTypeCursorAgent: true,
-	AgentTypeCursor:      true,
-	AgentTypeAuggie:      true,
-	AgentTypeAmazonQ:     true,
-	AgentTypeQ:           true,
-	AgentTypeCustom:      true,
+// agentTypeAliases contains the mapping of possible input agent type strings to their canonical AgentType values
+var agentTypeAliases = map[string]AgentType{
+	"claude":       AgentTypeClaude,
+	"goose":        AgentTypeGoose,
+	"aider":        AgentTypeAider,
+	"codex":        AgentTypeCodex,
+	"gemini":       AgentTypeGemini,
+	"amp":          AgentTypeAmp,
+	"auggie":       AgentTypeAuggie,
+	"cursor":       AgentTypeCursor,
+	"cursor-agent": AgentTypeCursor,
+	"q":            AgentTypeAmazonQ,
+	"amazonq":      AgentTypeAmazonQ,
+	"custom":       AgentTypeCustom,
 }
 
 func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 	// if the agent type is provided, use it
-	castedAgentType := AgentType(agentTypeVar)
-	if _, ok := agentTypeMap[castedAgentType]; ok {
+	if castedAgentType, ok := agentTypeAliases[agentTypeVar]; ok {
 		return castedAgentType, nil
 	}
 	if agentTypeVar != "" {
 		return AgentTypeCustom, fmt.Errorf("invalid agent type: %s", agentTypeVar)
 	}
 	// if the agent type is not provided, guess it from the first argument
-	castedFirstArg := AgentType(firstArg)
-	if _, ok := agentTypeMap[castedFirstArg]; ok {
+	if castedFirstArg, ok := agentTypeAliases[firstArg]; ok {
 		return castedFirstArg, nil
 	}
 	return AgentTypeCustom, nil
@@ -148,9 +144,9 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 }
 
 var agentNames = (func() []string {
-	names := make([]string, 0, len(agentTypeMap))
-	for agentType := range agentTypeMap {
-		names = append(names, string(agentType))
+	names := make([]string, 0, len(agentTypeAliases))
+	for agentType := range agentTypeAliases {
+		names = append(names, agentType)
 	}
 	sort.Strings(names)
 	return names
