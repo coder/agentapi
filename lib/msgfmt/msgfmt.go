@@ -192,7 +192,7 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
 			lastUserInputLineIdx = idx
 		}
-	} else if agentType == AgentTypeCursorAgent || agentType == AgentTypeCursor {
+	} else if agentType == AgentTypeCursor {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
 			lastUserInputLineIdx = idx
 		}
@@ -232,17 +232,17 @@ func trimEmptyLines(message string) string {
 type AgentType string
 
 const (
-	AgentTypeClaude      AgentType = "claude"
-	AgentTypeGoose       AgentType = "goose"
-	AgentTypeAider       AgentType = "aider"
-	AgentTypeCodex       AgentType = "codex"
-	AgentTypeGemini      AgentType = "gemini"
-	AgentTypeAmp         AgentType = "amp"
-	AgentTypeCursorAgent AgentType = "cursor-agent"
-	AgentTypeCursor      AgentType = "cursor"
-	AgentTypeAuggie      AgentType = "auggie"
+	AgentTypeClaude  AgentType = "claude"
+	AgentTypeGoose   AgentType = "goose"
+	AgentTypeAider   AgentType = "aider"
+	AgentTypeCodex   AgentType = "codex"
+	AgentTypeGemini  AgentType = "gemini"
+	AgentTypeAmp     AgentType = "amp"
+	AgentTypeCursor  AgentType = "cursor"
+	AgentTypeAuggie  AgentType = "auggie"
+	AgentTypeAmazonQ AgentType = "amazonq"
 	AgentTypeOpencode    AgentType = "opencode"
-	AgentTypeCustom      AgentType = "custom"
+	AgentTypeCustom  AgentType = "custom"
 )
 
 func formatGenericMessage(message string, userInput string, agentType AgentType) string {
@@ -280,11 +280,11 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAmp:
 		return formatGenericMessage(message, userInput, agentType)
-	case AgentTypeCursorAgent:
-		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCursor:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAuggie:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAmazonQ:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeOpencode:
 		return formatOpencodeMessage(message, userInput)
