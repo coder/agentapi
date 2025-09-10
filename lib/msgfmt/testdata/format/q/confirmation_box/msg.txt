@@ -1,0 +1,20 @@
+> what repo is this ?
+
+
+
+
+🛠️  Using tool: coder_report_task from mcp server coder
+ ⋮ 
+ ● Running coder_report_task with the param:
+ ⋮  {
+ ⋮    "name": "coder_report_task",
+ ⋮    "arguments": {
+ ⋮      "summary": "Checking current directory to identify repository",
+ ⋮      "link": "",
+ ⋮      "state": "working"
+ ⋮    }
+ ⋮  }
+
+Allow this action? Use 't' to trust (always allow) this tool for the session. [y/n/t]:
+
+>
