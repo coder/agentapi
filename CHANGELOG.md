@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+### Features
+- Add Support for Opencode.
+- Add support for Agent aliases
+- Explicitly support AmazonQ
+- Bump NEXT.JS version
+
 ## v0.6.3
 
 - CI fixes.
