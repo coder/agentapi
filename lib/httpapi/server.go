@@ -263,6 +263,19 @@ func hostAuthorizationMiddleware(allowedHosts []string, badHostHandler http.Hand
 	}
 }
 
+// sseMiddleware creates middleware that prevents proxy buffering for SSE endpoints
+func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
+	// Disable proxy buffering for SSE endpoints
+	ctx.SetHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+	ctx.SetHeader("Pragma", "no-cache")
+	ctx.SetHeader("Expires", "0")
+	ctx.SetHeader("X-Accel-Buffering", "no") // nginx
+	ctx.SetHeader("X-Proxy-Buffering", "no") // generic proxy
+	ctx.SetHeader("Connection", "keep-alive")
+
+	next(ctx)
+}
+
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
@@ -299,6 +312,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/events",
 		Summary:     "Subscribe to events",
 		Description: "The events are sent as Server-Sent Events (SSE). Initially, the endpoint returns a list of events needed to reconstruct the current state of the conversation and the agent's status. After that, it only returns events that have occurred since the last event was sent.\n\nNote: When an agent is running, the last message in the conversation history is updated frequently, and the endpoint sends a new message update event each time.",
+		Middlewares: []func(huma.Context, func(huma.Context)){sseMiddleware},
 	}, map[string]any{
 		// Mapping of event type name to Go struct for that event.
 		"message_update": MessageUpdateBody{},
@@ -311,6 +325,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/internal/screen",
 		Summary:     "Subscribe to screen",
 		Hidden:      true,
+		Middlewares: []func(huma.Context, func(huma.Context)){sseMiddleware},
 	}, map[string]any{
 		"screen": ScreenUpdateBody{},
 	}, s.subscribeScreen)
@@ -390,6 +405,7 @@ func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.
 			return
 		}
 	}
+
 	for {
 		select {
 		case event, ok := <-ch:

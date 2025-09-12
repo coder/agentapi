@@ -15,6 +15,7 @@ import (
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
 	"github.com/coder/agentapi/lib/msgfmt"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -630,4 +631,51 @@ func TestServer_CORSPreflightOrigins(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServer_SSEMiddleware_Events(t *testing.T) {
+	t.Parallel()
+	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:      msgfmt.AgentTypeClaude,
+		Process:        nil,
+		Port:           0,
+		ChatBasePath:   "/chat",
+		AllowedHosts:   []string{"*"},
+		AllowedOrigins: []string{"*"},
+	})
+	require.NoError(t, err)
+	tsServer := httptest.NewServer(srv.Handler())
+	t.Cleanup(tsServer.Close)
+
+	t.Run("events", func(t *testing.T) {
+		t.Parallel()
+		resp, err := tsServer.Client().Get(tsServer.URL + "/events")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		assertSSEHeaders(t, resp)
+	})
+
+	t.Run("internal/screen", func(t *testing.T) {
+		t.Parallel()
+
+		resp, err := tsServer.Client().Get(tsServer.URL + "/internal/screen")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+		assertSSEHeaders(t, resp)
+	})
+}
+
+func assertSSEHeaders(t testing.TB, resp *http.Response) {
+	t.Helper()
+	assert.Equal(t, "no-cache, no-store, must-revalidate", resp.Header.Get("Cache-Control"))
+	assert.Equal(t, "no-cache", resp.Header.Get("Pragma"))
+	assert.Equal(t, "0", resp.Header.Get("Expires"))
+	assert.Equal(t, "no", resp.Header.Get("X-Accel-Buffering"))
+	assert.Equal(t, "no", resp.Header.Get("X-Proxy-Buffering"))
+	assert.Equal(t, "keep-alive", resp.Header.Get("Connection"))
 }
