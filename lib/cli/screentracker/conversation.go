@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/agentapi/lib/msgfmt"
+	"github.com/coder/agentapi/lib/cli/msgfmt"
+	"github.com/coder/agentapi/lib/types"
 	"github.com/coder/agentapi/lib/util"
-	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/xerrors"
 )
 
@@ -43,35 +43,17 @@ type ConversationConfig struct {
 	SkipSendMessageStatusCheck bool
 }
 
-type ConversationRole string
-
 const (
-	ConversationRoleUser  ConversationRole = "user"
-	ConversationRoleAgent ConversationRole = "agent"
+	ConversationRoleUser  = types.ConversationRoleUser
+	ConversationRoleAgent = types.ConversationRoleAgent
 )
-
-var ConversationRoleValues = []ConversationRole{
-	ConversationRoleUser,
-	ConversationRoleAgent,
-}
-
-func (c ConversationRole) Schema(r huma.Registry) *huma.Schema {
-	return util.OpenAPISchema(r, "ConversationRole", ConversationRoleValues)
-}
-
-type ConversationMessage struct {
-	Id      int
-	Message string
-	Role    ConversationRole
-	Time    time.Time
-}
 
 type Conversation struct {
 	cfg ConversationConfig
 	// How many stable snapshots are required to consider the screen stable
 	stableSnapshotsThreshold    int
 	snapshotBuffer              *RingBuffer[screenSnapshot]
-	messages                    []ConversationMessage
+	messages                    []types.ConversationMessage
 	screenBeforeLastUserMessage string
 	lock                        sync.Mutex
 }
@@ -100,7 +82,7 @@ func NewConversation(ctx context.Context, cfg ConversationConfig) *Conversation 
 		cfg:                      cfg,
 		stableSnapshotsThreshold: threshold,
 		snapshotBuffer:           NewRingBuffer[screenSnapshot](threshold),
-		messages: []ConversationMessage{
+		messages: []types.ConversationMessage{
 			{
 				Message: "",
 				Role:    ConversationRoleAgent,
@@ -182,13 +164,13 @@ func FindNewMessage(oldScreen, newScreen string, agentType msgfmt.AgentType) str
 	return strings.Join(newSectionLines[startLine:endLine+1], "\n")
 }
 
-func (c *Conversation) lastMessage(role ConversationRole) ConversationMessage {
+func (c *Conversation) lastMessage(role types.ConversationRole) types.ConversationMessage {
 	for i := len(c.messages) - 1; i >= 0; i-- {
 		if c.messages[i].Role == role {
 			return c.messages[i]
 		}
 	}
-	return ConversationMessage{}
+	return types.ConversationMessage{}
 }
 
 // This function assumes that the caller holds the lock
@@ -203,7 +185,7 @@ func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time
 	if lastAgentMessage.Message == agentMessage {
 		return
 	}
-	conversationMessage := ConversationMessage{
+	conversationMessage := types.ConversationMessage{
 		Message: agentMessage,
 		Role:    ConversationRoleAgent,
 		Time:    timestamp,
@@ -359,7 +341,7 @@ func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 	}
 
 	c.screenBeforeLastUserMessage = screenBeforeMessage
-	c.messages = append(c.messages, ConversationMessage{
+	c.messages = append(c.messages, types.ConversationMessage{
 		Id:      len(c.messages),
 		Message: message,
 		Role:    ConversationRoleUser,
@@ -405,11 +387,11 @@ func (c *Conversation) Status() ConversationStatus {
 	return c.statusInner()
 }
 
-func (c *Conversation) Messages() []ConversationMessage {
+func (c *Conversation) Messages() []types.ConversationMessage {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	result := make([]ConversationMessage, len(c.messages))
+	result := make([]types.ConversationMessage, len(c.messages))
 	copy(result, c.messages)
 	return result
 }

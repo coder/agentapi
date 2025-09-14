@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/agentapi/lib/msgfmt"
+	"github.com/coder/agentapi/lib/cli/msgfmt"
+	st "github.com/coder/agentapi/lib/cli/screentracker"
 	"github.com/stretchr/testify/assert"
-
-	st "github.com/coder/agentapi/lib/screentracker"
 )
 
 type statusTestStep struct {

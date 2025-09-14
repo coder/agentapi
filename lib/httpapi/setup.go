@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	mf "github.com/coder/agentapi/lib/cli/msgfmt"
+	"github.com/coder/agentapi/lib/cli/termexec"
 	"github.com/coder/agentapi/lib/logctx"
-	mf "github.com/coder/agentapi/lib/msgfmt"
-	"github.com/coder/agentapi/lib/termexec"
 )
 
 type SetupProcessConfig struct {

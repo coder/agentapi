@@ -13,7 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/coder/agentapi/lib/httpapi"
+	"github.com/coder/agentapi/lib/types"
 	"github.com/spf13/cobra"
 	sse "github.com/tmaxmax/go-sse"
 	"golang.org/x/term"
@@ -35,7 +35,7 @@ func (c *ChannelWriter) Receive() ([]byte, bool) {
 }
 
 type model struct {
-	screen string
+	conversation string
 }
 
 func (m model) Init() tea.Cmd {
@@ -43,8 +43,8 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
-type screenMsg struct {
-	screen string
+type conversationMsg struct {
+	conversation string
 }
 
 type finishMsg struct{}
@@ -52,10 +52,10 @@ type finishMsg struct{}
 //lint:ignore U1000 The Update function is used by the Bubble Tea framework
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case screenMsg:
-		m.screen = msg.screen
-		if m.screen != "" && m.screen[len(m.screen)-1] != '\n' {
-			m.screen += "\n"
+	case conversationMsg:
+		m.conversation = msg.conversation
+		if m.conversation != "" && m.conversation[len(m.conversation)-1] != '\n' {
+			m.conversation += "\n"
 		}
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
@@ -69,10 +69,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	return m.screen
+	return m.conversation
 }
 
-func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- httpapi.ScreenUpdateBody) error {
+func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- types.ScreenUpdateBody) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -85,16 +85,16 @@ func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- httpapi.Scree
 	}()
 
 	for ev, err := range sse.Read(res.Body, &sse.ReadConfig{
-		// 256KB: screen can be big. The default terminal size is 80x1000,
+		// 256KB: conversation can be big. The default terminal size is 80x1000,
 		// which can be over 80000 bytes.
 		MaxEventSize: 256 * 1024,
 	}) {
 		if err != nil {
 			return xerrors.Errorf("failed to read sse: %w", err)
 		}
-		var screen httpapi.ScreenUpdateBody
+		var screen types.ScreenUpdateBody
 		if err := json.Unmarshal([]byte(ev.Data), &screen); err != nil {
-			return xerrors.Errorf("failed to unmarshal screen: %w", err)
+			return xerrors.Errorf("failed to unmarshal conversation: %w", err)
 		}
 		ch <- screen
 	}
@@ -102,8 +102,8 @@ func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- httpapi.Scree
 }
 
 func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
-	messageRequest := httpapi.MessageRequestBody{
-		Type:    httpapi.MessageTypeRaw,
+	messageRequest := types.MessageRequestBody{
+		Type:    types.MessageTypeRaw,
 		Content: msg,
 	}
 	messageRequestBytes, err := json.Marshal(messageRequest)
@@ -145,16 +145,16 @@ func runAttach(remoteUrl string) error {
 	}
 	tee := io.TeeReader(os.Stdin, stdinWriter)
 	p := tea.NewProgram(model{}, tea.WithInput(tee), tea.WithAltScreen())
-	screenCh := make(chan httpapi.ScreenUpdateBody, 64)
+	screenCh := make(chan types.ScreenUpdateBody, 64)
 
 	readScreenErrCh := make(chan error, 1)
 	go func() {
 		defer close(readScreenErrCh)
-		if err := ReadScreenOverHTTP(ctx, remoteUrl+"/internal/screen", screenCh); err != nil {
+		if err := ReadScreenOverHTTP(ctx, remoteUrl+"/internal/conversation", screenCh); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			readScreenErrCh <- xerrors.Errorf("failed to read screen: %w", err)
+			readScreenErrCh <- xerrors.Errorf("failed to read conversation: %w", err)
 		}
 	}()
 	writeRawInputErrCh := make(chan error, 1)
@@ -189,8 +189,8 @@ func runAttach(remoteUrl string) error {
 				if !ok {
 					return
 				}
-				p.Send(screenMsg{
-					screen: screenUpdate.Screen,
+				p.Send(conversationMsg{
+					conversation: screenUpdate.Screen,
 				})
 			}
 		}

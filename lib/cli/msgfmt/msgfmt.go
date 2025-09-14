@@ -232,17 +232,17 @@ func trimEmptyLines(message string) string {
 type AgentType string
 
 const (
-	AgentTypeClaude  AgentType = "claude"
-	AgentTypeGoose   AgentType = "goose"
-	AgentTypeAider   AgentType = "aider"
-	AgentTypeCodex   AgentType = "codex"
-	AgentTypeGemini  AgentType = "gemini"
-	AgentTypeAmp     AgentType = "amp"
-	AgentTypeCursor  AgentType = "cursor"
-	AgentTypeAuggie  AgentType = "auggie"
-	AgentTypeAmazonQ AgentType = "amazonq"
-	AgentTypeOpencode    AgentType = "opencode"
-	AgentTypeCustom  AgentType = "custom"
+	AgentTypeClaude   AgentType = "claude"
+	AgentTypeGoose    AgentType = "goose"
+	AgentTypeAider    AgentType = "aider"
+	AgentTypeCodex    AgentType = "codex"
+	AgentTypeGemini   AgentType = "gemini"
+	AgentTypeAmp      AgentType = "amp"
+	AgentTypeCursor   AgentType = "cursor"
+	AgentTypeAuggie   AgentType = "auggie"
+	AgentTypeAmazonQ  AgentType = "amazonq"
+	AgentTypeOpencode AgentType = "opencode"
+	AgentTypeCustom   AgentType = "custom"
 )
 
 func formatGenericMessage(message string, userInput string, agentType AgentType) string {

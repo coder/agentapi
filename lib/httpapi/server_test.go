@@ -12,9 +12,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/coder/agentapi/lib/cli/msgfmt"
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
-	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/stretchr/testify/require"
 )
 

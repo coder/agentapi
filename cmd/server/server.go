@@ -10,14 +10,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/coder/agentapi/lib/cli/msgfmt"
+	"github.com/coder/agentapi/lib/cli/termexec"
+	"github.com/coder/agentapi/lib/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/xerrors"
 
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
-	"github.com/coder/agentapi/lib/msgfmt"
-	"github.com/coder/agentapi/lib/termexec"
 )
 
 type AgentType = msgfmt.AgentType
@@ -68,12 +69,23 @@ func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 	return AgentTypeCustom, nil
 }
 
+func parseInteractionType(interactionModeVar string) (types.InteractionType, error) {
+	return types.CLIInteractionType, nil
+}
+
 func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) error {
 	agent := argsToPass[0]
 	agentTypeValue := viper.GetString(FlagType)
+	interactionTypeValue := viper.GetString(FlagInteractionType)
+
 	agentType, err := parseAgentType(agent, agentTypeValue)
 	if err != nil {
 		return xerrors.Errorf("failed to parse agent type: %w", err)
+	}
+
+	interactionType, err := parseInteractionType(interactionTypeValue)
+	if err != nil {
+		return xerrors.Errorf("failed to parse interaction type: %w", err)
 	}
 
 	termWidth := viper.GetUint16(FlagTermWidth)
@@ -104,12 +116,13 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-		AgentType:      agentType,
-		Process:        process,
-		Port:           port,
-		ChatBasePath:   viper.GetString(FlagChatBasePath),
-		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
-		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
+		AgentType:       agentType,
+		Process:         process,
+		Port:            port,
+		InteractionType: interactionType,
+		ChatBasePath:    viper.GetString(FlagChatBasePath),
+		AllowedHosts:    viper.GetStringSlice(FlagAllowedHosts),
+		AllowedOrigins:  viper.GetStringSlice(FlagAllowedOrigins),
 	})
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
@@ -118,7 +131,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
-	srv.StartSnapshotLoop(ctx)
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)
 	go func() {
@@ -163,15 +175,16 @@ type flagSpec struct {
 }
 
 const (
-	FlagType           = "type"
-	FlagPort           = "port"
-	FlagPrintOpenAPI   = "print-openapi"
-	FlagChatBasePath   = "chat-base-path"
-	FlagTermWidth      = "term-width"
-	FlagTermHeight     = "term-height"
-	FlagAllowedHosts   = "allowed-hosts"
-	FlagAllowedOrigins = "allowed-origins"
-	FlagExit           = "exit"
+	FlagType            = "type"
+	FlagPort            = "port"
+	FlagPrintOpenAPI    = "print-openapi"
+	FlagChatBasePath    = "chat-base-path"
+	FlagTermWidth       = "term-width"
+	FlagTermHeight      = "term-height"
+	FlagAllowedHosts    = "allowed-hosts"
+	FlagAllowedOrigins  = "allowed-origins"
+	FlagExit            = "exit"
+	FlagInteractionType = "interaction"
 )
 
 func CreateServerCmd() *cobra.Command {
