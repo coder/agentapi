@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.1
+
+### Fixes
+
+- Adds headers to prevent proxies buffering SSE connections
+
 ## v0.7.0
 
 ### Features
