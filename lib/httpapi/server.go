@@ -17,7 +17,6 @@ import (
 	"github.com/coder/agentapi/lib/cli/msgfmt"
 	"github.com/coder/agentapi/lib/cli/termexec"
 	"github.com/coder/agentapi/lib/logctx"
-	"github.com/coder/agentapi/lib/sdk"
 	"github.com/coder/agentapi/lib/types"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -204,7 +203,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	if config.InteractionType == types.CLIInteractionType {
 		s.AgentHandler = cli.NewCLIHandler(ctx, config.Process, config.AgentType)
 	} else if config.InteractionType == types.SDKInteractionType {
-		s.AgentHandler = sdk.NewSDKHandler(ctx)
+		// TODO add a SDKHandler for SDK
 	} else {
 		return nil, xerrors.Errorf("")
 	}
