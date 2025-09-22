@@ -29,14 +29,14 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router             chi.Router
-	api                huma.API
-	port               int
-	srv                *http.Server
-	logger             *slog.Logger
-	agentType          msgfmt.AgentType
-	chatBasePath       string
-	InteractionHandler InteractionHandler
+	router       chi.Router
+	api          huma.API
+	port         int
+	srv          *http.Server
+	logger       *slog.Logger
+	agentType    msgfmt.AgentType
+	chatBasePath string
+	AgentHandler AgentHandler
 }
 
 func (s *Server) GetOpenAPI() string {
@@ -202,9 +202,9 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	// Get the appropriate Interaction Handler
 	if config.InteractionType == types.CLIInteractionType {
-		s.InteractionHandler = cli.NewCLIHandler(ctx, config.Process, config.AgentType)
+		s.AgentHandler = cli.NewCLIHandler(ctx, config.Process, config.AgentType)
 	} else if config.InteractionType == types.SDKInteractionType {
-		s.InteractionHandler = sdk.NewSDKHandler(ctx)
+		s.AgentHandler = sdk.NewSDKHandler(ctx)
 	} else {
 		return nil, xerrors.Errorf("")
 	}
@@ -257,17 +257,17 @@ func hostAuthorizationMiddleware(allowedHosts []string, badHostHandler http.Hand
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
 	// GET /status endpoint
-	huma.Get(s.api, "/status", s.InteractionHandler.GetStatus, func(o *huma.Operation) {
+	huma.Get(s.api, "/status", s.AgentHandler.GetStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
 	})
 
 	// GET /messages endpoint
-	huma.Get(s.api, "/messages", s.InteractionHandler.GetMessages, func(o *huma.Operation) {
+	huma.Get(s.api, "/messages", s.AgentHandler.GetMessages, func(o *huma.Operation) {
 		o.Description = "Returns a list of messages representing the conversation history with the agent."
 	})
 
 	// POST /message endpoint
-	huma.Post(s.api, "/message", s.InteractionHandler.CreateMessage, func(o *huma.Operation) {
+	huma.Post(s.api, "/message", s.AgentHandler.CreateMessage, func(o *huma.Operation) {
 		o.Description = "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error."
 	})
 
@@ -282,7 +282,7 @@ func (s *Server) registerRoutes() {
 		// Mapping of event type name to Go struct for that event.
 		"message_update": types.MessageUpdateBody{},
 		"status_change":  types.StatusChangeBody{},
-	}, s.InteractionHandler.SubscribeEvents)
+	}, s.AgentHandler.SubscribeEvents)
 
 	sse.Register(s.api, huma.Operation{
 		OperationID: "subscribeScreen",
@@ -292,7 +292,7 @@ func (s *Server) registerRoutes() {
 		Hidden:      true,
 	}, map[string]any{
 		"screen": types.ScreenUpdateBody{},
-	}, s.InteractionHandler.SubscribeConversations)
+	}, s.AgentHandler.SubscribeConversations)
 
 	s.router.Handle("/", http.HandlerFunc(s.redirectToChat))
 

@@ -7,12 +7,12 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 )
 
-// InteractionHandler defines the interface that all interaction modes must implement
-type InteractionHandler interface {
+// AgentHandler defines the interface that all interaction modes must implement
+type AgentHandler interface {
 	GetStatus(ctx context.Context, input *struct{}) (*types.StatusResponse, error)
 	CreateMessage(ctx context.Context, input *types.MessageRequest) (*types.MessageResponse, error)
 	GetMessages(ctx context.Context, input *struct{}) (*types.MessagesResponse, error)
-	SubscribeConversations(ctx context.Context, input *struct{}, send sse.Sender)
 	SubscribeEvents(ctx context.Context, input *struct{}, send sse.Sender)
-	//StartSnapshotLoop(ctx context.Context)
+	// SubscribeConversations Was Initially SubscribeScreen, tbd whether we want to expose this in SDK mode TODO 1
+	SubscribeConversations(ctx context.Context, input *struct{}, send sse.Sender)
 }
