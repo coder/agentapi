@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/coder/agentapi/internal/version"
@@ -54,10 +53,6 @@ func (s *Server) GetOpenAPI() string {
 	}
 	return string(prettyJSON)
 }
-
-// That's about 40 frames per second. It's slightly less
-// because the action of taking a snapshot takes time too.
-const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
 	AgentType       msgfmt.AgentType
