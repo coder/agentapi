@@ -39,7 +39,7 @@ func convertStatus(status st.ConversationStatus) types.AgentStatus {
 	}
 }
 
-func NewCLIHandler(ctx context.Context, agentio *termexec.Process, agentType mf.AgentType) *CLIHandler {
+func NewCLIHandler(ctx context.Context, logger *slog.Logger, agentio *termexec.Process, agentType mf.AgentType) *CLIHandler {
 	formatMessage := func(message string, userInput string) string {
 		return mf.FormatAgentMessage(agentType, message, userInput)
 	}
@@ -61,9 +61,8 @@ func NewCLIHandler(ctx context.Context, agentio *termexec.Process, agentType mf.
 		conversation: conversation,
 		agentio:      agentio,
 		agentType:    agentType,
+		logger:       logger,
 	}
-
-	handler.StartSnapshotLoop(ctx)
 
 	return handler
 }

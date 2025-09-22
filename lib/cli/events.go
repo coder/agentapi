@@ -3,7 +3,6 @@ package cli
 import (
 	"strings"
 	"sync"
-	"time"
 
 	mf "github.com/coder/agentapi/lib/cli/msgfmt"
 	st "github.com/coder/agentapi/lib/cli/screentracker"
@@ -17,21 +16,6 @@ const (
 	EventTypeStatusChange  EventType = "status_change"
 	EventTypeScreenUpdate  EventType = "screen_update"
 )
-
-type MessageUpdateBody struct {
-	Id      int                    `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
-	Role    types.ConversationRole `json:"role" doc:"Role of the message author"`
-	Message string                 `json:"message" doc:"Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line."`
-	Time    time.Time              `json:"time" doc:"Timestamp of the message"`
-}
-
-type StatusChangeBody struct {
-	Status types.AgentStatus `json:"status" doc:"Agent status"`
-}
-
-type ScreenUpdateBody struct {
-	Screen string `json:"screen"`
-}
 
 type Event struct {
 	Type    EventType
@@ -104,7 +88,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []types.Conversa
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
-			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
+			e.notifyChannels(EventTypeMessageUpdate, types.MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,
 				Message: newMessages[i].Message,
@@ -125,7 +109,7 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus})
+	e.notifyChannels(EventTypeStatusChange, types.StatusChangeBody{Status: newAgentStatus})
 	e.status = newAgentStatus
 }
 
@@ -137,7 +121,7 @@ func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
 		return
 	}
 
-	e.notifyChannels(EventTypeScreenUpdate, ScreenUpdateBody{Screen: strings.TrimRight(newScreen, mf.WhiteSpaceChars)})
+	e.notifyChannels(EventTypeScreenUpdate, types.ScreenUpdateBody{Screen: strings.TrimRight(newScreen, mf.WhiteSpaceChars)})
 	e.screen = newScreen
 }
 
@@ -147,16 +131,16 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 	for _, msg := range e.messages {
 		events = append(events, Event{
 			Type:    EventTypeMessageUpdate,
-			Payload: MessageUpdateBody{Id: msg.Id, Role: msg.Role, Message: msg.Message, Time: msg.Time},
+			Payload: types.MessageUpdateBody{Id: msg.Id, Role: msg.Role, Message: msg.Message, Time: msg.Time},
 		})
 	}
 	events = append(events, Event{
 		Type:    EventTypeStatusChange,
-		Payload: StatusChangeBody{Status: e.status},
+		Payload: types.StatusChangeBody{Status: e.status},
 	})
 	events = append(events, Event{
 		Type:    EventTypeScreenUpdate,
-		Payload: ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
+		Payload: types.ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
 	})
 	return events
 }

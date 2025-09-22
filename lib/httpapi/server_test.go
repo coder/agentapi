@@ -15,6 +15,8 @@ import (
 	"github.com/coder/agentapi/lib/cli/msgfmt"
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
+	"github.com/coder/agentapi/lib/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,12 +49,13 @@ func TestOpenAPISchema(t *testing.T) {
 
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-		AgentType:      msgfmt.AgentTypeClaude,
-		Process:        nil,
-		Port:           0,
-		ChatBasePath:   "/chat",
-		AllowedHosts:   []string{"*"},
-		AllowedOrigins: []string{"*"},
+		AgentType:       msgfmt.AgentTypeClaude,
+		Process:         nil,
+		Port:            0,
+		ChatBasePath:    "/chat",
+		AllowedHosts:    []string{"*"},
+		AllowedOrigins:  []string{"*"},
+		InteractionType: types.CLIInteractionType,
 	})
 	require.NoError(t, err)
 	currentSchemaStr := srv.GetOpenAPI()
@@ -99,12 +102,13 @@ func TestServer_redirectToChat(t *testing.T) {
 			t.Parallel()
 			tCtx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 			s, err := httpapi.NewServer(tCtx, httpapi.ServerConfig{
-				AgentType:      msgfmt.AgentTypeClaude,
-				Process:        nil,
-				Port:           0,
-				ChatBasePath:   tc.chatBasePath,
-				AllowedHosts:   []string{"*"},
-				AllowedOrigins: []string{"*"},
+				AgentType:       msgfmt.AgentTypeClaude,
+				Process:         nil,
+				Port:            0,
+				ChatBasePath:    tc.chatBasePath,
+				AllowedHosts:    []string{"*"},
+				AllowedOrigins:  []string{"*"},
+				InteractionType: types.CLIInteractionType,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -263,12 +267,13 @@ func TestServer_AllowedHosts(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-				AgentType:      msgfmt.AgentTypeClaude,
-				Process:        nil,
-				Port:           0,
-				ChatBasePath:   "/chat",
-				AllowedHosts:   tc.allowedHosts,
-				AllowedOrigins: []string{"https://example.com"}, // Set a default to isolate host testing
+				AgentType:       msgfmt.AgentTypeClaude,
+				Process:         nil,
+				Port:            0,
+				ChatBasePath:    "/chat",
+				AllowedHosts:    tc.allowedHosts,
+				AllowedOrigins:  []string{"https://example.com"}, // Set a default to isolate host testing
+				InteractionType: types.CLIInteractionType,
 			})
 			if tc.validationErrorMsg != "" {
 				require.Error(t, err)
@@ -346,12 +351,13 @@ func TestServer_CORSPreflightWithHosts(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-				AgentType:      msgfmt.AgentTypeClaude,
-				Process:        nil,
-				Port:           0,
-				ChatBasePath:   "/chat",
-				AllowedHosts:   tc.allowedHosts,
-				AllowedOrigins: []string{"*"}, // Set wildcard origins to isolate host testing
+				AgentType:       msgfmt.AgentTypeClaude,
+				Process:         nil,
+				Port:            0,
+				ChatBasePath:    "/chat",
+				AllowedHosts:    tc.allowedHosts,
+				AllowedOrigins:  []string{"*"}, // Set wildcard origins to isolate host testing
+				InteractionType: types.CLIInteractionType,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -505,12 +511,13 @@ func TestServer_CORSOrigins(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-				AgentType:      msgfmt.AgentTypeClaude,
-				Process:        nil,
-				Port:           0,
-				ChatBasePath:   "/chat",
-				AllowedHosts:   []string{"*"}, // Set wildcard to isolate CORS testing
-				AllowedOrigins: tc.allowedOrigins,
+				AgentType:       msgfmt.AgentTypeClaude,
+				Process:         nil,
+				Port:            0,
+				ChatBasePath:    "/chat",
+				AllowedHosts:    []string{"*"}, // Set wildcard to isolate CORS testing
+				AllowedOrigins:  tc.allowedOrigins,
+				InteractionType: types.CLIInteractionType,
 			})
 			if tc.validationErrorMsg != "" {
 				require.Error(t, err)
@@ -585,12 +592,13 @@ func TestServer_CORSPreflightOrigins(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-				AgentType:      msgfmt.AgentTypeClaude,
-				Process:        nil,
-				Port:           0,
-				ChatBasePath:   "/chat",
-				AllowedHosts:   []string{"*"}, // Set wildcard to isolate CORS testing
-				AllowedOrigins: tc.allowedOrigins,
+				AgentType:       msgfmt.AgentTypeClaude,
+				Process:         nil,
+				Port:            0,
+				ChatBasePath:    "/chat",
+				AllowedHosts:    []string{"*"}, // Set wildcard to isolate CORS testing
+				AllowedOrigins:  tc.allowedOrigins,
+				InteractionType: types.CLIInteractionType,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -636,12 +644,13 @@ func TestServer_SSEMiddleware_Events(t *testing.T) {
 	t.Parallel()
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
-		AgentType:      msgfmt.AgentTypeClaude,
-		Process:        nil,
-		Port:           0,
-		ChatBasePath:   "/chat",
-		AllowedHosts:   []string{"*"},
-		AllowedOrigins: []string{"*"},
+		AgentType:       msgfmt.AgentTypeClaude,
+		Process:         nil,
+		Port:            0,
+		ChatBasePath:    "/chat",
+		AllowedHosts:    []string{"*"},
+		AllowedOrigins:  []string{"*"},
+		InteractionType: types.CLIInteractionType,
 	})
 	require.NoError(t, err)
 	tsServer := httptest.NewServer(srv.Handler())

@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/agentapi/lib/cli/msgfmt"
 	st "github.com/coder/agentapi/lib/cli/screentracker"
+	"github.com/coder/agentapi/lib/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -116,16 +117,16 @@ func TestConversation(t *testing.T) {
 
 func TestMessages(t *testing.T) {
 	now := time.Now()
-	agentMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
+	agentMsg := func(id int, msg string) types.ConversationMessage {
+		return types.ConversationMessage{
 			Id:      id,
 			Message: msg,
 			Role:    st.ConversationRoleAgent,
 			Time:    now,
 		}
 	}
-	userMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
+	userMsg := func(id int, msg string) types.ConversationMessage {
+		return types.ConversationMessage{
 			Id:      id,
 			Message: msg,
 			Role:    st.ConversationRoleUser,
@@ -152,13 +153,13 @@ func TestMessages(t *testing.T) {
 	t.Run("messages are copied", func(t *testing.T) {
 		c := newConversation()
 		messages := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, ""),
 		}, messages)
 
 		messages[0].Message = "modification"
 
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, ""),
 		}, c.Messages())
 	})
@@ -183,7 +184,7 @@ func TestMessages(t *testing.T) {
 
 		c.AddSnapshot("1")
 		msgs := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1"),
 		}, msgs)
 		nowWrapper.Time = nowWrapper.Add(1 * time.Second)
@@ -198,27 +199,27 @@ func TestMessages(t *testing.T) {
 		})
 		// agent message is recorded when the first snapshot is added
 		c.AddSnapshot("1")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1"),
 		}, c.Messages())
 
 		// agent message is updated when the screen changes
 		c.AddSnapshot("2")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "2"),
 		}, c.Messages())
 
 		// user message is recorded
 		agent.screen = "2"
 		assert.NoError(t, sendMsg(c, "3"))
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "2"),
 			userMsg(1, "3"),
 		}, c.Messages())
 
 		// agent message is added after a user message
 		c.AddSnapshot("4")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "2"),
 			userMsg(1, "3"),
 			agentMsg(2, "4"),
@@ -227,7 +228,7 @@ func TestMessages(t *testing.T) {
 		// agent message is updated when the screen changes before a user message
 		agent.screen = "5"
 		assert.NoError(t, sendMsg(c, "6"))
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "2"),
 			userMsg(1, "3"),
 			agentMsg(2, "5"),
@@ -241,7 +242,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 		agent.screen = "7"
 		assert.NoError(t, sendMsg(c, "8"))
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "2"),
 			userMsg(1, "3"),
 			agentMsg(2, "5"),
@@ -268,7 +269,7 @@ func TestMessages(t *testing.T) {
 		agent.screen = "1"
 		assert.NoError(t, sendMsg(c, "2"))
 		c.AddSnapshot("1\n3")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1"),
 			userMsg(1, "2"),
 			agentMsg(2, "3"),
@@ -277,7 +278,7 @@ func TestMessages(t *testing.T) {
 		agent.screen = "1\n3x"
 		assert.NoError(t, sendMsg(c, "4"))
 		c.AddSnapshot("1\n3x\n5")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1"),
 			userMsg(1, "2"),
 			agentMsg(2, "3x"),
@@ -296,13 +297,13 @@ func TestMessages(t *testing.T) {
 		})
 		agent.screen = "1"
 		assert.NoError(t, sendMsg(c, "2"))
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1 "),
 			userMsg(1, "2"),
 		}, c.Messages())
 		agent.screen = "x"
 		c.AddSnapshot("x")
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			agentMsg(0, "1 "),
 			userMsg(1, "2"),
 			agentMsg(2, "x 2"),
@@ -317,7 +318,7 @@ func TestMessages(t *testing.T) {
 				return "formatted"
 			}
 		})
-		assert.Equal(t, []st.ConversationMessage{
+		assert.Equal(t, []types.ConversationMessage{
 			{
 				Id:      0,
 				Message: "",

@@ -13,6 +13,8 @@ type AgentHandler interface {
 	CreateMessage(ctx context.Context, input *types.MessageRequest) (*types.MessageResponse, error)
 	GetMessages(ctx context.Context, input *struct{}) (*types.MessagesResponse, error)
 	SubscribeEvents(ctx context.Context, input *struct{}, send sse.Sender)
+
 	// SubscribeConversations Was Initially SubscribeScreen, tbd whether we want to expose this in SDK mode TODO 1
 	SubscribeConversations(ctx context.Context, input *struct{}, send sse.Sender)
+	StartSnapshotLoop(ctx context.Context)
 }
