@@ -55,7 +55,7 @@ func TestOpenAPISchema(t *testing.T) {
 		ChatBasePath:    "/chat",
 		AllowedHosts:    []string{"*"},
 		AllowedOrigins:  []string{"*"},
-		InteractionType: types.CLIInteractionType,
+		InteractionType: types.InteractionTypeCLI,
 	})
 	require.NoError(t, err)
 	currentSchemaStr := srv.GetOpenAPI()
@@ -108,7 +108,7 @@ func TestServer_redirectToChat(t *testing.T) {
 				ChatBasePath:    tc.chatBasePath,
 				AllowedHosts:    []string{"*"},
 				AllowedOrigins:  []string{"*"},
-				InteractionType: types.CLIInteractionType,
+				InteractionType: types.InteractionTypeCLI,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -273,7 +273,7 @@ func TestServer_AllowedHosts(t *testing.T) {
 				ChatBasePath:    "/chat",
 				AllowedHosts:    tc.allowedHosts,
 				AllowedOrigins:  []string{"https://example.com"}, // Set a default to isolate host testing
-				InteractionType: types.CLIInteractionType,
+				InteractionType: types.InteractionTypeCLI,
 			})
 			if tc.validationErrorMsg != "" {
 				require.Error(t, err)
@@ -357,7 +357,7 @@ func TestServer_CORSPreflightWithHosts(t *testing.T) {
 				ChatBasePath:    "/chat",
 				AllowedHosts:    tc.allowedHosts,
 				AllowedOrigins:  []string{"*"}, // Set wildcard origins to isolate host testing
-				InteractionType: types.CLIInteractionType,
+				InteractionType: types.InteractionTypeCLI,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -517,7 +517,7 @@ func TestServer_CORSOrigins(t *testing.T) {
 				ChatBasePath:    "/chat",
 				AllowedHosts:    []string{"*"}, // Set wildcard to isolate CORS testing
 				AllowedOrigins:  tc.allowedOrigins,
-				InteractionType: types.CLIInteractionType,
+				InteractionType: types.InteractionTypeCLI,
 			})
 			if tc.validationErrorMsg != "" {
 				require.Error(t, err)
@@ -598,7 +598,7 @@ func TestServer_CORSPreflightOrigins(t *testing.T) {
 				ChatBasePath:    "/chat",
 				AllowedHosts:    []string{"*"}, // Set wildcard to isolate CORS testing
 				AllowedOrigins:  tc.allowedOrigins,
-				InteractionType: types.CLIInteractionType,
+				InteractionType: types.InteractionTypeCLI,
 			})
 			require.NoError(t, err)
 			tsServer := httptest.NewServer(s.Handler())
@@ -650,7 +650,7 @@ func TestServer_SSEMiddleware_Events(t *testing.T) {
 		ChatBasePath:    "/chat",
 		AllowedHosts:    []string{"*"},
 		AllowedOrigins:  []string{"*"},
-		InteractionType: types.CLIInteractionType,
+		InteractionType: types.InteractionTypeCLI,
 	})
 	require.NoError(t, err)
 	tsServer := httptest.NewServer(srv.Handler())

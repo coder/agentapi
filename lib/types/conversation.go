@@ -33,8 +33,8 @@ func (c ConversationRole) Schema(r huma.Registry) *huma.Schema {
 type InteractionType string
 
 const (
-	SDKInteractionType InteractionType = "sdk"
-	CLIInteractionType InteractionType = "cli"
+	InteractionTypeSDK InteractionType = "sdk"
+	InteractionTypeCLI InteractionType = "cli"
 )
 
 type MessageType string

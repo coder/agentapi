@@ -195,12 +195,12 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 
 	// Get the appropriate Interaction Handler
-	if config.InteractionType == types.CLIInteractionType {
+	if config.InteractionType == types.InteractionTypeCLI {
 		s.AgentHandler = cli.NewCLIHandler(ctx, logger, config.Process, config.AgentType)
-	} else if config.InteractionType == types.SDKInteractionType {
+	} else if config.InteractionType == types.InteractionTypeSDK {
 		// TODO add a SDKHandler for SDK
 	} else {
-		return nil, xerrors.Errorf("%s", config.InteractionType)
+		return nil, xerrors.Errorf("unknown interaction type %q", config.InteractionType)
 	}
 
 	// Register API routes

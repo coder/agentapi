@@ -70,7 +70,7 @@ func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 }
 
 func parseInteractionType(interactionModeVar string) (types.InteractionType, error) {
-	return types.CLIInteractionType, nil
+	return types.InteractionTypeCLI, nil
 }
 
 func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) error {
