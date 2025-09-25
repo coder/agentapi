@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useEffect, useCallback } from "react";
+import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo, useState} from "react";
 
 interface Message {
   role: string;
@@ -36,6 +36,31 @@ export default function MessageList({ messages }: MessageListProps) {
     if (!scrollAreaRef.current) return false;
     const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
+  }, []);
+
+  // Regex to find URLs
+  // https://stackoverflow.com/a/17773849
+  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
+
+  const [modifierPressed, setModifierPressed] = useState(false);
+
+  // Track Ctrl (Windows/Linux) or Cmd (Mac) key state
+  // This is so that underline is only visible when hover + cmd/ctrl
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) setModifierPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.ctrlKey && !e.metaKey) setModifierPressed(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, []);
 
   // Update isAtBottom on scroll
@@ -92,6 +117,40 @@ export default function MessageList({ messages }: MessageListProps) {
     lastScrollHeightRef.current = currentScrollHeight;
   }, [messages]);
 
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (e.metaKey || e.ctrlKey) {
+      window.open(url, "_blank");
+    } else {
+      e.preventDefault(); // disable normal click to emulate terminal behaviour
+    }
+  };
+
+  const buildClickableLinks = useCallback((message: string, msg_index: number) => {
+    const linkedContent = message.split(urlRegex).map((content, index) => {
+      if (urlRegex.test(content)) {
+        return (
+          <a
+            key={`${msg_index}-${index}`}
+            href={content}
+            onClick={(e) => handleClick(e, content)}
+            className={`${
+              modifierPressed ? "hover:underline cursor-pointer" : "cursor-default"
+            }`}
+          >
+            {content}
+          </a>
+        );
+      }
+      return <span key={`${msg_index}-${index}`}>{content}</span>;
+    })
+
+    return <>
+      {linkedContent}
+    </>
+  }, [modifierPressed, urlRegex])
+
+
+
   // If no messages, show a placeholder
   if (messages.length === 0) {
     return (
@@ -107,7 +166,7 @@ export default function MessageList({ messages }: MessageListProps) {
         className="p-4 flex flex-col gap-4 max-w-4xl mx-auto"
         style={{ minHeight: contentMinHeight.current }}
       >
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <div
             key={message.id ?? "draft"}
             className={`${message.role === "user" ? "text-right" : ""}`}
@@ -127,7 +186,7 @@ export default function MessageList({ messages }: MessageListProps) {
                 {message.role !== "user" && message.content === "" ? (
                   <LoadingDots />
                 ) : (
-                  message.content.trimEnd()
+                  buildClickableLinks(message.content.trimEnd(), index)
                 )}
               </div>
             </div>
