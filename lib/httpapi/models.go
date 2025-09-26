@@ -62,3 +62,14 @@ type MessageResponse struct {
 		Ok bool `json:"ok" doc:"Indicates whether the message was sent successfully. For messages of type 'user', success means detecting that the agent began executing the task described. For messages of type 'raw', success means the keystrokes were sent to the terminal."`
 	}
 }
+
+type UploadResponse struct {
+	Body struct {
+		Ok bool `json:"ok" doc:"Indicates whether the files were uploaded successfully."`
+	}
+}
+
+type UploadRequest struct {
+	UploadPath string        `form:"uploadPath" required:"true" doc:"location where all the files in the zip will be extracted to."`
+	Files      huma.FormFile `form:"file" contentType:"application/zip" required:"true" doc:"zip of all the files that needs to be uploaded"`
+}

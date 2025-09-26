@@ -1,12 +1,17 @@
 package httpapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -305,6 +310,10 @@ func (s *Server) registerRoutes() {
 		o.Description = "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error."
 	})
 
+	huma.Post(s.api, "/upload", s.uploadFiles, func(o *huma.Operation) {
+		o.Description = "Upload files to the specified upload path."
+	})
+
 	// GET /events endpoint
 	sse.Register(s.api, huma.Operation{
 		OperationID: "subscribeEvents",
@@ -388,6 +397,72 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 	resp := &MessageResponse{}
 	resp.Body.Ok = true
 
+	return resp, nil
+}
+
+// uploadFiles handles POST /upload
+func (s *Server) uploadFiles(ctx context.Context, input *struct {
+	RawBody huma.MultipartFormFiles[UploadRequest]
+}) (*UploadResponse, error) {
+	formData := input.RawBody.Data()
+
+	file := formData.Files.File
+
+	buf, err := io.ReadAll(file)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to upload files: %w", err)
+	}
+
+	// Create a zip.Reader from the buffer
+	zipReader, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to upload files: %w", err)
+	}
+
+	for _, f := range zipReader.File {
+		outPath := filepath.Join(formData.UploadPath, f.Name)
+
+		if f.FileInfo().IsDir() {
+			err := os.MkdirAll(outPath, f.Mode())
+			if err != nil {
+				return nil, xerrors.Errorf("failed to upload files: %w", err)
+			}
+			continue
+		}
+
+		err := os.MkdirAll(filepath.Dir(outPath), f.Mode())
+		if err != nil {
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+
+		outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			err := outFile.Close()
+			if err != nil {
+				return nil, xerrors.Errorf("failed to upload files: %w", err)
+			}
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+
+		_, err = io.Copy(outFile, rc)
+		err = rc.Close()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+
+		err = outFile.Close()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+	}
+
+	resp := &UploadResponse{}
+	resp.Body.Ok = true
 	return resp, nil
 }
 
