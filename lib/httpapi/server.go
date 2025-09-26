@@ -450,6 +450,10 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 		}
 
 		_, err = io.Copy(outFile, rc)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to upload files: %w", err)
+		}
+
 		err = rc.Close()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to upload files: %w", err)
