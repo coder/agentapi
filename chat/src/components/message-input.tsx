@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent, KeyboardEvent, useEffect, useRef } from "react";
+import { useState, FormEvent, KeyboardEvent, MouseEvent, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import {
   ArrowDownIcon,
@@ -10,11 +10,13 @@ import {
   CornerDownLeftIcon,
   DeleteIcon,
   SendIcon,
+  Upload,
   Square,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import type { ServerStatus } from "./chat-provider";
 import TextareaAutosize from "react-textarea-autosize";
+import { UploadDialog } from "./upload-dialog";
 
 interface MessageInputProps {
   onSendMessage: (message: string, type: "user" | "raw") => void;
@@ -56,6 +58,7 @@ export default function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nextCharId = useRef(0);
   const [controlAreaFocused, setControlAreaFocused] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -143,6 +146,11 @@ export default function MessageInput({
     }
   };
 
+  const handleUploadClick = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setUploadDialogOpen(true);
+  };
+
   return (
     <Tabs value={inputMode} onValueChange={setInputMode}>
       <div className="max-w-4xl mx-auto w-full p-4 pt-0">
@@ -205,17 +213,28 @@ export default function MessageInput({
                 </TabsTrigger>
               </TabsList>
 
-              {inputMode === "text" && serverStatus !== "running" && (
+              <div className={"flex flex-row gap-3"}>
                 <Button
                   type="submit"
-                  disabled={disabled || !message.trim()}
                   size="icon"
                   className="rounded-full"
+                  onClick={handleUploadClick}
                 >
-                  <SendIcon />
-                  <span className="sr-only">Send</span>
+                  <Upload/>
+                  <span className="sr-only">Upload</span>
                 </Button>
-              )}
+
+                {inputMode === "text" && serverStatus !== "running" && (
+                  <Button
+                    type="submit"
+                    disabled={disabled || !message.trim()}
+                    size="icon"
+                    className="rounded-full"
+                  >
+                    <SendIcon/>
+                    <span className="sr-only">Send</span>
+                  </Button>
+                )}
 
               {inputMode === "text" && serverStatus === "running" && (
                 <Button
@@ -240,9 +259,11 @@ export default function MessageInput({
                     >
                       <Char char={char.char} />
                     </span>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         </form>
@@ -259,6 +280,11 @@ export default function MessageInput({
           )}
         </span>
       </div>
+
+      <UploadDialog
+        open={uploadDialogOpen}
+        onOpenChange={setUploadDialogOpen}
+      />
     </Tabs>
   );
 }

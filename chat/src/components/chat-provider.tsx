@@ -47,6 +47,7 @@ interface ChatContextValue {
   loading: boolean;
   serverStatus: ServerStatus;
   sendMessage: (message: string, type?: MessageType) => void;
+  uploadFiles: (formData: FormData) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -268,6 +269,48 @@ export function ChatProvider({ children }: PropsWithChildren) {
     }
   };
 
+  // Upload files to workspace
+  const uploadFiles = async (formData: FormData) => {
+    try{
+      const response = await fetch(`${agentAPIUrl}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Failed to send message:", errorData);
+        const detail = errorData.detail;
+        const messages =
+          "errors" in errorData
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            errorData.errors.map((e: any) => e.message).join(", ")
+            : "";
+
+        const fullDetail = `${detail}: ${messages}`;
+        toast.error(`Failed to upload files`, {
+          description: fullDetail,
+        });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      console.error("Error uploading files:", error);
+      const detail = error.detail;
+      const messages =
+        "errors" in error
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          error.errors.map((e: any) => e.message).join("\n")
+          : "";
+
+      const fullDetail = `${detail}: ${messages}`;
+
+      toast.error(`Error uploading files`, {
+        description: fullDetail,
+      });
+    }
+  }
+
+
   return (
     <ChatContext.Provider
       value={{
@@ -275,6 +318,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
         loading,
         sendMessage,
         serverStatus,
+        uploadFiles,
       }}
     >
       {children}
