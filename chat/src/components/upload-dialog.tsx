@@ -9,7 +9,7 @@ import JSZip from "jszip";
 import { useChat } from "@/components/chat-provider";
 import {toast} from "sonner";
 import {Checkbox} from "@/components/ui/checkbox";
-import path from "node:path";
+import path from "path";
 
 interface UploadDialogProps {
   open: boolean
