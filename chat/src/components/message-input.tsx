@@ -284,6 +284,7 @@ export default function MessageInput({
       <UploadDialog
         open={uploadDialogOpen}
         onOpenChange={setUploadDialogOpen}
+        setMessage={setMessage}
       />
     </Tabs>
   );

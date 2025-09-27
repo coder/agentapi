@@ -47,7 +47,7 @@ interface ChatContextValue {
   loading: boolean;
   serverStatus: ServerStatus;
   sendMessage: (message: string, type?: MessageType) => void;
-  uploadFiles: (formData: FormData) => void;
+  uploadFiles: (formData: FormData) => Promise<boolean>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -270,7 +270,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
   };
 
   // Upload files to workspace
-  const uploadFiles = async (formData: FormData) => {
+  const uploadFiles = async (formData: FormData): Promise<boolean> => {
+    let success = true;
     try{
       const response = await fetch(`${agentAPIUrl}/upload`, {
         method: 'POST',
@@ -278,6 +279,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
+        success = false;
         const errorData = await response.json();
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
@@ -294,6 +296,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
+      success = false;
       console.error("Error uploading files:", error);
       const detail = error.detail;
       const messages =
@@ -308,6 +311,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
         description: fullDetail,
       });
     }
+    return success;
   }
 
 

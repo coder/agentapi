@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, MouseEvent } from "react"
+import {useState, MouseEvent, Dispatch, SetStateAction, useRef} from "react"
 import { useDropzone } from "react-dropzone"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
@@ -8,23 +8,35 @@ import { Upload, X } from "lucide-react"
 import JSZip from "jszip";
 import { useChat } from "@/components/chat-provider";
 import {toast} from "sonner";
+import {Checkbox} from "@/components/ui/checkbox";
+import path from "node:path";
 
 interface UploadDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  setMessage: Dispatch<SetStateAction<string>>
 }
 
-export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
+export function UploadDialog({ open, onOpenChange, setMessage }: UploadDialogProps) {
   const [uploadPath, setUploadPath] = useState("")
-
   const {uploadFiles} = useChat();
-
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+  const filePathsToAppend = useRef<Set<string>>(new Set([]));
+  const [disableUploadPath, setDisableUploadPath] = useState(false);
 
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDropAccepted: (files: File[]) => {
-      setFilesToUpload((oldFiles) => [...oldFiles, ...files]);
+      setFilesToUpload((oldFiles) => {
+        const updatedFiles = oldFiles;
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
+        const oldSet = new Set<string>(oldFiles.map((f) => f.relativePath));
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
+        files.forEach(file => oldSet.has(file.relativePath) ? {} : updatedFiles.push(file))
+        return updatedFiles;
+      });
     }
   })
 
@@ -32,12 +44,18 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
     if (open !== undefined && open) {
       return
     }
+
+    filePathsToAppend.current = new Set<string>([]);
+    setUploadPath("")
     setFilesToUpload([]);
+    setDisableUploadPath(false);
     onOpenChange(false)
   }
 
   const handleFilesUpload = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault()
+    let success = true;
+    setDisableUploadPath(true);
 
     try {
       // Create a new JSZip instance
@@ -66,13 +84,22 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
       formData.append('uploadPath', uploadPath);
 
       // Upload to agent API
-      uploadFiles(formData)
+      success = await uploadFiles(formData)
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
+      success = false;
       toast.error("Failed to zip and upload files:", {
         description: error.message,
       });
+    }
+    if (success) {
+      for (const filePath of filePathsToAppend.current) {
+        setMessage(oldMessage =>  oldMessage + ' @"' + path.join(uploadPath, filePath) + '"');
+      }
+      cleanup()
+    } else {
+      setDisableUploadPath(false);
     }
   }
 
@@ -106,6 +133,7 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
               onChange={(e) => setUploadPath(e.target.value)}
               className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
               placeholder="Enter upload path..."
+              disabled={disableUploadPath}
             />
           </div>
 
@@ -131,7 +159,7 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
 
           {filesToUpload.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium">Selected Files:</h4>
+              <h4 className="text-sm font-medium">Selected Files (select the checkbox to append @filepath to message)</h4>
               <div className="space-y-1 max-h-32 overflow-y-auto">
                 {filesToUpload.map((file, index) => (
                   <div
@@ -141,14 +169,28 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
                     {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
                     {/*// @ts-expect-error*/}
                     <span className="truncate">{file.relativePath}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => removeFile(file)}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+                    <div className="flex items-center justify-between gap-2">
+                      <Checkbox onCheckedChange={(checked: boolean) => {
+                        if (checked) {
+                          {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+                          {/*// @ts-expect-error*/}
+                          filePathsToAppend.current.add(file.relativePath)
+                        } else {
+                          {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+                          {/*// @ts-expect-error*/}
+                          filePathsToAppend.current.delete(file.relativePath)
+                        }
+                      }}/>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => removeFile(file)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+
                   </div>
                 ))}
               </div>
