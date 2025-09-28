@@ -18,7 +18,15 @@ interface MessageListProps {
   messages: (Message | DraftMessage)[];
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+interface ProcessedMessageProps {
+  messageContent: string;
+  index: number;
+  modifierPressed: boolean;
+  urlRegex: RegExp;
+  handleClick: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
+}
+
+export default function MessageList({messages}: MessageListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   // Avoid the message list to change its height all the time. It causes some
   // flickering in the screen because some messages, as the ones displaying
@@ -34,7 +42,7 @@ export default function MessageList({ messages }: MessageListProps) {
 
   const checkIfAtBottom = useCallback(() => {
     if (!scrollAreaRef.current) return false;
-    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
+    const {scrollTop, scrollHeight, clientHeight} = scrollAreaRef.current;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
   }, []);
 
@@ -117,39 +125,13 @@ export default function MessageList({ messages }: MessageListProps) {
     lastScrollHeightRef.current = currentScrollHeight;
   }, [messages]);
 
-  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+  const handleClick = useCallback(() => (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     if (e.metaKey || e.ctrlKey) {
       window.open(url, "_blank");
     } else {
       e.preventDefault(); // disable normal click to emulate terminal behaviour
     }
-  };
-
-  const buildClickableLinks = useCallback((message: string, msg_index: number) => {
-    const linkedContent = message.split(urlRegex).map((content, index) => {
-      if (urlRegex.test(content)) {
-        return (
-          <a
-            key={`${msg_index}-${index}`}
-            href={content}
-            onClick={(e) => handleClick(e, content)}
-            className={`${
-              modifierPressed ? "hover:underline cursor-pointer" : "cursor-default"
-            }`}
-          >
-            {content}
-          </a>
-        );
-      }
-      return <span key={`${msg_index}-${index}`}>{content}</span>;
-    })
-
-    return <>
-      {linkedContent}
-    </>
-  }, [modifierPressed, urlRegex])
-
-
+  }, []);
 
   // If no messages, show a placeholder
   if (messages.length === 0) {
@@ -164,7 +146,7 @@ export default function MessageList({ messages }: MessageListProps) {
     <div className="overflow-y-auto flex-1" ref={scrollAreaRef}>
       <div
         className="p-4 flex flex-col gap-4 max-w-4xl mx-auto"
-        style={{ minHeight: contentMinHeight.current }}
+        style={{minHeight: contentMinHeight.current}}
       >
         {messages.map((message, index) => (
           <div
@@ -184,9 +166,15 @@ export default function MessageList({ messages }: MessageListProps) {
                 }`}
               >
                 {message.role !== "user" && message.content === "" ? (
-                  <LoadingDots />
+                  <LoadingDots/>
                 ) : (
-                  buildClickableLinks(message.content.trimEnd(), index)
+                  <ProcessedMessage
+                    messageContent={message.content}
+                    index={index}
+                    modifierPressed={modifierPressed}
+                    urlRegex={urlRegex}
+                    handleClick={handleClick}
+                  />
                 )}
               </div>
             </div>
@@ -214,3 +202,34 @@ const LoadingDots = () => (
     <span className="sr-only">Loading...</span>
   </div>
 );
+
+
+const ProcessedMessage = React.memo(function ProcessedMessage({
+                                                                messageContent,
+                                                                index,
+                                                                modifierPressed,
+                                                                urlRegex,
+                                                                handleClick
+                                                              }: ProcessedMessageProps) {
+  const linkedContent = useMemo(() => {
+    return messageContent.split(urlRegex).map((content, idx) => {
+      if (urlRegex.test(content)) {
+        return (
+          <a
+            key={`${index}-${idx}`}
+            href={content}
+            onClick={(e) => handleClick(e, content)}
+            className={`${
+              modifierPressed ? "hover:underline cursor-pointer" : "cursor-default"
+            }`}
+          >
+            {content}
+          </a>
+        );
+      }
+      return <span key={`${index}-${idx}`}>{content}</span>;
+    });
+  }, [handleClick, index, messageContent, modifierPressed, urlRegex]);
+
+  return <>{linkedContent}</>;
+});
