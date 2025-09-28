@@ -3,8 +3,8 @@
     "schemas": {
       "AgentStatus": {
         "enum": [
-          "stable",
-          "running"
+          "running",
+          "stable"
         ],
         "examples": [
           "stable"
@@ -14,8 +14,8 @@
       },
       "ConversationRole": {
         "enum": [
-          "user",
-          "agent"
+          "agent",
+          "user"
         ],
         "examples": [
           "user"
@@ -130,8 +130,8 @@
           }
         },
         "required": [
-          "id",
           "content",
+          "id",
           "role",
           "time"
         ],
@@ -191,8 +191,8 @@
       },
       "MessageType": {
         "enum": [
-          "user",
-          "raw"
+          "raw",
+          "user"
         ],
         "examples": [
           "user"
@@ -224,8 +224,8 @@
         },
         "required": [
           "id",
-          "role",
           "message",
+          "role",
           "time"
         ],
         "type": "object"
