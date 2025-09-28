@@ -55,9 +55,6 @@ func TestOpenAPISchema(t *testing.T) {
 		t.Fatalf("failed to unmarshal disk schema: %s", err)
 	}
 
-	srv.NormalizeSchema(&currentSchema)
-	srv.NormalizeSchema(&diskSchema)
-
 	require.Equal(t, currentSchema, diskSchema)
 }
 
