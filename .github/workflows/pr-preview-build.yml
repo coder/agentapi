@@ -48,7 +48,6 @@ jobs:
           done
 
       - name: Upload Build Artifact
-        if: ${{ inputs.create-artifact }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: agentapi-build
@@ -59,7 +58,7 @@ jobs:
         if: ${{ github.event.action != 'closed' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: 'agentapi_'${{ github.event.pull_request.number }}
+          RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
 
         run: gh release upload "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* --clobber
 
@@ -67,5 +66,5 @@ jobs:
         if: ${{ github.event.action == 'closed' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: 'agentapi_'${{ github.event.pull_request.number }}
+          RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
         run: gh release delete "$RELEASE_TAG" --cleanup-tag --yes
