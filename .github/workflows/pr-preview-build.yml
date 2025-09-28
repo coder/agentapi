@@ -7,7 +7,6 @@ jobs:
   build:
     name: Build Release Binaries
     runs-on: depot-ubuntu-22.04-4
-    if: ${{ github.repository_owner == 'coder' }}
 
     steps:
       - uses: actions/checkout@v4
