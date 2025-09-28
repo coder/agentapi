@@ -69,7 +69,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: 'agentapi_'${{ github.event.pull_request.number }}
-        run: |
-          TAG="agentapi_${PR_NUMBER}"
-          echo "Deleting release and tag $TAG..."
-          gh release delete "$RELEASE_TAG" --cleanup-tag --yes
+        run: gh release delete "$RELEASE_TAG" --cleanup-tag --yes
