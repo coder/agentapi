@@ -1,8 +1,8 @@
 name: PR Preview Build Release Binaries
 
 on:
-  pull_request:
-
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   build:
