@@ -38,7 +38,6 @@ jobs:
 
 
       - name: Create or Update PR Release
-        if: ${{ github.event.action != 'closed' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
