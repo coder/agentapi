@@ -1,4 +1,4 @@
-name: PR Preview Build Release Binaries
+name: PR Preview Release Binaries
 
 on:
   pull_request:
@@ -29,7 +29,7 @@ jobs:
           make gen
           ./check_unstaged.sh
 
-      - name: Build and Upload
+      - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -52,7 +52,7 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: agentapi-build
+          name: agentapi-preview-build
           path: ${{ github.workspace }}/out
           retention-days: 7
 
