@@ -3,13 +3,13 @@ name: PR Preview Build Release Binaries
 on:
   pull_request:
 
-permissions:
-  contents: write
 
 jobs:
   build:
     name: Build Release Binaries
     runs-on: depot-ubuntu-22.04-4
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
