@@ -3,6 +3,9 @@ name: PR Preview Build Release Binaries
 on:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Release Binaries
