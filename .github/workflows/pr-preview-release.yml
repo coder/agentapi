@@ -51,7 +51,8 @@ jobs:
             echo "Creating release $RELEASE_TAG"
             gh release create "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* \
               --title "$RELEASE_TAG" \
-              --notes "Preview release for PR #${PR_NUMBER}"
+              --notes "Preview release for PR #${PR_NUMBER}" \
+              --draft --latest=false
           fi
 
       - name: Comment on PR
