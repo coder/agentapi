@@ -63,7 +63,7 @@ jobs:
         run: |
 
           # Check if release exists
-          if gh release view "$TAG" &>/dev/null; then
+          if gh release view "$RELEASE_TAG" &>/dev/null; then
             echo "Updating release $RELEASE_TAG"
             gh release upload "$RELEASE_TAG" out/* --clobber
           else
