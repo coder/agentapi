@@ -42,12 +42,17 @@ type MessageType = "user" | "raw";
 
 export type ServerStatus = "stable" | "running" | "offline" | "unknown";
 
+export interface FileUploadResponse {
+  ok: boolean;
+  filePath?: string;
+}
+
 interface ChatContextValue {
   messages: (Message | DraftMessage)[];
   loading: boolean;
   serverStatus: ServerStatus;
   sendMessage: (message: string, type?: MessageType) => void;
-  uploadFiles: (formData: FormData) => Promise<boolean>;
+  uploadFiles: (formData: FormData) => Promise<FileUploadResponse>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -270,8 +275,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
   };
 
   // Upload files to workspace
-  const uploadFiles = async (formData: FormData): Promise<boolean> => {
-    let success = true;
+  const uploadFiles = async (formData: FormData): Promise<FileUploadResponse> => {
+    let result: FileUploadResponse = {ok: true};
     try{
       const response = await fetch(`${agentAPIUrl}/upload`, {
         method: 'POST',
@@ -279,7 +284,7 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
-        success = false;
+        result.ok = false;
         const errorData = await response.json();
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
@@ -293,10 +298,12 @@ export function ChatProvider({ children }: PropsWithChildren) {
         toast.error(`Failed to upload files`, {
           description: fullDetail,
         });
+      } else {
+        result = (await response.json()) as FileUploadResponse;
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      success = false;
+      result.ok = false;
       console.error("Error uploading files:", error);
       const detail = error.detail;
       const messages =
@@ -311,9 +318,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
         description: fullDetail,
       });
     }
-    return success;
+    return result;
   }
-
 
   return (
     <ChatContext.Provider
