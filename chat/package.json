@@ -44,5 +44,5 @@
     "start": "next start",
     "storybook": "storybook dev -p 6006"
   },
-  "version": "0.7.1"
+  "version": "0.8.0"
 }
