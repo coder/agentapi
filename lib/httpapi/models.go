@@ -65,11 +65,11 @@ type MessageResponse struct {
 
 type UploadResponse struct {
 	Body struct {
-		Ok bool `json:"ok" doc:"Indicates whether the files were uploaded successfully."`
+		Ok       bool   `json:"ok" doc:"Indicates whether the files were uploaded successfully."`
+		FilePath string `json:"filePath" doc:"Path of the file"`
 	}
 }
 
 type UploadRequest struct {
-	UploadPath string        `form:"uploadPath" required:"true" doc:"location where all the files in the zip will be extracted to."`
-	Files      huma.FormFile `form:"file" contentType:"application/zip" required:"true" doc:"zip of all the files that needs to be uploaded"`
+	File huma.FormFile `form:"file" required:"true" doc:"file that needs to be uploaded"`
 }

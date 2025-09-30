@@ -314,12 +314,17 @@
             "readOnly": true,
             "type": "string"
           },
+          "filePath": {
+            "description": "Path of the file",
+            "type": "string"
+          },
           "ok": {
             "description": "Indicates whether the files were uploaded successfully.",
             "type": "boolean"
           }
         },
         "required": [
+          "filePath",
           "ok"
         ],
         "type": "object"
@@ -527,10 +532,7 @@
             "multipart/form-data": {
               "encoding": {
                 "file": {
-                  "contentType": "application/zip"
-                },
-                "uploadPath": {
-                  "contentType": "text/plain"
+                  "contentType": "application/octet-stream"
                 }
               },
               "schema": {
@@ -538,17 +540,12 @@
                   "file": {
                     "contentEncoding": "binary",
                     "contentMediaType": "application/octet-stream",
-                    "description": "zip of all the files that needs to be uploaded",
+                    "description": "file that needs to be uploaded",
                     "format": "binary",
-                    "type": "string"
-                  },
-                  "uploadPath": {
-                    "description": "location where all the files in the zip will be extracted to.",
                     "type": "string"
                   }
                 },
                 "required": [
-                  "uploadPath",
                   "file"
                 ],
                 "type": "object"
