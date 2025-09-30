@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo, useState} from "react";
+import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo} from "react";
 
 interface Message {
   role: string;
