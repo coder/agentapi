@@ -21,9 +21,6 @@ interface MessageListProps {
 interface ProcessedMessageProps {
   messageContent: string;
   index: number;
-  modifierPressed: boolean;
-  urlRegex: RegExp;
-  handleClick: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
 }
 
 export default function MessageList({messages}: MessageListProps) {
@@ -46,20 +43,14 @@ export default function MessageList({messages}: MessageListProps) {
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
   }, []);
 
-  // Regex to find URLs
-  // https://stackoverflow.com/a/17773849
-  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
-
-  const [modifierPressed, setModifierPressed] = useState(false);
-
   // Track Ctrl (Windows/Linux) or Cmd (Mac) key state
   // This is so that underline is only visible when hover + cmd/ctrl
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) setModifierPressed(true);
+      if (e.ctrlKey || e.metaKey) document.documentElement.classList.add('modifier-pressed');
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (!e.ctrlKey && !e.metaKey) setModifierPressed(false);
+      if (!e.ctrlKey && !e.metaKey) document.documentElement.classList.remove('modifier-pressed');
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -68,6 +59,8 @@ export default function MessageList({messages}: MessageListProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      document.documentElement.classList.remove('modifier-pressed');
+
     };
   }, []);
 
@@ -125,14 +118,6 @@ export default function MessageList({messages}: MessageListProps) {
     lastScrollHeightRef.current = currentScrollHeight;
   }, [messages]);
 
-  const handleClick = useCallback(() => (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
-    if (e.metaKey || e.ctrlKey) {
-      window.open(url, "_blank");
-    } else {
-      e.preventDefault(); // disable normal click to emulate terminal behaviour
-    }
-  }, []);
-
   // If no messages, show a placeholder
   if (messages.length === 0) {
     return (
@@ -171,9 +156,6 @@ export default function MessageList({messages}: MessageListProps) {
                   <ProcessedMessage
                     messageContent={message.content}
                     index={index}
-                    modifierPressed={modifierPressed}
-                    urlRegex={urlRegex}
-                    handleClick={handleClick}
                   />
                 )}
               </div>
@@ -207,21 +189,29 @@ const LoadingDots = () => (
 const ProcessedMessage = React.memo(function ProcessedMessage({
                                                                 messageContent,
                                                                 index,
-                                                                modifierPressed,
-                                                                urlRegex,
-                                                                handleClick
                                                               }: ProcessedMessageProps) {
+  // Regex to find URLs
+  // https://stackoverflow.com/a/17773849
+  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (e.metaKey || e.ctrlKey) {
+      window.open(url, "_blank");
+    } else {
+      e.preventDefault(); // disable normal click to emulate terminal behaviour
+    }
+  }
+
   const linkedContent = useMemo(() => {
     return messageContent.split(urlRegex).map((content, idx) => {
+      console.log(content)
       if (urlRegex.test(content)) {
         return (
           <a
             key={`${index}-${idx}`}
             href={content}
             onClick={(e) => handleClick(e, content)}
-            className={`${
-              modifierPressed ? "hover:underline cursor-pointer" : "cursor-default"
-            }`}
+            className="cursor-default [.modifier-pressed_&]:hover:underline [.modifier-pressed_&]:hover:cursor-pointer"
           >
             {content}
           </a>
@@ -229,7 +219,7 @@ const ProcessedMessage = React.memo(function ProcessedMessage({
       }
       return <span key={`${index}-${idx}`}>{content}</span>;
     });
-  }, [handleClick, index, messageContent, modifierPressed, urlRegex]);
+  }, [index, messageContent, urlRegex]);
 
   return <>{linkedContent}</>;
 });
