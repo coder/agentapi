@@ -1,0 +1,69 @@
+name: PR Preview Release
+
+on:
+  workflow_run:
+    workflows: ["PR Preview Build"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Download PR number
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-number
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Read PR number
+        id: pr
+        run: echo "number=$(cat number)" >> $GITHUB_OUTPUT
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: agentapi-build-${{ steps.pr.outputs.number }}
+          path: ./out
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+
+      - name: Create or Update PR Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
+
+        run: |
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" &>/dev/null; then
+            echo "Updating release $RELEASE_TAG"
+            gh release upload "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* --clobber
+          else
+            echo "Creating release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* \
+              --title "$RELEASE_TAG" \
+              --notes "Preview release for PR #${PR_NUMBER}" \
+              --draft --latest=false
+          fi
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr.outputs.number }};
+            const releaseTag = `agentapi_${prNumber}`;
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ Preview binaries are ready!\n\nTo test with modules: \`\`\`agentapi: ${prNumber}\`\`\` or download from: ${repoUrl}/releases/tag/${releaseTag}`
+            });

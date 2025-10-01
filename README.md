@@ -1,6 +1,6 @@
 # AgentAPI
 
-Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
+Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [GitHub Copilot](https://github.com/github/copilot-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
 
 ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
 
@@ -65,7 +65,7 @@ agentapi server -- goose
 ```
 
 > [!NOTE]
-> When using Codex, Opencode, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+> When using Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
 
 An OpenAPI schema is available in [openapi.json](openapi.json).
 

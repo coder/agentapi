@@ -3,13 +3,11 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
 	"testing"
 
 	"github.com/coder/agentapi/lib/httpapi"
@@ -18,28 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func normalizeSchema(t *testing.T, schema any) any {
-	t.Helper()
-	switch val := (schema).(type) {
-	case *any:
-		normalizeSchema(t, *val)
-	case []any:
-		for i := range val {
-			normalizeSchema(t, &val[i])
-		}
-		sort.SliceStable(val, func(i, j int) bool {
-			return fmt.Sprintf("%v", val[i]) < fmt.Sprintf("%v", val[j])
-		})
-	case map[string]any:
-		for k := range val {
-			valUnderKey := val[k]
-			normalizeSchema(t, &valUnderKey)
-			val[k] = valUnderKey
-		}
-	}
-	return schema
-}
 
 // Ensure the OpenAPI schema on disk is up to date.
 // To update the schema, run `go run main.go server --print-openapi dummy > openapi.json`.
@@ -78,9 +54,6 @@ func TestOpenAPISchema(t *testing.T) {
 	if err := json.Unmarshal(diskSchemaBytes, &diskSchema); err != nil {
 		t.Fatalf("failed to unmarshal disk schema: %s", err)
 	}
-
-	normalizeSchema(t, &currentSchema)
-	normalizeSchema(t, &diskSchema)
 
 	require.Equal(t, currentSchema, diskSchema)
 }

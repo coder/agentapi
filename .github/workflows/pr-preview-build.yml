@@ -1,0 +1,68 @@
+name: PR Preview Release Binaries
+
+on:
+  pull_request:
+
+jobs:
+  build:
+    name: Build Release Binaries
+    runs-on: depot-ubuntu-22.04-4
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Chat Dependencies
+        run: cd chat && bun install
+
+      - name: Run make gen and check for unstaged changes
+        run: |
+          make gen
+          ./check_unstaged.sh
+
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          build_variants=(
+            "linux amd64 agentapi-linux-amd64"
+            "linux arm64 agentapi-linux-arm64"
+            "darwin amd64 agentapi-darwin-amd64"
+            "darwin arm64 agentapi-darwin-arm64"
+            "windows amd64 agentapi-windows-amd64.exe"
+          )
+          
+          for variant in "${build_variants[@]}"; do
+            read -r goos goarch artifact_name <<< "$variant"
+          
+            echo "Building for GOOS=$goos GOARCH=$goarch..."
+            CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch BINPATH="out/$artifact_name" make build
+          done
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agentapi-preview-build
+          path: ${{ github.workspace }}/out
+          retention-days: 7
+
+      - name: Save PR number
+        run: |
+          mkdir -p ./pr
+          echo ${{ github.event.pull_request.number }} > ./pr/number
+
+      - name: Upload PR number
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr-number
+          path: pr/

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.0
+
+### Features
+- Add Support for GitHub Copilot
+- Fix inconsistent openapi generation
+
 ## v0.7.1
 
 ### Fixes
