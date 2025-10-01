@@ -41,7 +41,6 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   RELEASE_TAG: "agentapi_${{ steps.pr.outputs.number }}"
                   PR_NUMBER: ${{ steps.pr.outputs.number }}
-
               run: |
                   # Check if release exists
                   if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} &>/dev/null; then
@@ -52,7 +51,9 @@ jobs:
                     gh release create "$RELEASE_TAG" ./out/* \
                       --title "$RELEASE_TAG" \
                       --notes "Preview release for PR #${PR_NUMBER}" \
-                      --repo ${{ github.repository }}
+                      --repo ${{ github.repository }} \
+                      --latest=false \
+                      --prerelease
                   fi
 
             - name: Comment on PR
@@ -66,5 +67,5 @@ jobs:
                         issue_number: prNumber,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        body: `✅ Preview binaries are ready!\n\nTo test with modules: \`\`\`agentapi: ${prNumber}\`\`\` or download from: ${repoUrl}/releases/tag/${releaseTag}`
+                        body: `✅ Preview binaries are ready!\n\nTo test with modules: \`\`\`agentapi_version = "agentapi_${prNumber}"\`\`\` or download from: ${repoUrl}/releases/tag/${releaseTag}`
                       });
