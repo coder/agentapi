@@ -188,7 +188,7 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
 	// Skip Gemini/Cursor trailing input box line
-	if agentType == AgentTypeGemini {
+	if agentType == AgentTypeGemini || agentType == AgentTypeCopilot {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
 			lastUserInputLineIdx = idx
 		}
@@ -237,6 +237,7 @@ const (
 	AgentTypeAider    AgentType = "aider"
 	AgentTypeCodex    AgentType = "codex"
 	AgentTypeGemini   AgentType = "gemini"
+	AgentTypeCopilot  AgentType = "copilot"
 	AgentTypeAmp      AgentType = "amp"
 	AgentTypeCursor   AgentType = "cursor"
 	AgentTypeAuggie   AgentType = "auggie"
@@ -277,6 +278,8 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeCodex:
 		return formatCodexMessage(message, userInput)
 	case AgentTypeGemini:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeCopilot:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAmp:
 		return formatGenericMessage(message, userInput, agentType)

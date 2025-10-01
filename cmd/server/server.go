@@ -29,6 +29,7 @@ const (
 	AgentTypeAider    AgentType = msgfmt.AgentTypeAider
 	AgentTypeCodex    AgentType = msgfmt.AgentTypeCodex
 	AgentTypeGemini   AgentType = msgfmt.AgentTypeGemini
+	AgentTypeCopilot  AgentType = msgfmt.AgentTypeCopilot
 	AgentTypeAmp      AgentType = msgfmt.AgentTypeAmp
 	AgentTypeCursor   AgentType = msgfmt.AgentTypeCursor
 	AgentTypeAuggie   AgentType = msgfmt.AgentTypeAuggie
@@ -44,6 +45,7 @@ var agentTypeAliases = map[string]AgentType{
 	"aider":        AgentTypeAider,
 	"codex":        AgentTypeCodex,
 	"gemini":       AgentTypeGemini,
+	"copilot":      AgentTypeCopilot,
 	"amp":          AgentTypeAmp,
 	"auggie":       AgentTypeAuggie,
 	"cursor":       AgentTypeCursor,

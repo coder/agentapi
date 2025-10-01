@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -37,6 +38,27 @@ type Server struct {
 	AgentHandler AgentHandler
 }
 
+func (s *Server) NormalizeSchema(schema any) any {
+	switch val := (schema).(type) {
+	case *any:
+		s.NormalizeSchema(*val)
+	case []any:
+		for i := range val {
+			s.NormalizeSchema(&val[i])
+		}
+		sort.SliceStable(val, func(i, j int) bool {
+			return fmt.Sprintf("%v", val[i]) < fmt.Sprintf("%v", val[j])
+		})
+	case map[string]any:
+		for k := range val {
+			valUnderKey := val[k]
+			s.NormalizeSchema(&valUnderKey)
+			val[k] = valUnderKey
+		}
+	}
+	return schema
+}
+
 func (s *Server) GetOpenAPI() string {
 	jsonBytes, err := s.api.OpenAPI().MarshalJSON()
 	if err != nil {
@@ -47,7 +69,11 @@ func (s *Server) GetOpenAPI() string {
 	if err := json.Unmarshal(jsonBytes, &jsonObj); err != nil {
 		return ""
 	}
-	prettyJSON, err := json.MarshalIndent(jsonObj, "", "  ")
+
+	// Normalize
+	normalized := s.NormalizeSchema(jsonObj)
+
+	prettyJSON, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
 		return ""
 	}
