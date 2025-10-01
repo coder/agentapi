@@ -73,6 +73,7 @@ func (m model) View() string {
 }
 
 func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- types.ScreenUpdateBody) error {
+	fmt.Println(url)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -150,7 +151,7 @@ func runAttach(remoteUrl string) error {
 	readScreenErrCh := make(chan error, 1)
 	go func() {
 		defer close(readScreenErrCh)
-		if err := ReadScreenOverHTTP(ctx, remoteUrl+"/internal/conversation", screenCh); err != nil {
+		if err := ReadScreenOverHTTP(ctx, remoteUrl+"/internal/screen", screenCh); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -227,6 +228,7 @@ var AttachCmd = &cobra.Command{
 	Long:  `Attach to a running agent`,
 	Run: func(cmd *cobra.Command, args []string) {
 		remoteUrl := remoteUrlArg
+		fmt.Println(remoteUrl)
 		if remoteUrl == "" {
 			fmt.Fprintln(os.Stderr, "URL is required")
 			os.Exit(1)
