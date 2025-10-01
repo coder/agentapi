@@ -1,4 +1,4 @@
-name: PR Preview Release Binaries
+name: PR Preview Build
 
 on:
   pull_request:
