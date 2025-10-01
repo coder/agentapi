@@ -40,19 +40,20 @@ jobs:
       - name: Create or Update PR Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
+          RELEASE_TAG: 'agentapi_${{ steps.pr.outputs.number }}'
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
 
         run: |
           # Check if release exists
-          if gh release view "$RELEASE_TAG" &>/dev/null; then
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} &>/dev/null; then
             echo "Updating release $RELEASE_TAG"
-            gh release upload "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* --clobber
+            gh release upload "$RELEASE_TAG" ./out/* --clobber --repo ${{ github.repository }}
           else
             echo "Creating release $RELEASE_TAG"
-            gh release create "$RELEASE_TAG" "$GITHUB_WORKSPACE"/out/* \
+            gh release create "$RELEASE_TAG" ./out/* \
               --title "$RELEASE_TAG" \
               --notes "Preview release for PR #${PR_NUMBER}" \
-              --draft --latest=false
+              --repo ${{ github.repository }}
           fi
 
       - name: Comment on PR
