@@ -1,8 +1,8 @@
-package httpapi
+package cli
 
 import (
-	mf "github.com/coder/agentapi/lib/msgfmt"
-	st "github.com/coder/agentapi/lib/screentracker"
+	mf "github.com/coder/agentapi/lib/cli/msgfmt"
+	st "github.com/coder/agentapi/lib/cli/screentracker"
 )
 
 func formatPaste(message string) []st.MessagePart {

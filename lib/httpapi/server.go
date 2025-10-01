@@ -10,15 +10,14 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 	"unicode"
 
 	"github.com/coder/agentapi/internal/version"
+	"github.com/coder/agentapi/lib/cli"
+	"github.com/coder/agentapi/lib/cli/msgfmt"
+	"github.com/coder/agentapi/lib/cli/termexec"
 	"github.com/coder/agentapi/lib/logctx"
-	mf "github.com/coder/agentapi/lib/msgfmt"
-	st "github.com/coder/agentapi/lib/screentracker"
-	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/agentapi/lib/types"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -33,13 +32,10 @@ type Server struct {
 	api          huma.API
 	port         int
 	srv          *http.Server
-	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.Conversation
-	agentio      *termexec.Process
-	agentType    mf.AgentType
-	emitter      *EventEmitter
+	agentType    msgfmt.AgentType
 	chatBasePath string
+	AgentHandler AgentHandler
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -84,17 +80,14 @@ func (s *Server) GetOpenAPI() string {
 	return string(prettyJSON)
 }
 
-// That's about 40 frames per second. It's slightly less
-// because the action of taking a snapshot takes time too.
-const snapshotInterval = 25 * time.Millisecond
-
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
+	AgentType       msgfmt.AgentType
+	InteractionType types.InteractionType
+	Process         *termexec.Process
+	Port            int
+	ChatBasePath    string
+	AllowedHosts    []string
+	AllowedOrigins  []string
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -218,34 +211,28 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	humaConfig := huma.DefaultConfig("AgentAPI", version.Version)
 	humaConfig.Info.Description = "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi"
 	api := humachi.New(router, humaConfig)
-	formatMessage := func(message string, userInput string) string {
-		return mf.FormatAgentMessage(config.AgentType, message, userInput)
-	}
-	conversation := st.NewConversation(ctx, st.ConversationConfig{
-		AgentType: config.AgentType,
-		AgentIO:   config.Process,
-		GetTime: func() time.Time {
-			return time.Now()
-		},
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
-	})
-	emitter := NewEventEmitter(1024)
 	s := &Server{
 		router:       router,
 		api:          api,
 		port:         config.Port,
-		conversation: conversation,
 		logger:       logger,
-		agentio:      config.Process,
 		agentType:    config.AgentType,
-		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
+	}
+
+	// Get the appropriate Interaction Handler
+	if config.InteractionType == types.InteractionTypeCLI {
+		s.AgentHandler = cli.NewCLIHandler(ctx, logger, config.Process, config.AgentType)
+	} else if config.InteractionType == types.InteractionTypeSDK {
+		// TODO add a SDKHandler for SDK
+	} else {
+		return nil, xerrors.Errorf("unknown interaction type %q", config.InteractionType)
 	}
 
 	// Register API routes
 	s.registerRoutes()
+
+	s.AgentHandler.StartSnapshotLoop(ctx)
 
 	return s, nil
 }
@@ -302,32 +289,20 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	next(ctx)
 }
 
-func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.StartSnapshotLoop(ctx)
-	go func() {
-		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
-			time.Sleep(snapshotInterval)
-		}
-	}()
-}
-
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
 	// GET /status endpoint
-	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
+	huma.Get(s.api, "/status", s.AgentHandler.GetStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
 	})
 
 	// GET /messages endpoint
-	huma.Get(s.api, "/messages", s.getMessages, func(o *huma.Operation) {
+	huma.Get(s.api, "/messages", s.AgentHandler.GetMessages, func(o *huma.Operation) {
 		o.Description = "Returns a list of messages representing the conversation history with the agent."
 	})
 
 	// POST /message endpoint
-	huma.Post(s.api, "/message", s.createMessage, func(o *huma.Operation) {
+	huma.Post(s.api, "/message", s.AgentHandler.CreateMessage, func(o *huma.Operation) {
 		o.Description = "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error."
 	})
 
@@ -341,9 +316,9 @@ func (s *Server) registerRoutes() {
 		Middlewares: []func(huma.Context, func(huma.Context)){sseMiddleware},
 	}, map[string]any{
 		// Mapping of event type name to Go struct for that event.
-		"message_update": MessageUpdateBody{},
-		"status_change":  StatusChangeBody{},
-	}, s.subscribeEvents)
+		"message_update": types.MessageUpdateBody{},
+		"status_change":  types.StatusChangeBody{},
+	}, s.AgentHandler.SubscribeEvents)
 
 	sse.Register(s.api, huma.Operation{
 		OperationID: "subscribeScreen",
@@ -353,138 +328,13 @@ func (s *Server) registerRoutes() {
 		Hidden:      true,
 		Middlewares: []func(huma.Context, func(huma.Context)){sseMiddleware},
 	}, map[string]any{
-		"screen": ScreenUpdateBody{},
-	}, s.subscribeScreen)
+		"screen": types.ScreenUpdateBody{},
+	}, s.AgentHandler.SubscribeConversations)
 
 	s.router.Handle("/", http.HandlerFunc(s.redirectToChat))
 
 	// Serve static files for the chat interface under /chat
 	s.registerStaticFileRoutes()
-}
-
-// getStatus handles GET /status
-func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	status := s.conversation.Status()
-	agentStatus := convertStatus(status)
-
-	resp := &StatusResponse{}
-	resp.Body.Status = agentStatus
-
-	return resp, nil
-}
-
-// getMessages handles GET /messages
-func (s *Server) getMessages(ctx context.Context, input *struct{}) (*MessagesResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	resp := &MessagesResponse{}
-	resp.Body.Messages = make([]Message, len(s.conversation.Messages()))
-	for i, msg := range s.conversation.Messages() {
-		resp.Body.Messages[i] = Message{
-			Id:      msg.Id,
-			Role:    msg.Role,
-			Content: msg.Message,
-			Time:    msg.Time,
-		}
-	}
-
-	return resp, nil
-}
-
-// createMessage handles POST /message
-func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*MessageResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	switch input.Body.Type {
-	case MessageTypeUser:
-		if err := s.conversation.SendMessage(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
-			return nil, xerrors.Errorf("failed to send message: %w", err)
-		}
-	case MessageTypeRaw:
-		if _, err := s.agentio.Write([]byte(input.Body.Content)); err != nil {
-			return nil, xerrors.Errorf("failed to send message: %w", err)
-		}
-	}
-
-	resp := &MessageResponse{}
-	resp.Body.Ok = true
-
-	return resp, nil
-}
-
-// subscribeEvents is an SSE endpoint that sends events to the client
-func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.Sender) {
-	subscriberId, ch, stateEvents := s.emitter.Subscribe()
-	defer s.emitter.Unsubscribe(subscriberId)
-	s.logger.Info("New subscriber", "subscriberId", subscriberId)
-	for _, event := range stateEvents {
-		if event.Type == EventTypeScreenUpdate {
-			continue
-		}
-		if err := send.Data(event.Payload); err != nil {
-			s.logger.Error("Failed to send event", "subscriberId", subscriberId, "error", err)
-			return
-		}
-	}
-
-	for {
-		select {
-		case event, ok := <-ch:
-			if !ok {
-				s.logger.Info("Channel closed", "subscriberId", subscriberId)
-				return
-			}
-			if event.Type == EventTypeScreenUpdate {
-				continue
-			}
-			if err := send.Data(event.Payload); err != nil {
-				s.logger.Error("Failed to send event", "subscriberId", subscriberId, "error", err)
-				return
-			}
-		case <-ctx.Done():
-			s.logger.Info("Context done", "subscriberId", subscriberId)
-			return
-		}
-	}
-}
-
-func (s *Server) subscribeScreen(ctx context.Context, input *struct{}, send sse.Sender) {
-	subscriberId, ch, stateEvents := s.emitter.Subscribe()
-	defer s.emitter.Unsubscribe(subscriberId)
-	s.logger.Info("New screen subscriber", "subscriberId", subscriberId)
-	for _, event := range stateEvents {
-		if event.Type != EventTypeScreenUpdate {
-			continue
-		}
-		if err := send.Data(event.Payload); err != nil {
-			s.logger.Error("Failed to send screen event", "subscriberId", subscriberId, "error", err)
-			return
-		}
-	}
-	for {
-		select {
-		case event, ok := <-ch:
-			if !ok {
-				s.logger.Info("Screen channel closed", "subscriberId", subscriberId)
-				return
-			}
-			if event.Type != EventTypeScreenUpdate {
-				continue
-			}
-			if err := send.Data(event.Payload); err != nil {
-				s.logger.Error("Failed to send screen event", "subscriberId", subscriberId, "error", err)
-				return
-			}
-		case <-ctx.Done():
-			s.logger.Info("Screen context done", "subscriberId", subscriberId)
-			return
-		}
-	}
 }
 
 // Start starts the HTTP server

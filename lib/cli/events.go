@@ -1,15 +1,12 @@
-package httpapi
+package cli
 
 import (
-	"fmt"
 	"strings"
 	"sync"
-	"time"
 
-	mf "github.com/coder/agentapi/lib/msgfmt"
-	st "github.com/coder/agentapi/lib/screentracker"
-	"github.com/coder/agentapi/lib/util"
-	"github.com/danielgtaylor/huma/v2"
+	mf "github.com/coder/agentapi/lib/cli/msgfmt"
+	st "github.com/coder/agentapi/lib/cli/screentracker"
+	"github.com/coder/agentapi/lib/types"
 )
 
 type EventType string
@@ -20,37 +17,6 @@ const (
 	EventTypeScreenUpdate  EventType = "screen_update"
 )
 
-type AgentStatus string
-
-const (
-	AgentStatusRunning AgentStatus = "running"
-	AgentStatusStable  AgentStatus = "stable"
-)
-
-var AgentStatusValues = []AgentStatus{
-	AgentStatusStable,
-	AgentStatusRunning,
-}
-
-func (a AgentStatus) Schema(r huma.Registry) *huma.Schema {
-	return util.OpenAPISchema(r, "AgentStatus", AgentStatusValues)
-}
-
-type MessageUpdateBody struct {
-	Id      int                 `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
-	Role    st.ConversationRole `json:"role" doc:"Role of the message author"`
-	Message string              `json:"message" doc:"Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line."`
-	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
-}
-
-type StatusChangeBody struct {
-	Status AgentStatus `json:"status" doc:"Agent status"`
-}
-
-type ScreenUpdateBody struct {
-	Screen string `json:"screen"`
-}
-
 type Event struct {
 	Type    EventType
 	Payload any
@@ -58,25 +24,12 @@ type Event struct {
 
 type EventEmitter struct {
 	mu                  sync.Mutex
-	messages            []st.ConversationMessage
-	status              AgentStatus
+	messages            []types.ConversationMessage
+	status              types.AgentStatus
 	chans               map[int]chan Event
 	chanIdx             int
 	subscriptionBufSize int
 	screen              string
-}
-
-func convertStatus(status st.ConversationStatus) AgentStatus {
-	switch status {
-	case st.ConversationStatusInitializing:
-		return AgentStatusRunning
-	case st.ConversationStatusStable:
-		return AgentStatusStable
-	case st.ConversationStatusChanging:
-		return AgentStatusRunning
-	default:
-		panic(fmt.Sprintf("unknown conversation status: %s", status))
-	}
 }
 
 // subscriptionBufSize is the size of the buffer for each subscription.
@@ -87,8 +40,8 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 func NewEventEmitter(subscriptionBufSize int) *EventEmitter {
 	return &EventEmitter{
 		mu:                  sync.Mutex{},
-		messages:            make([]st.ConversationMessage, 0),
-		status:              AgentStatusRunning,
+		messages:            make([]types.ConversationMessage, 0),
+		status:              types.AgentStatusRunning,
 		chans:               make(map[int]chan Event),
 		chanIdx:             0,
 		subscriptionBufSize: subscriptionBufSize,
@@ -120,14 +73,14 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 
 // Assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
-func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.ConversationMessage) {
+func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []types.ConversationMessage) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	maxLength := max(len(e.messages), len(newMessages))
 	for i := range maxLength {
-		var oldMsg st.ConversationMessage
-		var newMsg st.ConversationMessage
+		var oldMsg types.ConversationMessage
+		var newMsg types.ConversationMessage
 		if i < len(e.messages) {
 			oldMsg = e.messages[i]
 		}
@@ -135,7 +88,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
-			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
+			e.notifyChannels(EventTypeMessageUpdate, types.MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,
 				Message: newMessages[i].Message,
@@ -156,7 +109,7 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus})
+	e.notifyChannels(EventTypeStatusChange, types.StatusChangeBody{Status: newAgentStatus})
 	e.status = newAgentStatus
 }
 
@@ -168,7 +121,7 @@ func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
 		return
 	}
 
-	e.notifyChannels(EventTypeScreenUpdate, ScreenUpdateBody{Screen: strings.TrimRight(newScreen, mf.WhiteSpaceChars)})
+	e.notifyChannels(EventTypeScreenUpdate, types.ScreenUpdateBody{Screen: strings.TrimRight(newScreen, mf.WhiteSpaceChars)})
 	e.screen = newScreen
 }
 
@@ -178,16 +131,16 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 	for _, msg := range e.messages {
 		events = append(events, Event{
 			Type:    EventTypeMessageUpdate,
-			Payload: MessageUpdateBody{Id: msg.Id, Role: msg.Role, Message: msg.Message, Time: msg.Time},
+			Payload: types.MessageUpdateBody{Id: msg.Id, Role: msg.Role, Message: msg.Message, Time: msg.Time},
 		})
 	}
 	events = append(events, Event{
 		Type:    EventTypeStatusChange,
-		Payload: StatusChangeBody{Status: e.status},
+		Payload: types.StatusChangeBody{Status: e.status},
 	})
 	events = append(events, Event{
 		Type:    EventTypeScreenUpdate,
-		Payload: ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
+		Payload: types.ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
 	})
 	return events
 }

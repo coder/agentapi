@@ -1,35 +1,13 @@
-package httpapi
+package types
 
-import (
-	"time"
-
-	st "github.com/coder/agentapi/lib/screentracker"
-	"github.com/coder/agentapi/lib/util"
-	"github.com/danielgtaylor/huma/v2"
-)
-
-type MessageType string
-
-const (
-	MessageTypeUser MessageType = "user"
-	MessageTypeRaw  MessageType = "raw"
-)
-
-var MessageTypeValues = []MessageType{
-	MessageTypeUser,
-	MessageTypeRaw,
-}
-
-func (m MessageType) Schema(r huma.Registry) *huma.Schema {
-	return util.OpenAPISchema(r, "MessageType", MessageTypeValues)
-}
+import "time"
 
 // Message represents a message
 type Message struct {
-	Id      int                 `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
-	Content string              `json:"content" example:"Hello world" doc:"Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line."`
-	Role    st.ConversationRole `json:"role" doc:"Role of the message author"`
-	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
+	Id      int              `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
+	Content string           `json:"content" example:"Hello world" doc:"Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line."`
+	Role    ConversationRole `json:"role" doc:"Role of the message author"`
+	Time    time.Time        `json:"time" doc:"Timestamp of the message"`
 }
 
 // StatusResponse represents the server status
@@ -61,4 +39,19 @@ type MessageResponse struct {
 	Body struct {
 		Ok bool `json:"ok" doc:"Indicates whether the message was sent successfully. For messages of type 'user', success means detecting that the agent began executing the task described. For messages of type 'raw', success means the keystrokes were sent to the terminal."`
 	}
+}
+
+type StatusChangeBody struct {
+	Status AgentStatus `json:"status" doc:"Agent status"`
+}
+
+type ScreenUpdateBody struct {
+	Screen string `json:"screen"`
+}
+
+type MessageUpdateBody struct {
+	Id      int              `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
+	Role    ConversationRole `json:"role" doc:"Role of the message author"`
+	Message string           `json:"message" doc:"Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line."`
+	Time    time.Time        `json:"time" doc:"Timestamp of the message"`
 }
