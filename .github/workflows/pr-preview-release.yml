@@ -62,6 +62,7 @@ jobs:
           script: |
             const prNumber = ${{ steps.pr.outputs.number }};
             const releaseTag = `agentapi_${prNumber}`;
+            const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
             github.rest.issues.createComment({
               issue_number: prNumber,
               owner: context.repo.owner,
