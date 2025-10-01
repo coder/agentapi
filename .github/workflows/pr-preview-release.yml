@@ -52,7 +52,8 @@ jobs:
                       --title "$RELEASE_TAG" \
                       --notes "Preview release for PR #${PR_NUMBER}" \
                       --repo ${{ github.repository }} \
-                      --latest=false --prerelease
+                      --latest=false \
+                      --prerelease
                   fi
 
             - name: Comment on PR
