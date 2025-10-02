@@ -29,17 +29,19 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router       chi.Router
-	api          huma.API
-	port         int
-	srv          *http.Server
-	mu           sync.RWMutex
-	logger       *slog.Logger
-	conversation *st.Conversation
-	agentio      *termexec.Process
-	agentType    mf.AgentType
-	emitter      *EventEmitter
-	chatBasePath string
+	router            chi.Router
+	api               huma.API
+	port              int
+	srv               *http.Server
+	mu                sync.RWMutex
+	logger            *slog.Logger
+	conversation      *st.Conversation
+	agentio           *termexec.Process
+	agentType         mf.AgentType
+	emitter           *EventEmitter
+	chatBasePath      string
+	initialPrompt     string
+	initialPromptSent bool
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -95,6 +97,7 @@ type ServerConfig struct {
 	ChatBasePath   string
 	AllowedHosts   []string
 	AllowedOrigins []string
+	InitialPrompt  string
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -233,15 +236,17 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	})
 	emitter := NewEventEmitter(1024)
 	s := &Server{
-		router:       router,
-		api:          api,
-		port:         config.Port,
-		conversation: conversation,
-		logger:       logger,
-		agentio:      config.Process,
-		agentType:    config.AgentType,
-		emitter:      emitter,
-		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
+		router:            router,
+		api:               api,
+		port:              config.Port,
+		conversation:      conversation,
+		logger:            logger,
+		agentio:           config.Process,
+		agentType:         config.AgentType,
+		emitter:           emitter,
+		chatBasePath:      strings.TrimSuffix(config.ChatBasePath, "/"),
+		initialPrompt:     config.InitialPrompt,
+		initialPromptSent: len(config.InitialPrompt) == 0,
 	}
 
 	// Register API routes
@@ -306,7 +311,19 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
 		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
+			currentStatus := s.conversation.Status()
+
+			// Send initial prompt when agent becomes stable for the first time
+			if !s.initialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.initialPrompt)...); err != nil {
+					s.logger.Error("Failed to send initial prompt", "error", err)
+				} else {
+					s.initialPromptSent = true
+					currentStatus = st.ConversationStatusChanging
+					s.logger.Info("Initial prompt sent successfully")
+				}
+			}
+			s.emitter.UpdateStatusAndEmitChanges(currentStatus)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
