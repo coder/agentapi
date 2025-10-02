@@ -29,19 +29,17 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router            chi.Router
-	api               huma.API
-	port              int
-	srv               *http.Server
-	mu                sync.RWMutex
-	logger            *slog.Logger
-	conversation      *st.Conversation
-	agentio           *termexec.Process
-	agentType         mf.AgentType
-	emitter           *EventEmitter
-	chatBasePath      string
-	initialPrompt     string
-	initialPromptSent bool
+	router       chi.Router
+	api          huma.API
+	port         int
+	srv          *http.Server
+	mu           sync.RWMutex
+	logger       *slog.Logger
+	conversation *st.Conversation
+	agentio      *termexec.Process
+	agentType    mf.AgentType
+	emitter      *EventEmitter
+	chatBasePath string
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -233,20 +231,18 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
-	})
+	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
 	s := &Server{
-		router:            router,
-		api:               api,
-		port:              config.Port,
-		conversation:      conversation,
-		logger:            logger,
-		agentio:           config.Process,
-		agentType:         config.AgentType,
-		emitter:           emitter,
-		chatBasePath:      strings.TrimSuffix(config.ChatBasePath, "/"),
-		initialPrompt:     config.InitialPrompt,
-		initialPromptSent: len(config.InitialPrompt) == 0,
+		router:       router,
+		api:          api,
+		port:         config.Port,
+		conversation: conversation,
+		logger:       logger,
+		agentio:      config.Process,
+		agentType:    config.AgentType,
+		emitter:      emitter,
+		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 	}
 
 	// Register API routes
@@ -314,11 +310,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			currentStatus := s.conversation.Status()
 
 			// Send initial prompt when agent becomes stable for the first time
-			if !s.initialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.initialPrompt)...); err != nil {
+			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
-					s.initialPromptSent = true
+					s.conversation.InitialPromptSent = true
 					currentStatus = st.ConversationStatusChanging
 					s.logger.Info("Initial prompt sent successfully")
 				}
