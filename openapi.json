@@ -301,6 +301,33 @@
           "status"
         ],
         "type": "object"
+      },
+      "UploadResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/UploadResponseBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "filePath": {
+            "description": "Path of the file",
+            "type": "string"
+          },
+          "ok": {
+            "description": "Indicates whether the files were uploaded successfully.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "filePath",
+          "ok"
+        ],
+        "type": "object"
       }
     }
   },
@@ -494,6 +521,61 @@
           }
         },
         "summary": "Get status"
+      }
+    },
+    "/upload": {
+      "post": {
+        "description": "Upload files to the specified upload path.",
+        "operationId": "post-upload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "contentEncoding": "binary",
+                    "contentMediaType": "application/octet-stream",
+                    "description": "file that needs to be uploaded",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post upload"
       }
     }
   }
