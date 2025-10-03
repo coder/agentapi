@@ -19,6 +19,7 @@ import TextareaAutosize from "react-textarea-autosize";
 import {useChat} from "./chat-provider";
 import {DragDrop} from "./drag-drop";
 import {toast} from "sonner";
+import {getErrorMessage} from "@/lib/error-utils";
 
 interface MessageInputProps {
   onSendMessage: (message: string, type: "user" | "raw") => void;
@@ -80,10 +81,9 @@ export default function MessageInput({
         if (response.ok) {
           setMessage(oldMessage => oldMessage + ' @"' + response.filePath + '"');
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (error: any) {
+      } catch (error) {
         toast.error("Failed to and upload file:", {
-          description: error.message,
+          description: getErrorMessage(error),
         });
       }
     }

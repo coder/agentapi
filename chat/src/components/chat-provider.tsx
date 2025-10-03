@@ -10,6 +10,7 @@ import {
   useContext,
 } from "react";
 import { toast } from "sonner";
+import {getErrorMessage} from "@/lib/error-utils";
 
 interface Message {
   id: number;
@@ -32,6 +33,22 @@ interface MessageUpdateEvent {
 
 interface StatusChangeEvent {
   status: string;
+}
+
+interface APIErrorDetail {
+  location: string;
+  message: string;
+  value: null | string | number | boolean | object;
+}
+
+interface APIErrorModel {
+  $schema: string;
+  detail: string;
+  errors: APIErrorDetail[];
+  instance: string;
+  status: number;
+  title: string;
+  type: string;
 }
 
 function isDraftMessage(message: Message | DraftMessage): boolean {
@@ -235,13 +252,13 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as APIErrorModel;
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
         const messages =
           "errors" in errorData
-            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              errorData.errors.map((e: any) => e.message).join(", ")
+            ?
+              errorData.errors.map((e: APIErrorDetail) => e.message).join(", ")
             : "";
 
         const fullDetail = `${detail}: ${messages}`;
@@ -249,20 +266,13 @@ export function ChatProvider({ children }: PropsWithChildren) {
           description: fullDetail,
         });
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      console.error("Error sending message:", error);
-      const detail = error.detail;
-      const messages =
-        "errors" in error
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error.errors.map((e: any) => e.message).join("\n")
-          : "";
 
-      const fullDetail = `${detail}: ${messages}`;
+    } catch (error) {
+      console.error("Error sending message:", error);
+      const message = getErrorMessage(error)
 
       toast.error(`Error sending message`, {
-        description: fullDetail,
+        description: message,
       });
     } finally {
       if (type === "user") {
@@ -285,13 +295,13 @@ export function ChatProvider({ children }: PropsWithChildren) {
 
       if (!response.ok) {
         result.ok = false;
-        const errorData = await response.json();
+        const errorData = await response.json() as APIErrorModel;
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
         const messages =
           "errors" in errorData
-            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            errorData.errors.map((e: any) => e.message).join(", ")
+            ?
+            errorData.errors.map((e: APIErrorDetail) => e.message).join(", ")
             : "";
 
         const fullDetail = `${detail}: ${messages}`;
@@ -301,21 +311,14 @@ export function ChatProvider({ children }: PropsWithChildren) {
       } else {
         result = (await response.json()) as FileUploadResponse;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
+       
+    } catch (error) {
       result.ok = false;
       console.error("Error uploading files:", error);
-      const detail = error.detail;
-      const messages =
-        "errors" in error
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          error.errors.map((e: any) => e.message).join("\n")
-          : "";
-
-      const fullDetail = `${detail}: ${messages}`;
+      const message = getErrorMessage(error)
 
       toast.error(`Error uploading files`, {
-        description: fullDetail,
+        description: message,
       });
     }
     return result;
