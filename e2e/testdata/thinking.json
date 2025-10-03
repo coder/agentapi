@@ -1,0 +1,17 @@
+[
+  {
+    "expectMessage": "",
+    "thinkDurationMS": 1000,
+    "responseMessage": "Welcome! I'm an AI that enjoys pondering deep questions. Ask me anything!"
+  },
+  {
+    "expectMessage": "What is the answer to life, the universe, and everything?",
+    "thinkDurationMS": 0,
+    "responseMessage": "Gosh, I'll need some time to think about that..."
+  },
+  {
+    "expectMessage": "",
+    "thinkDurationMS": 2000,
+    "responseMessage": "42"
+  }
+]
