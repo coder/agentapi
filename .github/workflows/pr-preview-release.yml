@@ -37,6 +37,7 @@ jobs:
                   run-id: ${{ github.event.workflow_run.id }}
 
             - name: Create or Update PR Release
+              id: release
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   RELEASE_TAG: "agentapi_${{ steps.pr.outputs.number }}"
@@ -46,6 +47,7 @@ jobs:
                   if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} &>/dev/null; then
                     echo "Updating release $RELEASE_TAG"
                     gh release upload "$RELEASE_TAG" ./out/* --clobber --repo ${{ github.repository }}
+                    echo "should_comment=false" >> "${GITHUB_OUTPUT}"
                   else
                     echo "Creating release $RELEASE_TAG"
                     gh release create "$RELEASE_TAG" ./out/* \
@@ -54,24 +56,17 @@ jobs:
                       --repo ${{ github.repository }} \
                       --latest=false \
                       --prerelease
+                    echo "should_comment=true" >> "${GITHUB_OUTPUT}"
                   fi
 
             - name: Comment on PR
+              if: steps.release.outputs.should_comment == 'true'
               uses: actions/github-script@v7
               with:
                   script: |
                       const prNumber = ${{ steps.pr.outputs.number }};
                       const releaseTag = `agentapi_${prNumber}`;
                       const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
-
-                      const comments = await github.rest.issues.listComments({
-                        issue_number: prNumber,
-                        owner: context.repo.owner,
-                        repo: context.repo.repo
-                      });
-                      // test
-                      if (comments.data.some(c => c.body.includes('✅ Preview binaries are ready!'))) return;
-
                       github.rest.issues.createComment({
                         issue_number: prNumber,
                         owner: context.repo.owner,
