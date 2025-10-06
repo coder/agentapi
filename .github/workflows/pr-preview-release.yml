@@ -63,6 +63,15 @@ jobs:
                       const prNumber = ${{ steps.pr.outputs.number }};
                       const releaseTag = `agentapi_${prNumber}`;
                       const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+
+                      const comments = await github.rest.issues.listComments({
+                        issue_number: prNumber,
+                        owner: context.repo.owner,
+                        repo: context.repo.repo
+                      });
+
+                      if (comments.data.some(c => c.body.includes('✅ Preview binaries are ready!'))) return;
+
                       github.rest.issues.createComment({
                         issue_number: prNumber,
                         owner: context.repo.owner,
