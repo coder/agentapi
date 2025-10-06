@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -706,6 +707,34 @@ func TestServer_UploadFiles(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 			expectFilePath:     true,
 		},
+		{
+			name:               "upload file with absolute path filename",
+			filename:           "/tmp/absolute-path-file.txt",
+			fileContent:        "absolute path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with relative path filename",
+			filename:           "../relative-path-file.txt",
+			fileContent:        "relative path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with nested relative path",
+			filename:           "nested/path/file.txt",
+			fileContent:        "nested content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with backslash path separators",
+			filename:           "windows\\style\\path.txt",
+			fileContent:        "windows path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -766,8 +795,8 @@ func TestServer_UploadFiles(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, tc.fileContent, string(savedContent), "file content should match")
 
-					// Verify filename is preserved in the path
-					expectedFilename := tc.filename
+					// Verify filename is preserved in the path (only the base filename for security)
+					expectedFilename := filepath.Base(tc.filename)
 					if expectedFilename == "" {
 						expectedFilename = "uploaded_file"
 					}
@@ -838,5 +867,92 @@ func TestServer_UploadFiles_Errors(t *testing.T) {
 		})
 
 		require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+	})
+
+	t.Run("file size exactly 10MB", func(t *testing.T) {
+		t.Parallel()
+
+		// Create exactly 10MB of data
+		const tenMB = 10 << 20
+		fileContent := make([]byte, tenMB)
+		for i := range fileContent {
+			fileContent[i] = byte(i % 256)
+		}
+
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		part, err := writer.CreateFormFile("file", "10mb-file.bin")
+		require.NoError(t, err)
+		_, err = part.Write(fileContent)
+		require.NoError(t, err)
+		err = writer.Close()
+		require.NoError(t, err)
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Parse response to get file path for cleanup
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var uploadResp struct {
+			Ok       bool   `json:"ok"`
+			FilePath string `json:"filePath"`
+		}
+		err = json.Unmarshal(body, &uploadResp)
+		require.NoError(t, err)
+		require.True(t, uploadResp.Ok)
+
+		// Clean up the uploaded file
+		t.Cleanup(func() {
+			_ = os.Remove(uploadResp.FilePath)
+		})
+	})
+
+	t.Run("file size exceeds 10MB limit", func(t *testing.T) {
+		t.Parallel()
+
+		// Create slightly more than 10MB of data
+		const tenMBPlusOne = (10 << 20) + 1
+		fileContent := make([]byte, tenMBPlusOne)
+		for i := range fileContent {
+			fileContent[i] = byte(i % 256)
+		}
+
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		part, err := writer.CreateFormFile("file", "large-file.bin")
+		require.NoError(t, err)
+		_, err = part.Write(fileContent)
+		require.NoError(t, err)
+		err = writer.Close()
+		require.NoError(t, err)
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		// Verify error message
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), "file size exceeds 10MB limit")
 	})
 }

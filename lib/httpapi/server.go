@@ -444,9 +444,14 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 
 	file := formData.File.File
 
-	buf, err := io.ReadAll(file)
+	// Limit file size to 10MB
+	const maxFileSize = 10 << 20 // 10MB
+	buf, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
 	if err != nil {
 		return nil, xerrors.Errorf("failed to upload file: %w", err)
+	}
+	if len(buf) > maxFileSize {
+		return nil, huma.Error400BadRequest("file size exceeds 10MB limit")
 	}
 
 	// Calculate checksum of the uploaded file to create unique subdirectory
@@ -460,8 +465,8 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 		return nil, xerrors.Errorf("failed to create upload directory: %w", err)
 	}
 
-	// Save individual file with original filename
-	filename := formData.File.Filename
+	// Save individual file with original filename (extract just the base filename for security)
+	filename := filepath.Base(formData.File.Filename)
 
 	outPath := filepath.Join(uploadDir, filename)
 	err = os.WriteFile(outPath, buf, 0644)
