@@ -42,7 +42,7 @@ func statusTest(t *testing.T, params statusTestParams) {
 		if params.cfg.GetTime == nil {
 			params.cfg.GetTime = func() time.Time { return time.Now() }
 		}
-		c := st.NewConversation(ctx, params.cfg)
+		c := st.NewConversation(ctx, params.cfg, "")
 		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
 
 		for i, step := range params.steps {
@@ -147,7 +147,7 @@ func TestMessages(t *testing.T) {
 		for _, opt := range opts {
 			opt(&cfg)
 		}
-		return st.NewConversation(context.Background(), cfg)
+		return st.NewConversation(context.Background(), cfg, "")
 	}
 
 	t.Run("messages are copied", func(t *testing.T) {

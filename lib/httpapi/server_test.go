@@ -1,13 +1,17 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coder/agentapi/lib/httpapi"
@@ -651,4 +655,304 @@ func assertSSEHeaders(t testing.TB, resp *http.Response) {
 	assert.Equal(t, "no", resp.Header.Get("X-Accel-Buffering"))
 	assert.Equal(t, "no", resp.Header.Get("X-Proxy-Buffering"))
 	assert.Equal(t, "keep-alive", resp.Header.Get("Connection"))
+}
+
+func TestServer_UploadFiles(t *testing.T) {
+	t.Parallel()
+	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:      msgfmt.AgentTypeClaude,
+		Process:        nil,
+		Port:           0,
+		ChatBasePath:   "/chat",
+		AllowedHosts:   []string{"*"},
+		AllowedOrigins: []string{"*"},
+	})
+	require.NoError(t, err)
+	tsServer := httptest.NewServer(srv.Handler())
+	t.Cleanup(tsServer.Close)
+
+	cases := []struct {
+		name               string
+		filename           string
+		fileContent        string
+		expectedStatusCode int
+		expectFilePath     bool
+	}{
+		{
+			name:               "upload jpeg file",
+			filename:           "test.jpeg",
+			fileContent:        "Hello, world!",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload empty file",
+			filename:           "empty.txt",
+			fileContent:        "",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload binary file",
+			filename:           "test.bin",
+			fileContent:        "\x00\x01\x02\x03\xFF",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with special characters in name",
+			filename:           "test file (1).txt",
+			fileContent:        "content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with absolute path filename",
+			filename:           "/tmp/absolute-path-file.txt",
+			fileContent:        "absolute path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with relative path filename",
+			filename:           "../relative-path-file.txt",
+			fileContent:        "relative path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with nested relative path",
+			filename:           "nested/path/file.txt",
+			fileContent:        "nested content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+		{
+			name:               "upload file with backslash path separators",
+			filename:           "windows\\style\\path.txt",
+			fileContent:        "windows path content",
+			expectedStatusCode: http.StatusOK,
+			expectFilePath:     true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create a buffer to write our multipart form data
+			var buf bytes.Buffer
+			writer := multipart.NewWriter(&buf)
+
+			// Add the file field
+			part, err := writer.CreateFormFile("file", tc.filename)
+			require.NoError(t, err)
+			_, err = part.Write([]byte(tc.fileContent))
+			require.NoError(t, err)
+
+			// Close the writer to finalize the form
+			err = writer.Close()
+			require.NoError(t, err)
+
+			// Create the request
+			req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+
+			// Send the request
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = resp.Body.Close()
+			})
+
+			// Check status code
+			require.Equal(t, tc.expectedStatusCode, resp.StatusCode,
+				"expected status code %d, got %d", tc.expectedStatusCode, resp.StatusCode)
+
+			if tc.expectedStatusCode == http.StatusOK {
+				// Parse response body
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+
+				var uploadResp struct {
+					Ok       bool   `json:"ok"`
+					FilePath string `json:"filePath"`
+				}
+				err = json.Unmarshal(body, &uploadResp)
+				require.NoError(t, err)
+
+				// Verify response
+				require.True(t, uploadResp.Ok, "expected ok to be true")
+
+				if tc.expectFilePath {
+					require.NotEmpty(t, uploadResp.FilePath, "expected file path to be non-empty")
+
+					// Verify file was actually saved
+					savedContent, err := os.ReadFile(uploadResp.FilePath)
+					require.NoError(t, err)
+					require.Equal(t, tc.fileContent, string(savedContent), "file content should match")
+
+					// Verify filename is preserved in the path (only the base filename for security)
+					expectedFilename := filepath.Base(tc.filename)
+					if expectedFilename == "" {
+						expectedFilename = "uploaded_file"
+					}
+					require.Contains(t, uploadResp.FilePath, expectedFilename, "file path should contain filename")
+
+					// Clean up the uploaded file
+					t.Cleanup(func() {
+						_ = os.Remove(uploadResp.FilePath)
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestServer_UploadFiles_Errors(t *testing.T) {
+	t.Parallel()
+	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:      msgfmt.AgentTypeClaude,
+		Process:        nil,
+		Port:           0,
+		ChatBasePath:   "/chat",
+		AllowedHosts:   []string{"*"},
+		AllowedOrigins: []string{"*"},
+	})
+	require.NoError(t, err)
+	tsServer := httptest.NewServer(srv.Handler())
+	t.Cleanup(tsServer.Close)
+
+	t.Run("missing file field", func(t *testing.T) {
+		t.Parallel()
+
+		// Create multipart form without file field
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		err := writer.WriteField("notfile", "value")
+		require.NoError(t, err)
+		err = writer.Close()
+		require.NoError(t, err)
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+	})
+
+	t.Run("invalid content type", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", strings.NewReader("not multipart"))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+	})
+
+	t.Run("file size exactly 10MB", func(t *testing.T) {
+		t.Parallel()
+
+		// Create exactly 10MB of data
+		const tenMB = 10 << 20
+		fileContent := make([]byte, tenMB)
+		for i := range fileContent {
+			fileContent[i] = byte(i % 256)
+		}
+
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		part, err := writer.CreateFormFile("file", "10mb-file.bin")
+		require.NoError(t, err)
+		_, err = part.Write(fileContent)
+		require.NoError(t, err)
+		err = writer.Close()
+		require.NoError(t, err)
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Parse response to get file path for cleanup
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var uploadResp struct {
+			Ok       bool   `json:"ok"`
+			FilePath string `json:"filePath"`
+		}
+		err = json.Unmarshal(body, &uploadResp)
+		require.NoError(t, err)
+		require.True(t, uploadResp.Ok)
+
+		// Clean up the uploaded file
+		t.Cleanup(func() {
+			_ = os.Remove(uploadResp.FilePath)
+		})
+	})
+
+	t.Run("file size exceeds 10MB limit", func(t *testing.T) {
+		t.Parallel()
+
+		// Create slightly more than 10MB of data
+		const tenMBPlusOne = (10 << 20) + 1
+		fileContent := make([]byte, tenMBPlusOne)
+		for i := range fileContent {
+			fileContent[i] = byte(i % 256)
+		}
+
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		part, err := writer.CreateFormFile("file", "large-file.bin")
+		require.NoError(t, err)
+		_, err = part.Write(fileContent)
+		require.NoError(t, err)
+		err = writer.Close()
+		require.NoError(t, err)
+
+		req, err := http.NewRequest("POST", tsServer.URL+"/upload", &buf)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = resp.Body.Close()
+		})
+
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		// Verify error message
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), "file size exceeds 10MB limit")
+	})
 }

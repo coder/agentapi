@@ -25,12 +25,6 @@ interface ProcessedMessageProps {
 
 export default function MessageList({messages}: MessageListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  // Avoid the message list to change its height all the time. It causes some
-  // flickering in the screen because some messages, as the ones displaying
-  // progress statuses, are changing the content(the number of lines) and size
-  // constantily. To minimize it, we keep track of the biggest scroll height of
-  // the content, and use that as the min height of the scroll area.
-  const contentMinHeight = useRef(0);
 
   // Track if user is at bottom - default to true for initial scroll
   const isAtBottomRef = useRef(true);
@@ -39,7 +33,7 @@ export default function MessageList({messages}: MessageListProps) {
 
   const checkIfAtBottom = useCallback(() => {
     if (!scrollAreaRef.current) return false;
-    const {scrollTop, scrollHeight, clientHeight} = scrollAreaRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
   }, []);
 
@@ -93,11 +87,6 @@ export default function MessageList({messages}: MessageListProps) {
     const isNewUserMessage =
       messages.length > 0 && messages[messages.length - 1].role === "user";
 
-    // Update content min height if needed
-    if (currentScrollHeight > contentMinHeight.current) {
-      contentMinHeight.current = currentScrollHeight;
-    }
-
     // Auto-scroll only if:
     // 1. It's the first render, OR
     // 2. There's new content AND user was at the bottom, OR
@@ -130,9 +119,7 @@ export default function MessageList({messages}: MessageListProps) {
   return (
     <div className="overflow-y-auto flex-1" ref={scrollAreaRef}>
       <div
-        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto"
-        style={{minHeight: contentMinHeight.current}}
-      >
+        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto transition-all duration-300 ease-in-out min-h-0">
         {messages.map((message, index) => (
           <div
             key={message.id ?? "draft"}
@@ -151,7 +138,7 @@ export default function MessageList({messages}: MessageListProps) {
                 }`}
               >
                 {message.role !== "user" && message.content === "" ? (
-                  <LoadingDots/>
+                  <LoadingDots />
                 ) : (
                   <ProcessedMessage
                     messageContent={message.content}

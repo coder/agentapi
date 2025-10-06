@@ -112,6 +112,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
+		InitialPrompt:  viper.GetString(FlagInitialPrompt),
 	})
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
@@ -174,6 +175,7 @@ const (
 	FlagAllowedHosts   = "allowed-hosts"
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
+	FlagInitialPrompt  = "initial-prompt"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -211,6 +213,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagAllowedHosts, "a", []string{"localhost", "127.0.0.1", "[::1]"}, "HTTP allowed hosts (hostnames only, no ports). Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_HOSTS env var", "stringSlice"},
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
+		{FlagInitialPrompt, "I", "", "Initial prompt for the agent (recommended only if the agent doesn't support initial prompt in interaction mode)", "string"},
 	}
 
 	for _, spec := range flagSpecs {

@@ -74,6 +74,10 @@ type Conversation struct {
 	messages                    []ConversationMessage
 	screenBeforeLastUserMessage string
 	lock                        sync.Mutex
+	// InitialPrompt is the initial prompt passed to the agent
+	InitialPrompt string
+	// InitialPromptSent keeps track if the InitialPrompt has been successfully sent to the agents
+	InitialPromptSent bool
 }
 
 type ConversationStatus string
@@ -94,7 +98,7 @@ func getStableSnapshotsThreshold(cfg ConversationConfig) int {
 	return threshold + 1
 }
 
-func NewConversation(ctx context.Context, cfg ConversationConfig) *Conversation {
+func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt string) *Conversation {
 	threshold := getStableSnapshotsThreshold(cfg)
 	c := &Conversation{
 		cfg:                      cfg,
@@ -107,6 +111,8 @@ func NewConversation(ctx context.Context, cfg ConversationConfig) *Conversation 
 				Time:    cfg.GetTime(),
 			},
 		},
+		InitialPrompt:     initialPrompt,
+		InitialPromptSent: len(initialPrompt) == 0,
 	}
 	return c
 }

@@ -2,11 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -40,6 +45,7 @@ type Server struct {
 	agentType    mf.AgentType
 	emitter      *EventEmitter
 	chatBasePath string
+	tempDir      string
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -95,6 +101,7 @@ type ServerConfig struct {
 	ChatBasePath   string
 	AllowedHosts   []string
 	AllowedOrigins []string
+	InitialPrompt  string
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -230,8 +237,16 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
-	})
+	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
+
+	// Create temporary directory for uploads
+	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create temporary directory: %w", err)
+	}
+	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
+
 	s := &Server{
 		router:       router,
 		api:          api,
@@ -242,6 +257,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		agentType:    config.AgentType,
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
+		tempDir:      tempDir,
 	}
 
 	// Register API routes
@@ -306,7 +322,19 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
 		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
+			currentStatus := s.conversation.Status()
+
+			// Send initial prompt when agent becomes stable for the first time
+			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+					s.logger.Error("Failed to send initial prompt", "error", err)
+				} else {
+					s.conversation.InitialPromptSent = true
+					currentStatus = st.ConversationStatusChanging
+					s.logger.Info("Initial prompt sent successfully")
+				}
+			}
+			s.emitter.UpdateStatusAndEmitChanges(currentStatus)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
@@ -329,6 +357,10 @@ func (s *Server) registerRoutes() {
 	// POST /message endpoint
 	huma.Post(s.api, "/message", s.createMessage, func(o *huma.Operation) {
 		o.Description = "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error."
+	})
+
+	huma.Post(s.api, "/upload", s.uploadFiles, func(o *huma.Operation) {
+		o.Description = "Upload files to the specified upload path."
 	})
 
 	// GET /events endpoint
@@ -417,6 +449,50 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 	return resp, nil
 }
 
+// uploadFiles handles POST /upload
+func (s *Server) uploadFiles(ctx context.Context, input *struct {
+	RawBody huma.MultipartFormFiles[UploadRequest]
+}) (*UploadResponse, error) {
+	formData := input.RawBody.Data()
+
+	file := formData.File.File
+
+	// Limit file size to 10MB
+	const maxFileSize = 10 << 20 // 10MB
+	buf, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to upload file: %w", err)
+	}
+	if len(buf) > maxFileSize {
+		return nil, huma.Error400BadRequest("file size exceeds 10MB limit")
+	}
+
+	// Calculate checksum of the uploaded file to create unique subdirectory
+	hash := sha256.Sum256(buf)
+	checksum := hex.EncodeToString(hash[:8]) // Use first 8 bytes (16 hex chars)
+
+	// Create checksum-based subdirectory in tempDir
+	uploadDir := filepath.Join(s.tempDir, checksum)
+	err = os.MkdirAll(uploadDir, 0755)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create upload directory: %w", err)
+	}
+
+	// Save individual file with original filename (extract just the base filename for security)
+	filename := filepath.Base(formData.File.Filename)
+
+	outPath := filepath.Join(uploadDir, filename)
+	err = os.WriteFile(outPath, buf, 0644)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to write file: %w", err)
+	}
+
+	resp := &UploadResponse{}
+	resp.Body.Ok = true
+	resp.Body.FilePath = outPath
+	return resp, nil
+}
+
 // subscribeEvents is an SSE endpoint that sends events to the client
 func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.Sender) {
 	subscriberId, ch, stateEvents := s.emitter.Subscribe()
@@ -500,10 +576,22 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the HTTP server
 func (s *Server) Stop(ctx context.Context) error {
+	// Clean up temporary directory
+	s.cleanupTempDir()
+
 	if s.srv != nil {
 		return s.srv.Shutdown(ctx)
 	}
 	return nil
+}
+
+// cleanupTempDir removes the temporary directory and all its contents
+func (s *Server) cleanupTempDir() {
+	if err := os.RemoveAll(s.tempDir); err != nil {
+		s.logger.Error("Failed to clean up temporary directory", "tempDir", s.tempDir, "error", err)
+	} else {
+		s.logger.Info("Cleaned up temporary directory", "tempDir", s.tempDir)
+	}
 }
 
 // registerStaticFileRoutes sets up routes for serving static files
