@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.0
+
+### Features
+- Feature to upload files to agentapi
+- Introduced clickable links
+- Added e2e tests
+- Fixed the resizing scroll issue
+
 ## v0.9.0
 
 ### Features
