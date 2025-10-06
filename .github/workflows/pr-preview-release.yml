@@ -69,7 +69,7 @@ jobs:
                         owner: context.repo.owner,
                         repo: context.repo.repo
                       });
-
+                      // test
                       if (comments.data.some(c => c.body.includes('✅ Preview binaries are ready!'))) return;
 
                       github.rest.issues.createComment({
