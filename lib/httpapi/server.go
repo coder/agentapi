@@ -101,6 +101,7 @@ type ServerConfig struct {
 	ChatBasePath   string
 	AllowedHosts   []string
 	AllowedOrigins []string
+	InitialPrompt  string
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -236,7 +237,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
-	})
+	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
 
 	// Create temporary directory for uploads
@@ -321,7 +322,19 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
 		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
+			currentStatus := s.conversation.Status()
+
+			// Send initial prompt when agent becomes stable for the first time
+			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+					s.logger.Error("Failed to send initial prompt", "error", err)
+				} else {
+					s.conversation.InitialPromptSent = true
+					currentStatus = st.ConversationStatusChanging
+					s.logger.Info("Initial prompt sent successfully")
+				}
+			}
+			s.emitter.UpdateStatusAndEmitChanges(currentStatus)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
