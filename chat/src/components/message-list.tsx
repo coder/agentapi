@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useEffect, useCallback } from "react";
+import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo} from "react";
 
 interface Message {
   role: string;
@@ -18,7 +18,12 @@ interface MessageListProps {
   messages: (Message | DraftMessage)[];
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+interface ProcessedMessageProps {
+  messageContent: string;
+  index: number;
+}
+
+export default function MessageList({messages}: MessageListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   // Track if user is at bottom - default to true for initial scroll
@@ -30,6 +35,27 @@ export default function MessageList({ messages }: MessageListProps) {
     if (!scrollAreaRef.current) return false;
     const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
+  }, []);
+
+  // Track Ctrl (Windows/Linux) or Cmd (Mac) key state
+  // This is so that underline is only visible when hover + cmd/ctrl
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) document.documentElement.classList.add('modifier-pressed');
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.ctrlKey && !e.metaKey) document.documentElement.classList.remove('modifier-pressed');
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      document.documentElement.classList.remove('modifier-pressed');
+
+    };
   }, []);
 
   // Update isAtBottom on scroll
@@ -94,7 +120,7 @@ export default function MessageList({ messages }: MessageListProps) {
     <div className="overflow-y-auto flex-1" ref={scrollAreaRef}>
       <div
         className="p-4 flex flex-col gap-4 max-w-4xl mx-auto transition-all duration-300 ease-in-out min-h-0">
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <div
             key={message.id ?? "draft"}
             className={`${message.role === "user" ? "text-right" : ""}`}
@@ -114,7 +140,10 @@ export default function MessageList({ messages }: MessageListProps) {
                 {message.role !== "user" && message.content === "" ? (
                   <LoadingDots />
                 ) : (
-                  message.content.trimEnd()
+                  <ProcessedMessage
+                    messageContent={message.content}
+                    index={index}
+                  />
                 )}
               </div>
             </div>
@@ -142,3 +171,42 @@ const LoadingDots = () => (
     <span className="sr-only">Loading...</span>
   </div>
 );
+
+
+const ProcessedMessage = React.memo(function ProcessedMessage({
+                                                                messageContent,
+                                                                index,
+                                                              }: ProcessedMessageProps) {
+  // Regex to find URLs
+  // https://stackoverflow.com/a/17773849
+  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (e.metaKey || e.ctrlKey) {
+      window.open(url, "_blank");
+    } else {
+      e.preventDefault(); // disable normal click to emulate terminal behaviour
+    }
+  }
+
+  const linkedContent = useMemo(() => {
+    return messageContent.split(urlRegex).map((content, idx) => {
+      console.log(content)
+      if (urlRegex.test(content)) {
+        return (
+          <a
+            key={`${index}-${idx}`}
+            href={content}
+            onClick={(e) => handleClick(e, content)}
+            className="cursor-default [.modifier-pressed_&]:hover:underline [.modifier-pressed_&]:hover:cursor-pointer"
+          >
+            {content}
+          </a>
+        );
+      }
+      return <span key={`${index}-${idx}`}>{content}</span>;
+    });
+  }, [index, messageContent, urlRegex]);
+
+  return <>{linkedContent}</>;
+});
