@@ -70,7 +70,7 @@ func (s *Server) NormalizeSchema(schema any) any {
 }
 
 func (s *Server) GetOpenAPI() string {
-	jsonBytes, err := s.api.OpenAPI().MarshalJSON()
+	jsonBytes, err := s.api.OpenAPI().Downgrade()
 	if err != nil {
 		return ""
 	}

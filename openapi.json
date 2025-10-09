@@ -6,9 +6,7 @@
           "running",
           "stable"
         ],
-        "examples": [
-          "stable"
-        ],
+        "example": "stable",
         "title": "AgentStatus",
         "type": "string"
       },
@@ -17,9 +15,7 @@
           "agent",
           "user"
         ],
-        "examples": [
-          "user"
-        ],
+        "example": "user",
         "title": "ConversationRole",
         "type": "string"
       },
@@ -45,18 +41,14 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/ErrorModel.json"
-            ],
+            "example": "https://example.com/schemas/ErrorModel.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
-            "examples": [
-              "Property foo is required but is missing."
-            ],
+            "example": "Property foo is required but is missing.",
             "type": "string"
           },
           "errors": {
@@ -64,40 +56,30 @@
             "items": {
               "$ref": "#/components/schemas/ErrorDetail"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "instance": {
             "description": "A URI reference that identifies the specific occurrence of the problem.",
-            "examples": [
-              "https://example.com/error-log/abc123"
-            ],
+            "example": "https://example.com/error-log/abc123",
             "format": "uri",
             "type": "string"
           },
           "status": {
             "description": "HTTP status code",
-            "examples": [
-              400
-            ],
+            "example": 400,
             "format": "int64",
             "type": "integer"
           },
           "title": {
             "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-            "examples": [
-              "Bad Request"
-            ],
+            "example": "Bad Request",
             "type": "string"
           },
           "type": {
             "default": "about:blank",
             "description": "A URI reference to human-readable documentation for the error.",
-            "examples": [
-              "https://example.com/errors/example"
-            ],
+            "example": "https://example.com/errors/example",
             "format": "uri",
             "type": "string"
           }
@@ -109,9 +91,7 @@
         "properties": {
           "content": {
             "description": "Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line.",
-            "examples": [
-              "Hello world"
-            ],
+            "example": "Hello world",
             "type": "string"
           },
           "id": {
@@ -142,18 +122,14 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessageRequestBody.json"
-            ],
+            "example": "https://example.com/schemas/MessageRequestBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "content": {
             "description": "Message content",
-            "examples": [
-              "Hello, agent!"
-            ],
+            "example": "Hello, agent!",
             "type": "string"
           },
           "type": {
@@ -172,9 +148,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessageResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/MessageResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -194,9 +168,7 @@
           "raw",
           "user"
         ],
-        "examples": [
-          "user"
-        ],
+        "example": "user",
         "title": "MessageType",
         "type": "string"
       },
@@ -235,9 +207,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessagesResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/MessagesResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -290,9 +260,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/StatusResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/StatusResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -317,9 +285,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/UploadResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/UploadResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -346,7 +312,7 @@
     "title": "AgentAPI",
     "version": "0.10.0"
   },
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "paths": {
     "/events": {
       "get": {
