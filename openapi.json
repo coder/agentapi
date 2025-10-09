@@ -280,8 +280,8 @@
           }
         },
         "required": [
-          "status",
-          "agent_type"
+          "agent_type",
+          "status"
         ],
         "type": "object"
       },
@@ -307,8 +307,8 @@
           }
         },
         "required": [
-          "status",
-          "agent_type"
+          "agent_type",
+          "status"
         ],
         "type": "object"
       },
@@ -363,32 +363,6 @@
                       {
                         "properties": {
                           "data": {
-                            "$ref": "#/components/schemas/StatusChangeBody"
-                          },
-                          "event": {
-                            "const": "status_change",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event status_change",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
                             "$ref": "#/components/schemas/MessageUpdateBody"
                           },
                           "event": {
@@ -410,6 +384,32 @@
                           "event"
                         ],
                         "title": "Event message_update",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/StatusChangeBody"
+                          },
+                          "event": {
+                            "const": "status_change",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event status_change",
                         "type": "object"
                       }
                     ]

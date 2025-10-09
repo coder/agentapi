@@ -231,6 +231,7 @@ func trimEmptyLines(message string) string {
 
 type AgentType string
 
+// Remember to add the display name to the agentapi/chat/src/components/chat-provider.tsx
 const (
 	AgentTypeClaude   AgentType = "claude"
 	AgentTypeGoose    AgentType = "goose"

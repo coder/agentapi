@@ -65,23 +65,26 @@ export interface FileUploadResponse {
   filePath?: string;
 }
 
-export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "cursor" | "cursor-agent" | "custom" | "unknown";
+export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "cursor" | "cursor-agent" | "copilot" | "auggie" | "amazonq" | "opencode" | "custom" | "unknown";
 
 export type AgentColorDisplayNamePair = {
   displayName: string;
-  color: string;
 }
 
-export const AgentTypeColorCoding: Record<Exclude<AgentType, "unknown">, AgentColorDisplayNamePair> = {
-  claude: {color: "bg-blue-300 ring-blue-300/35", displayName: "Claude Code"},
-  goose: {color: "bg-green-300 ring-green-300/35", displayName: "Goose"},
-  aider: {color: "bg-yellow-300 ring-yellow-300/35", displayName: "Aider"},
-  gemini: {color: "bg-purple-300 ring-purple-300/35", displayName: "Gemini"},
-  amp: {color: "bg-pink-300 ring-pink-300/35", displayName: "Amp"},
-  codex: {color: "bg-orange-300 ring-orange-300/35", displayName: "Codex"},
-  cursor: {color: "bg-lime-300 ring-lime-300/35", displayName: "Cursor Agent"},
-  "cursor-agent": {color: "bg-lime-300 ring-lime-300/35", displayName: "Cursor Agent"},
-  custom: {color: "bg-gray-300 ring-gray-300/35", displayName: "Custom"}
+export const AgentType: Record<Exclude<AgentType, "unknown">, AgentColorDisplayNamePair> = {
+  claude: {displayName: "Claude Code"},
+  goose: {displayName: "Goose"},
+  aider: {displayName: "Aider"},
+  gemini: { displayName: "Gemini"},
+  amp: {displayName: "Amp"},
+  codex: {displayName: "Codex"},
+  cursor: { displayName: "Cursor Agent"},
+  "cursor-agent": { displayName: "Cursor Agent"},
+  copilot: {displayName: "Copilot"},
+  auggie: {displayName: "Auggie"},
+  amazonq: {displayName: "Amazon Q"},
+  opencode: {displayName: "Opencode"},
+  custom: { displayName: "Custom"}
 }
 
 interface ChatContextValue {

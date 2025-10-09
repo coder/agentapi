@@ -1,6 +1,6 @@
 "use client";
 
-import {AgentTypeColorCoding, useChat} from "@/components/chat-provider";
+import {AgentType, useChat} from "@/components/chat-provider";
 import {ModeToggle} from "@/components/mode-toggle";
 
 export function Header() {
@@ -27,14 +27,9 @@ export function Header() {
 
         {agentType !== "unknown" && (
           <div className="flex items-center gap-2 text-sm font-medium">
-          <span
-            className={`text-secondary w-2 h-2 rounded-full ${AgentTypeColorCoding[agentType].color} ring-2 flex items-center justify-center`}
-          >
-          </span>
-            <span>{AgentTypeColorCoding[agentType].displayName}</span>
+            <span>{AgentType[agentType].displayName}</span>
           </div>
         )}
-
         <ModeToggle/>
       </div>
     </header>
