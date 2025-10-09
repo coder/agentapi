@@ -3,8 +3,8 @@
     "schemas": {
       "AgentStatus": {
         "enum": [
-          "stable",
-          "running"
+          "running",
+          "stable"
         ],
         "examples": [
           "stable"
@@ -14,8 +14,8 @@
       },
       "ConversationRole": {
         "enum": [
-          "user",
-          "agent"
+          "agent",
+          "user"
         ],
         "examples": [
           "user"
@@ -130,8 +130,8 @@
           }
         },
         "required": [
-          "id",
           "content",
+          "id",
           "role",
           "time"
         ],
@@ -191,8 +191,8 @@
       },
       "MessageType": {
         "enum": [
-          "user",
-          "raw"
+          "raw",
+          "user"
         ],
         "examples": [
           "user"
@@ -224,8 +224,8 @@
         },
         "required": [
           "id",
-          "role",
           "message",
+          "role",
           "time"
         ],
         "type": "object"
@@ -311,13 +311,40 @@
           "agent_type"
         ],
         "type": "object"
+      },
+      "UploadResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/UploadResponseBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "filePath": {
+            "description": "Path of the file",
+            "type": "string"
+          },
+          "ok": {
+            "description": "Indicates whether the files were uploaded successfully.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "filePath",
+          "ok"
+        ],
+        "type": "object"
       }
     }
   },
   "info": {
     "description": "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi",
     "title": "AgentAPI",
-    "version": "0.5.0"
+    "version": "0.10.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -504,6 +531,61 @@
           }
         },
         "summary": "Get status"
+      }
+    },
+    "/upload": {
+      "post": {
+        "description": "Upload files to the specified upload path.",
+        "operationId": "post-upload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "contentEncoding": "binary",
+                    "contentMediaType": "application/octet-stream",
+                    "description": "file that needs to be uploaded",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post upload"
       }
     }
   }

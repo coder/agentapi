@@ -1,0 +1,11 @@
+ Welcome to GitHub Copilot CLI
+ Version 0.0.328 · Commit 3755a93
+
+ Copilot can write, test and debug code right from your terminal. Describe a 
+ task to get started or enter ? for help. Copilot uses AI, check for mistakes.
+
+ ● Logged in with gh as user: 35C4n0r
+
+ ● Connected to GitHub MCP Server
+
+ ~/Documents/work/agentapi [⎇ feat-github-cli*]

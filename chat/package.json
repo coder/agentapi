@@ -1,29 +1,19 @@
 {
-  "name": "chat",
-  "version": "0.5.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "export": "GITHUB_PAGES=true next build",
-    "serve-static": "npx serve out",
-    "deploy-gh-pages": "GITHUB_PAGES=true next build && gh-pages -d out --nojekyll -e chat -f",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
-  },
   "dependencies": {
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.14",
     "@radix-ui/react-slot": "^1.2.2",
     "@radix-ui/react-tabs": "^1.1.11",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.511.0",
-    "next": "15.2.4",
+    "next": "15.4.7",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-dropzone": "^14.3.8",
     "react-textarea-autosize": "^8.5.9",
     "sonner": "^2.0.3",
     "tailwind-merge": "^3.3.0"
@@ -44,5 +34,19 @@
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.0",
     "typescript": "^5"
-  }
+  },
+  "name": "chat",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "build-storybook": "storybook build",
+    "deploy-gh-pages": "GITHUB_PAGES=true next build && gh-pages -d out --nojekyll -e chat -f",
+    "dev": "next dev --turbopack",
+    "export": "GITHUB_PAGES=true next build",
+    "lint": "next lint",
+    "serve-static": "npx serve out",
+    "start": "next start",
+    "storybook": "storybook dev -p 6006"
+  },
+  "version": "0.10.0"
 }

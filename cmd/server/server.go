@@ -23,42 +23,48 @@ import (
 type AgentType = msgfmt.AgentType
 
 const (
-	AgentTypeClaude      AgentType = msgfmt.AgentTypeClaude
-	AgentTypeGoose       AgentType = msgfmt.AgentTypeGoose
-	AgentTypeAider       AgentType = msgfmt.AgentTypeAider
-	AgentTypeCodex       AgentType = msgfmt.AgentTypeCodex
-	AgentTypeGemini      AgentType = msgfmt.AgentTypeGemini
-	AgentTypeAmp         AgentType = msgfmt.AgentTypeAmp
-	AgentTypeCursorAgent AgentType = msgfmt.AgentTypeCursorAgent
-	AgentTypeCursor      AgentType = msgfmt.AgentTypeCursor
-	AgentTypeCustom      AgentType = msgfmt.AgentTypeCustom
+	AgentTypeClaude   AgentType = msgfmt.AgentTypeClaude
+	AgentTypeGoose    AgentType = msgfmt.AgentTypeGoose
+	AgentTypeAider    AgentType = msgfmt.AgentTypeAider
+	AgentTypeCodex    AgentType = msgfmt.AgentTypeCodex
+	AgentTypeGemini   AgentType = msgfmt.AgentTypeGemini
+	AgentTypeCopilot  AgentType = msgfmt.AgentTypeCopilot
+	AgentTypeAmp      AgentType = msgfmt.AgentTypeAmp
+	AgentTypeCursor   AgentType = msgfmt.AgentTypeCursor
+	AgentTypeAuggie   AgentType = msgfmt.AgentTypeAuggie
+	AgentTypeAmazonQ  AgentType = msgfmt.AgentTypeAmazonQ
+	AgentTypeOpencode AgentType = msgfmt.AgentTypeOpencode
+	AgentTypeCustom   AgentType = msgfmt.AgentTypeCustom
 )
 
-// exhaustiveness of this map is checked by the exhaustive linter
-var agentTypeMap = map[AgentType]bool{
-	AgentTypeClaude:      true,
-	AgentTypeGoose:       true,
-	AgentTypeAider:       true,
-	AgentTypeCodex:       true,
-	AgentTypeGemini:      true,
-	AgentTypeAmp:         true,
-	AgentTypeCursorAgent: true,
-	AgentTypeCursor:      true,
-	AgentTypeCustom:      true,
+// agentTypeAliases contains the mapping of possible input agent type strings to their canonical AgentType values
+var agentTypeAliases = map[string]AgentType{
+	"claude":       AgentTypeClaude,
+	"goose":        AgentTypeGoose,
+	"aider":        AgentTypeAider,
+	"codex":        AgentTypeCodex,
+	"gemini":       AgentTypeGemini,
+	"copilot":      AgentTypeCopilot,
+	"amp":          AgentTypeAmp,
+	"auggie":       AgentTypeAuggie,
+	"cursor":       AgentTypeCursor,
+	"cursor-agent": AgentTypeCursor,
+	"q":            AgentTypeAmazonQ,
+	"amazonq":      AgentTypeAmazonQ,
+	"opencode":     AgentTypeOpencode,
+	"custom":       AgentTypeCustom,
 }
 
 func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 	// if the agent type is provided, use it
-	castedAgentType := AgentType(agentTypeVar)
-	if _, ok := agentTypeMap[castedAgentType]; ok {
+	if castedAgentType, ok := agentTypeAliases[agentTypeVar]; ok {
 		return castedAgentType, nil
 	}
 	if agentTypeVar != "" {
 		return AgentTypeCustom, fmt.Errorf("invalid agent type: %s", agentTypeVar)
 	}
 	// if the agent type is not provided, guess it from the first argument
-	castedFirstArg := AgentType(firstArg)
-	if _, ok := agentTypeMap[castedFirstArg]; ok {
+	if castedFirstArg, ok := agentTypeAliases[firstArg]; ok {
 		return castedFirstArg, nil
 	}
 	return AgentTypeCustom, nil
@@ -92,6 +98,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			ProgramArgs:    argsToPass[1:],
 			TerminalWidth:  termWidth,
 			TerminalHeight: termHeight,
+			AgentType:      agentType,
 		})
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
@@ -105,6 +112,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
+		InitialPrompt:  viper.GetString(FlagInitialPrompt),
 	})
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
@@ -141,9 +149,9 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 }
 
 var agentNames = (func() []string {
-	names := make([]string, 0, len(agentTypeMap))
-	for agentType := range agentTypeMap {
-		names = append(names, string(agentType))
+	names := make([]string, 0, len(agentTypeAliases))
+	for agentType := range agentTypeAliases {
+		names = append(names, agentType)
 	}
 	sort.Strings(names)
 	return names
@@ -167,6 +175,7 @@ const (
 	FlagAllowedHosts   = "allowed-hosts"
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
+	FlagInitialPrompt  = "initial-prompt"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -181,6 +190,10 @@ func CreateServerCmd() *cobra.Command {
 				return
 			}
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			if viper.GetBool(FlagPrintOpenAPI) {
+				// We don't want log output here.
+				logger = slog.New(logctx.DiscardHandler)
+			}
 			ctx := logctx.WithLogger(context.Background(), logger)
 			if err := runServer(ctx, logger, cmd.Flags().Args()); err != nil {
 				fmt.Fprintf(os.Stderr, "%+v\n", err)
@@ -200,6 +213,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagAllowedHosts, "a", []string{"localhost", "127.0.0.1", "[::1]"}, "HTTP allowed hosts (hostnames only, no ports). Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_HOSTS env var", "stringSlice"},
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
+		{FlagInitialPrompt, "I", "", "Initial prompt for the agent (recommended only if the agent doesn't support initial prompt in interaction mode)", "string"},
 	}
 
 	for _, spec := range flagSpecs {
