@@ -13,9 +13,15 @@ You can use AgentAPI:
 
 ## Quickstart
 
-1. Install `agentapi` by downloading the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
+1. Install `agentapi`:
 
-1. Verify the installation:
+   ```bash
+   sh -c 'curl -fsSL https://github.com/coder/agentapi/releases/latest/download/agentapi-$(uname -s | tr "[:upper:]" "[:lower:]")-$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/") -o agentapi' && chmod +x agentapi
+   ```
+
+   Alternatively, you can download the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
+
+2. Verify the installation:
 
    ```bash
    agentapi --help
@@ -23,7 +29,7 @@ You can use AgentAPI:
 
    > On macOS, if you're prompted that the system was unable to verify the binary, go to `System Settings -> Privacy & Security`, click "Open Anyway", and run the command again.
 
-1. Run a Claude Code server (assumes `claude` is installed on your system and in the `PATH`):
+3. Run a Claude Code server (assumes `claude` is installed on your system and in the `PATH`):
 
    ```bash
    agentapi server -- claude
@@ -31,7 +37,7 @@ You can use AgentAPI:
 
    > If you're getting an error that `claude` is not in the `PATH` but you can run it from your shell, try `which claude` to get the full path and use that instead.
 
-1. Send a message to the agent:
+4. Send a message to the agent:
 
    ```bash
    curl -X POST localhost:3284/message \
@@ -39,13 +45,13 @@ You can use AgentAPI:
      -d '{"content": "Hello, agent!", "type": "user"}'
    ```
 
-1. Get the conversation history:
+5. Get the conversation history:
 
    ```bash
    curl localhost:3284/messages
    ```
 
-1. Try the chat web interface at http://localhost:3284/chat.
+6. Try the chat web interface at http://localhost:3284/chat.
 
 ## CLI Commands
 
