@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.1
+
+### Features
+- Visual indicator for agent name in the UI (not in embed)
+- Downgrade openapi version to v3.0.3
+- Add CLI installation instructions in README.md
+
 ## v0.10.0
 
 ### Features
