@@ -74,7 +74,11 @@ export default function MessageList({messages}: MessageListProps) {
 
     scrollAreaRef.addEventListener("scroll", handleScroll);
     scrollAreaRef.addEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
-    return () => scrollAreaRef.removeEventListener("scroll", handleScroll);
+    return () => {
+      scrollAreaRef.removeEventListener("scroll", handleScroll)
+      scrollAreaRef.removeEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
+
+    };
   }, [checkIfAtBottom, scrollAreaRef]);
 
   // Handle auto-scrolling when messages change
