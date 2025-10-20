@@ -7,8 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -104,13 +109,19 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			return xerrors.Errorf("failed to setup process: %w", err)
 		}
 	}
+	allowedHosts := viper.GetStringSlice(FlagAllowedHosts)
+	if envHosts := parseEnvList(os.Getenv("ALLOW_HOSTS")); len(envHosts) > 0 {
+		logger.Info("Using allowed hosts from ALLOW_HOSTS env", "hosts", strings.Join(envHosts, ", "))
+		allowedHosts = envHosts
+	}
+
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
 		Process:        process,
 		Port:           port,
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
-		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
+		AllowedHosts:   allowedHosts,
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  viper.GetString(FlagInitialPrompt),
 	})
@@ -123,6 +134,22 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	srv.StartSnapshotLoop(ctx)
 	logger.Info("Starting server on port", "port", port)
+	stopOnce := &sync.Once{}
+	stopServer := func(reason string) {
+		stopOnce.Do(func() {
+			logger.Info("Stopping server", "reason", reason)
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer stopCancel()
+			if err := srv.Stop(stopCtx); err != nil && err != context.Canceled && err != http.ErrServerClosed {
+				logger.Error("Failed to stop server", "error", err)
+			}
+		})
+	}
+
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
+
 	processExitCh := make(chan error, 1)
 	go func() {
 		defer close(processExitCh)
@@ -133,19 +160,79 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
 			}
 		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
-		}
 	}()
-	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {
-		return xerrors.Errorf("failed to start server: %w", err)
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		err := srv.Start()
+		serverErrCh <- err
+		close(serverErrCh)
+	}()
+
+	var (
+		processErr     error
+		processDone    bool
+		receivedSignal bool
+	)
+
+	for {
+		select {
+		case sig := <-signalCh:
+			if receivedSignal {
+				logger.Warn("Second signal received, forcing exit", "signal", sig)
+				os.Exit(1)
+			}
+			receivedSignal = true
+			logger.Info("Signal received, shutting down", "signal", sig)
+			if err := process.Close(logger, 5*time.Second); err != nil {
+				logger.Error("Error closing process", "error", err)
+			}
+			stopServer("signal")
+		case err, ok := <-processExitCh:
+			if !ok {
+				processExitCh = nil
+				continue
+			}
+			processDone = true
+			processErr = err
+			stopServer("process exited")
+			processExitCh = nil
+		case err, ok := <-serverErrCh:
+			if !ok {
+				serverErrCh = nil
+				continue
+			}
+			if err != nil && err != http.ErrServerClosed && err != context.Canceled {
+				stopServer("server error")
+				return xerrors.Errorf("failed to start server: %w", err)
+			}
+			serverErrCh = nil
+		}
+
+		if serverErrCh == nil && processExitCh == nil {
+			if processDone && processErr != nil {
+				return xerrors.Errorf("agent exited with error: %w", processErr)
+			}
+			return nil
+		}
 	}
-	select {
-	case err := <-processExitCh:
-		return xerrors.Errorf("agent exited with error: %w", err)
-	default:
+}
+
+func parseEnvList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
 	}
-	return nil
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || unicode.IsSpace(r)
+	})
+	out := make([]string, 0, len(fields))
+	for _, item := range fields {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 var agentNames = (func() []string {

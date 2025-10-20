@@ -291,6 +291,7 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 		return xerrors.Errorf("failed to write message: %w", err)
 	}
 	// wait for the screen to stabilize after the message is written
+	noEchoDeadline := time.Now().Add(300 * time.Millisecond)
 	if err := util.WaitFor(ctx, util.WaitTimeout{
 		Timeout:     15 * time.Second,
 		MinInterval: 50 * time.Millisecond,
@@ -301,6 +302,9 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 			time.Sleep(1 * time.Second)
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
+		}
+		if time.Now().After(noEchoDeadline) {
+			return true, nil
 		}
 		return false, nil
 	}); err != nil {

@@ -1,27 +1,32 @@
 package termexec
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/ActiveState/termtest/xpty"
 	"github.com/coder/agentapi/lib/logctx"
-	"github.com/coder/agentapi/lib/util"
 	"golang.org/x/xerrors"
 )
 
+const tmuxSessionName = "wingman-agents"
+
 type Process struct {
-	xp               *xpty.Xpty
-	execCmd          *exec.Cmd
-	screenUpdateLock sync.RWMutex
-	lastScreenUpdate time.Time
+	sessionName string
+	paneID      string
+	windowID    string
+	bufferName  string
+	width       uint16
+	height      uint16
+	writeLock   sync.Mutex
 }
 
 type StartProcessConfig struct {
@@ -33,149 +38,269 @@ type StartProcessConfig struct {
 
 func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error) {
 	logger := logctx.From(ctx)
-	xp, err := xpty.New(args.TerminalWidth, args.TerminalHeight, false)
+	sessionName := tmuxSessionName
+	width := args.TerminalWidth
+	height := args.TerminalHeight
+	if width == 0 {
+		width = 80
+	}
+	if height == 0 {
+		height = 24
+	}
+
+	sessionExists, err := tmuxSessionExists(ctx, sessionName)
 	if err != nil {
 		return nil, err
 	}
-	execCmd := exec.Command(args.Program, args.Args...)
-	// vt100 is the terminal type that the vt10x library emulates.
-	// Setting this signals to the process that it should only use compatible
-	// escape sequences.
-	execCmd.Env = append(os.Environ(), "TERM=vt100")
-	if err := xp.StartProcessInTerminal(execCmd); err != nil {
-		return nil, err
+
+	var paneID string
+	var windowID string
+
+	if !sessionExists {
+		tmuxArgs := []string{"new-session", "-d", "-s", sessionName, "-x", strconv.Itoa(int(width)), "-y", strconv.Itoa(int(height)), "-P", "-F", "#{pane_id},#{window_id}", "--", "env", "TERM=vt100", args.Program}
+		if len(args.Args) > 0 {
+			tmuxArgs = append(tmuxArgs, args.Args...)
+		}
+		cmd := exec.CommandContext(ctx, "tmux", tmuxArgs...)
+		output, startErr := cmd.CombinedOutput()
+		if startErr != nil {
+			return nil, xerrors.Errorf("failed to start tmux session: %w: %s", startErr, output)
+		}
+		paneID, windowID, err = parsePaneWindowIDs(output)
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("tmux session created", "session", sessionName)
+		logger.Info("tmux window created", "session", sessionName, "window", windowID, "pane", paneID)
+	} else {
+		tmuxArgs := []string{"new-window", "-d", "-t", sessionName, "-P", "-F", "#{pane_id},#{window_id}", "--", "env", "TERM=vt100", args.Program}
+		if len(args.Args) > 0 {
+			tmuxArgs = append(tmuxArgs, args.Args...)
+		}
+		cmd := exec.CommandContext(ctx, "tmux", tmuxArgs...)
+		output, startErr := cmd.CombinedOutput()
+		if startErr != nil {
+			return nil, xerrors.Errorf("failed to create tmux window: %w: %s", startErr, output)
+		}
+		paneID, windowID, err = parsePaneWindowIDs(output)
+		if err != nil {
+			return nil, err
+		}
+		if resizeErr := resizeWindow(windowID, width, height); resizeErr != nil && !errors.Is(resizeErr, errPaneNotFound) {
+			return nil, resizeErr
+		}
+		logger.Info("tmux window created", "session", sessionName, "window", windowID, "pane", paneID)
 	}
 
-	process := &Process{xp: xp, execCmd: execCmd}
-
-	go func() {
-		// HACK: Working around xpty concurrency limitations
-		//
-		// Problem:
-		// 1. We need to track when the terminal screen was last updated (for ReadScreen)
-		// 2. xpty only updates terminal state through xp.ReadRune()
-		// 3. xp.ReadRune() has a bug - it panics when SetReadDeadline is used
-		// 4. Without deadlines, ReadRune blocks until the process outputs data
-		//
-		// Why this matters:
-		// If we wrapped ReadRune + lastScreenUpdate in a mutex, this goroutine would
-		// hold the lock while waiting for process output. Since ReadRune blocks indefinitely,
-		// ReadScreen callers would be locked out until new output arrives. Even worse,
-		// after output arrives, this goroutine could immediately reacquire the lock
-		// for the next ReadRune call, potentially starving ReadScreen callers indefinitely.
-		//
-		// Solution:
-		// Instead of using xp.ReadRune(), we directly use its internal components:
-		// - pp.ReadRune() - handles the blocking read from the process
-		// - xp.Term.WriteRune() - updates the terminal state
-		//
-		// This lets us apply the mutex only around the terminal update and timestamp,
-		// keeping reads non-blocking while maintaining thread safety.
-		//
-		// Warning: This depends on xpty internals and may break if xpty changes.
-		// A proper fix would require forking xpty or getting upstream changes.
-		pp := util.GetUnexportedField(xp, "pp").(*xpty.PassthroughPipe)
-		for {
-			r, _, err := pp.ReadRune()
-			if err != nil {
-				if err != io.EOF {
-					logger.Error("Error reading from pseudo terminal", "error", err)
-				}
-				// TODO: handle this error better. if this happens, the terminal
-				// state will never be updated anymore and the process will appear
-				// unresponsive.
-				return
-			}
-			process.screenUpdateLock.Lock()
-			// writing to the terminal updates its state. without it,
-			// xp.State will always return an empty string
-			xp.Term.WriteRune(r)
-			process.lastScreenUpdate = time.Now()
-			process.screenUpdateLock.Unlock()
-		}
-	}()
-
+	process := &Process{
+		sessionName: sessionName,
+		paneID:      paneID,
+		windowID:    windowID,
+		bufferName:  fmt.Sprintf("%s_buffer_%s", sessionName, strings.TrimPrefix(paneID, "%")),
+		width:       width,
+		height:      height,
+	}
 	return process, nil
 }
 
 func (p *Process) Signal(sig os.Signal) error {
-	return p.execCmd.Process.Signal(sig)
+	// Sending signals is not supported directly when running inside tmux.
+	return xerrors.Errorf("sending signals is not supported for tmux-managed processes")
 }
 
-// ReadScreen returns the contents of the terminal window.
-// It waits for the terminal to be stable for 16ms before
-// returning, or 48 ms since it's called, whichever is sooner.
-//
-// This logic acts as a kind of vsync. Agents regularly redraw
-// parts of the screen. If we naively snapshotted the screen,
-// we'd often capture it while it's being updated. This would
-// result in a malformed agent message being returned to the
-// user.
 func (p *Process) ReadScreen() string {
-	for range 3 {
-		p.screenUpdateLock.RLock()
-		if time.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
-			state := p.xp.State.String()
-			p.screenUpdateLock.RUnlock()
-			return state
-		}
-		p.screenUpdateLock.RUnlock()
-		time.Sleep(16 * time.Millisecond)
+	height := p.height
+	if height == 0 {
+		height = 24
 	}
-	return p.xp.State.String()
+	start := fmt.Sprintf("-%d", height)
+	cmd := exec.Command("tmux", "capture-pane", "-t", p.paneID, "-p", "-S", start)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return string(output)
 }
 
-// Write sends input to the process via the pseudo terminal.
 func (p *Process) Write(data []byte) (int, error) {
-	return p.xp.TerminalInPipe().Write(data)
+	if len(data) == 0 {
+		return 0, nil
+	}
+	p.writeLock.Lock()
+	defer p.writeLock.Unlock()
+
+	loadCmd := exec.Command("tmux", "load-buffer", "-b", p.bufferName, "-")
+	loadCmd.Stdin = bytes.NewReader(data)
+	if output, err := loadCmd.CombinedOutput(); err != nil {
+		return 0, xerrors.Errorf("tmux load-buffer failed: %w: %s", err, output)
+	}
+
+	pasteCmd := exec.Command("tmux", "paste-buffer", "-t", p.paneID, "-b", p.bufferName, "-d")
+	if output, err := pasteCmd.CombinedOutput(); err != nil {
+		return 0, xerrors.Errorf("tmux paste-buffer failed: %w: %s", err, output)
+	}
+	return len(data), nil
 }
 
-// Close closes the process using a SIGINT signal or forcefully killing it if the process
-// does not exit after the timeout. It then closes the pseudo terminal.
 func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 	logger.Info("Closing process")
-	if err := p.execCmd.Process.Signal(os.Interrupt); err != nil {
-		return xerrors.Errorf("failed to send SIGINT to process: %w", err)
+	if err := p.sendKeys("C-c"); err != nil {
+		logger.Warn("failed to send interrupt to tmux session", "error", err)
 	}
-
-	exited := make(chan error, 1)
-	go func() {
-		_, err := p.execCmd.Process.Wait()
-		exited <- err
-		close(exited)
-	}()
-
-	var exitErr error
-	select {
-	case <-time.After(timeout):
-		if err := p.execCmd.Process.Kill(); err != nil {
-			exitErr = xerrors.Errorf("failed to forcefully kill the process: %w", err)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		dead, _, err := p.paneStatus()
+		if err != nil && !errors.Is(err, errPaneNotFound) {
+			return err
 		}
-		// don't wait for the process to exit to avoid hanging indefinitely
-		// if the process never exits
-	case err := <-exited:
-		var pathErr *os.SyscallError
-		// ECHILD is expected if the process has already exited
-		if err != nil && !(errors.As(err, &pathErr) && pathErr.Err == syscall.ECHILD) {
-			exitErr = xerrors.Errorf("process exited with error: %w", err)
+		if dead || errors.Is(err, errPaneNotFound) {
+			if err := p.killWindow(); err != nil && !errors.Is(err, errPaneNotFound) {
+				return err
+			}
+			return nil
 		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	if err := p.xp.Close(); err != nil {
-		return xerrors.Errorf("failed to close pseudo terminal: %w, exitErr: %w", err, exitErr)
+	if err := p.killWindow(); err != nil && !errors.Is(err, errPaneNotFound) {
+		return err
 	}
-	return exitErr
+	return nil
 }
 
 var ErrNonZeroExitCode = xerrors.New("non-zero exit code")
 
-// Wait waits for the process to exit.
 func (p *Process) Wait() error {
-	state, err := p.execCmd.Process.Wait()
-	if err != nil {
-		return xerrors.Errorf("process exited with error: %w", err)
+	for {
+		dead, status, err := p.paneStatus()
+		if err != nil {
+			if errors.Is(err, errPaneNotFound) {
+				return nil
+			}
+			return err
+		}
+		if dead {
+			if status != 0 {
+				return ErrNonZeroExitCode
+			}
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	if state.ExitCode() != 0 {
-		return ErrNonZeroExitCode
+}
+
+var errPaneNotFound = errors.New("tmux pane not found")
+
+func (p *Process) paneStatus() (bool, int, error) {
+	cmd := exec.Command("tmux", "display-message", "-p", "-t", p.paneID, "#{pane_dead}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return true, 0, errPaneNotFound
+		}
+		return false, 0, xerrors.Errorf("tmux display-message failed: %w: %s", err, output)
+	}
+	dead := strings.TrimSpace(string(output)) == "1"
+	if !dead {
+		return false, 0, nil
+	}
+	cmd = exec.Command("tmux", "display-message", "-p", "-t", p.paneID, "#{pane_dead_status}")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return true, 0, errPaneNotFound
+		}
+		return true, 0, xerrors.Errorf("tmux display-message failed: %w: %s", err, output)
+	}
+	statusStr := strings.TrimSpace(string(output))
+	if statusStr == "" {
+		return true, 0, nil
+	}
+	status, err := strconv.Atoi(statusStr)
+	if err != nil {
+		return true, 0, xerrors.Errorf("failed to parse pane dead status: %w", err)
+	}
+	return true, status, nil
+}
+
+func (p *Process) killWindow() error {
+	if p.windowID == "" {
+		return nil
+	}
+	cmd := exec.Command("tmux", "kill-window", "-t", p.windowID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return errPaneNotFound
+		}
+		return xerrors.Errorf("tmux kill-window failed: %w: %s", err, output)
+	}
+	return nil
+}
+
+func (p *Process) sendKeys(keys string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", p.paneID, keys)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return errPaneNotFound
+		}
+		return xerrors.Errorf("tmux send-keys failed: %w: %s", err, output)
+	}
+	return nil
+}
+
+func isTmuxTargetMissing(err error, output []byte) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		out := strings.ToLower(string(output))
+		if strings.Contains(out, "can't find") || strings.Contains(out, "no such") || strings.Contains(out, "not found") {
+			return true
+		}
+	}
+	return false
+}
+
+func tmuxSessionExists(ctx context.Context, sessionName string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "tmux", "has-session", "-t", sessionName)
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, xerrors.Errorf("failed to check tmux session: %w", err)
+	}
+	return true, nil
+}
+
+func parsePaneWindowIDs(output []byte) (string, string, error) {
+	parts := strings.Split(strings.TrimSpace(string(output)), ",")
+	if len(parts) != 2 {
+		return "", "", xerrors.Errorf("unexpected tmux output: %q", string(output))
+	}
+	return parts[0], parts[1], nil
+}
+
+func resizeWindow(windowID string, width, height uint16) error {
+	if windowID == "" {
+		return nil
+	}
+	args := []string{"resize-window", "-t", windowID}
+	if width > 0 {
+		args = append(args, "-x", strconv.Itoa(int(width)))
+	}
+	if height > 0 {
+		args = append(args, "-y", strconv.Itoa(int(height)))
+	}
+	if len(args) <= 3 {
+		return nil
+	}
+	cmd := exec.Command("tmux", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return errPaneNotFound
+		}
+		return xerrors.Errorf("tmux resize-window failed: %w: %s", err, output)
 	}
 	return nil
 }

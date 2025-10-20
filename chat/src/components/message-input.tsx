@@ -7,6 +7,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
+  Command as CommandIcon,
   CornerDownLeftIcon,
   DeleteIcon,
   SendIcon,
@@ -14,6 +15,12 @@ import {
   Square,
 } from "lucide-react";
 import {Tabs, TabsList, TabsTrigger} from "./ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import type {ServerStatus} from "./chat-provider";
 import TextareaAutosize from "react-textarea-autosize";
 import {useChat} from "./chat-provider";
@@ -49,6 +56,32 @@ const specialKeys: Record<string, string> = {
   PageDown: "\x1b[6~", // Page Down
   Backspace: "\b", // Backspace key
 };
+
+const SHIFT_TAB_SEQUENCE = "\x1b[Z";
+const CLEAR_SCREEN_SEQUENCE = "\x0C";
+
+interface ControlAction {
+  id: string;
+  label: string;
+  display: string;
+  sequence: string;
+}
+
+const CONTROL_ACTIONS: ControlAction[] = [
+  {id: "escape", label: "Esc", display: "Esc", sequence: specialKeys.Escape},
+  {id: "enter", label: "Enter", display: "⏎", sequence: "\r"},
+  {id: "tab", label: "Tab", display: "Tab", sequence: specialKeys.Tab},
+  {id: "shift-tab", label: "Shift+Tab", display: "Shift+Tab", sequence: SHIFT_TAB_SEQUENCE},
+  {id: "one-enter", label: "1 + Enter", display: "1⏎", sequence: "1\r"},
+  {id: "two-enter", label: "2 + Enter", display: "2⏎", sequence: "2\r"},
+  {id: "three-enter", label: "3 + Enter", display: "3⏎", sequence: "3\r"},
+  {id: "ctrl-c", label: "Ctrl+C", display: "Ctrl+C", sequence: "\x03"},
+  {id: "arrow-up", label: "Up", display: "ArrowUp", sequence: specialKeys.ArrowUp},
+  {id: "arrow-down", label: "Down", display: "ArrowDown", sequence: specialKeys.ArrowDown},
+  {id: "arrow-left", label: "Left", display: "ArrowLeft", sequence: specialKeys.ArrowLeft},
+  {id: "arrow-right", label: "Right", display: "ArrowRight", sequence: specialKeys.ArrowRight},
+  {id: "clear", label: "Clear", display: "Clear", sequence: CLEAR_SCREEN_SEQUENCE},
+];
 
 export default function MessageInput({
   onSendMessage,
@@ -121,9 +154,25 @@ export default function MessageInput({
     setSentChars((prev) => [...prev, newChar]);
   };
 
+  const handleControlAction = (action: ControlAction) => {
+    if (disabled || inputMode !== "control") {
+      return;
+    }
+    addSentChar(action.display);
+    onSendMessage(action.sequence, "raw");
+    textareaRef.current?.focus();
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // In control mode, send special keys as raw messages
     if (inputMode === "control" && !disabled) {
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        addSentChar("Shift+Tab");
+        onSendMessage(SHIFT_TAB_SEQUENCE, "raw");
+        return;
+      }
+
       // Check if the pressed key is in our special keys map
       if (specialKeys[e.key]) {
         e.preventDefault();
@@ -241,26 +290,54 @@ export default function MessageInput({
               </div>
 
               <div className="flex items-center justify-between p-4">
-                <TabsList className="bg-transparent">
-                  <TabsTrigger
-                    value="text"
-                    onClick={() => {
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    Text
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="control"
-                    onClick={() => {
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    Control
-                  </TabsTrigger>
-                </TabsList>
+                <div className="flex items-center gap-2">
+                  <TabsList className="bg-transparent">
+                    <TabsTrigger
+                      value="text"
+                      onClick={() => {
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      Text
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="control"
+                      onClick={() => {
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      Control
+                    </TabsTrigger>
+                  </TabsList>
 
-                <div className={"flex flex-row gap-3"}>
+                  {inputMode === "control" && !disabled && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                        >
+                          <CommandIcon className="h-4 w-4"/>
+                          Cmd Menu
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-44">
+                        {CONTROL_ACTIONS.map((action) => (
+                          <DropdownMenuItem
+                            key={action.id}
+                            onSelect={() => handleControlAction(action)}
+                          >
+                            {action.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+
+                <div className="flex flex-row items-center gap-3">
                   <Button
                     type="submit"
                     size="icon"
