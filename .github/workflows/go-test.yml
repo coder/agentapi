@@ -1,21 +1,44 @@
 name: Go Tests
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    push:
+        branches: [main]
+    pull_request:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: 'stable'
+            - name: Set up Go
+              uses: actions/setup-go@v5
+              with:
+                  go-version: "stable"
 
-    - name: Test
-      run: go test -count=1 -v ./...
+            - name: Test
+              run: CGO_ENABLED=0 go test -count=1 -v ./...
+
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v5
+              with:
+                  go-version: "stable"
+
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+
+            - name: Install Chat Dependencies
+              run: cd chat && bun install
+
+            - name: run linters
+              run: make lint
+
+            - name: Check for unstaged changes
+              run: |
+                  make gen
+                  ./check_unstaged.sh

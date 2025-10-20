@@ -4,15 +4,30 @@ go 1.23.2
 
 require (
 	github.com/ActiveState/termtest/xpty v0.6.0
+	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/charmbracelet/bubbletea v1.3.4
+	github.com/coder/agentapi-sdk-go v0.0.0-20250505131810-560d1d88d225
 	github.com/danielgtaylor/huma/v2 v2.32.0
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-chi/cors v1.2.1
 	github.com/spf13/cobra v1.9.1
+	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tmaxmax/go-sse v0.10.0
 	golang.org/x/term v0.30.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
+)
+
+require (
+	github.com/fsnotify/fsnotify v1.8.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
+	github.com/sagikazarmark/locafero v0.7.0 // indirect
+	github.com/sourcegraph/conc v0.3.0 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
+	github.com/subosito/gotenv v1.6.0 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
+	go.uber.org/multierr v1.9.0 // indirect
 )
 
 require (
@@ -29,7 +44,6 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/pty v1.1.8 // indirect
-	github.com/kr/text v0.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -45,6 +59,5 @@ require (
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -1,16 +1,11 @@
-╭──────────────────────────────────────────────────────────────╮
-│ ● OpenAI Codex (research preview) v0.1.2504161551            │
-╰──────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────╮
-│ localhost session: c4bf4c89c3fb483c935bdff223394646          │
-│ ↳ workdir: ~/dev/agentapi                                    │
-│ ↳ model: o4-mini                                             │
-│ ↳ approval: suggest                                          │
-╰──────────────────────────────────────────────────────────────╯
+>_ You are using OpenAI Codex in ~
 
-    system
-    Warning: model "o4-mini" is not in the list of available models returned by OpenAI.
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ send a message                                                                                           │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  send q or ctrl+c to exit | send "/clear" to reset | send "/help" for commands | press enter to send
+ To get started, describe a task or try one of these commands:
+
+ /init - create an AGENTS.md file with instructions for Codex
+ /status - show current session configuration and token usage
+ /diff - show git diff (including untracked files)
+ /prompts - show example prompts
+
+▌ Ask Codex to do anything
+ ⏎ send   Shift+⏎ newline   Ctrl+C quit

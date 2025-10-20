@@ -1,0 +1,45 @@
+  Getting started with Auggie by Augment Code
+  1. You can ask questions, edit files, or run commands
+  2. Your workspace is automatically indexed for best results
+  3. Commands will run automatically
+
+
+  💡 For automation, use 'auggie --print "your task"'
+
+
+
+
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ › Which file has this snippet
+ func formatCodexMessage(message string, userInput string) string {
+        message = RemoveUserInput(message, userInput, AgentTypeCodex)
+        message = removeCodexInputBox(message)
+        message = trimEmptyLines(message)
+        return message
+ }
+ » I'll search for the file containing that specific function snippet.
+ » Codebase search - context engine
+   ⎿ Find the file that contains the function "formatCodexMessage" with the exact signature "func formatCodexMessage(message string, userInput string) string" and implementation that calls RemoveUserInput,
+     removeCodexInputBox, and trimEmptyLines
+   ⎿ Found 12 files
+     lib/msgfmt/testdata/format/codex/multi-line-input/user.txt
+     lib/msgfmt/testdata/format/codex/multi-line-input/msg.txt
+     lib/msgfmt/msgfmt.go
+     lib/msgfmt/testdata/format/auggie/multi-line-input/user.txt
+     lib/msgfmt/testdata/format/cursor/multi-line-input/user.txt
+     lib/msgfmt/message_box.go
+     lib/msgfmt/testdata/format/cursor/multi-line-input/msg.txt
+     lib/msgfmt/testdata/format/auggie/multi-line-input/msg.txt
+     lib/msgfmt/testdata/format/codex/multi-line-input/expected.txt
+     lib/msgfmt/testdata/format/cursor/multi-line-input/expected.txt
+     +2 more lines
+
+ » The function formatCodexMessage is located in the file `lib/msgfmt/msgfmt.go` at lines 247-252.
+ »
+   lib/msgfmt/msgfmt.go (EXCERPT)
+   func formatCodexMessage(message string, userInput string) string {
+ »      message = RemoveUserInput(message, userInput, AgentTypeCodex)
+        message = removeCodexInputBox(message)
+        message = trimEmptyLines(message)
+        return message
+   }

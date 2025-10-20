@@ -188,7 +188,7 @@ func TestRemoveUserInput(t *testing.T) {
 			assert.NoError(t, err)
 			expected, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "expected.txt"))
 			assert.NoError(t, err)
-			assert.Equal(t, string(expected), RemoveUserInput(string(msg), string(userInput)))
+			assert.Equal(t, string(expected), RemoveUserInput(string(msg), string(userInput), AgentTypeCustom))
 		})
 	}
 }
@@ -218,7 +218,7 @@ func TestTrimEmptyLines(t *testing.T) {
 
 func TestFormatAgentMessage(t *testing.T) {
 	dir := "testdata/format"
-	agentTypes := []AgentType{AgentTypeClaude, AgentTypeGoose, AgentTypeAider, AgentTypeCodex, AgentTypeCustom}
+	agentTypes := []AgentType{AgentTypeClaude, AgentTypeGoose, AgentTypeAider, AgentTypeGemini, AgentTypeCopilot, AgentTypeAmp, AgentTypeCodex, AgentTypeCursor, AgentTypeAuggie, AgentTypeAmazonQ, AgentTypeOpencode, AgentTypeCustom}
 	for _, agentType := range agentTypes {
 		t.Run(string(agentType), func(t *testing.T) {
 			cases, err := testdataDir.ReadDir(path.Join(dir, string(agentType)))

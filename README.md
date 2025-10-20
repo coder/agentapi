@@ -1,9 +1,8 @@
 # AgentAPI
 
-Control [Claude Code](https://github.com/anthropics/claude-code), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), and [Codex](https://github.com/openai/codex) with an HTTP API.
+Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [GitHub Copilot](https://github.com/github/copilot-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
 
 ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
-
 
 You can use AgentAPI:
 
@@ -14,7 +13,15 @@ You can use AgentAPI:
 
 ## Quickstart
 
-1. Install `agentapi` by downloading the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
+1. Install `agentapi`:
+
+   ```bash
+   OS=$(uname -s | tr "[:upper:]" "[:lower:]");
+   ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/");
+   curl -fsSL "https://github.com/coder/agentapi/releases/latest/download/agentapi-${OS}-${ARCH}" -o agentapi && chmod +x agentapi
+   ```
+
+   Alternatively, you can download the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
 
 1. Verify the installation:
 
@@ -65,6 +72,9 @@ agentapi server -- aider --model sonnet --api-key anthropic=sk-ant-apio3-XXX
 agentapi server -- goose
 ```
 
+> [!NOTE]
+> When using Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+
 An OpenAPI schema is available in [openapi.json](openapi.json).
 
 By default, the server runs on port 3284. Additionally, the server exposes the same OpenAPI schema at http://localhost:3284/openapi.json and the available endpoints in a documentation UI at http://localhost:3284/docs.
@@ -75,6 +85,54 @@ There are 4 endpoints:
 - POST `/message` - sends a message to the agent. When a 200 response is returned, AgentAPI has detected that the agent started processing the message
 - GET `/status` - returns the current status of the agent, either "stable" or "running"
 - GET `/events` - an SSE stream of events from the agent: message and status updates
+
+#### Allowed hosts
+
+By default, the server only allows requests with the host header set to `localhost`. If you'd like to host AgentAPI elsewhere, you can change this by using the `AGENTAPI_ALLOWED_HOSTS` environment variable or the `--allowed-hosts` flag. Hosts must be hostnames only (no ports); the server ignores the port portion of incoming requests when authorizing.
+
+To allow requests from any host, use `*` as the allowed host.
+
+```bash
+agentapi server --allowed-hosts '*' -- claude
+```
+
+To allow a specific host, use:
+
+```bash
+agentapi server --allowed-hosts 'example.com' -- claude
+```
+
+To specify multiple hosts, use a comma-separated list when using the `--allowed-hosts` flag, or a space-separated list when using the `AGENTAPI_ALLOWED_HOSTS` environment variable.
+
+```bash
+agentapi server --allowed-hosts 'example.com,example.org' -- claude
+# or
+AGENTAPI_ALLOWED_HOSTS='example.com example.org' agentapi server -- claude
+```
+
+#### Allowed origins
+
+By default, the server allows CORS requests from `http://localhost:3284`, `http://localhost:3000`, and `http://localhost:3001`. If you'd like to change which origins can make cross-origin requests to AgentAPI, you can change this by using the `AGENTAPI_ALLOWED_ORIGINS` environment variable or the `--allowed-origins` flag.
+
+To allow requests from any origin, use `*` as the allowed origin:
+
+```bash
+agentapi server --allowed-origins '*' -- claude
+```
+
+To allow a specific origin, use:
+
+```bash
+agentapi server --allowed-origins 'https://example.com' -- claude
+```
+
+To specify multiple origins, use a comma-separated list when using the `--allowed-origins` flag, or a space-separated list when using the `AGENTAPI_ALLOWED_ORIGINS` environment variable. Origins must include the protocol (`http://` or `https://`) and support wildcards (e.g., `https://*.example.com`):
+
+```bash
+agentapi server --allowed-origins 'https://example.com,http://localhost:3000' -- claude
+# or
+AGENTAPI_ALLOWED_ORIGINS='https://example.com http://localhost:3000' agentapi server -- claude
+```
 
 ### `agentapi attach`
 

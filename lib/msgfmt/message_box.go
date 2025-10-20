@@ -25,7 +25,6 @@ func findGreaterThanMessageBox(lines []string) int {
 // ───────────────
 // |
 // ───────────────
-// Used by OpenAI Codex.
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
 		if strings.Contains(lines[i], "───────────────") &&
@@ -49,5 +48,34 @@ func removeMessageBox(msg string) string {
 		lines = lines[:messageBoxStartIdx]
 	}
 
+	return strings.Join(lines, "\n")
+}
+
+func removeCodexInputBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	// Remove the input box, we need to match the exact pattern, because thinking follows the same pattern of ▌ followed by text
+	if len(lines) >= 2 && strings.Contains(lines[len(lines)-2], "▌ Ask Codex to do anything") {
+		idx := len(lines) - 2
+		lines = append(lines[:idx], lines[idx+1:]...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func removeOpencodeMessageBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	// Check the last 3 lines for
+	//
+	//  ┃                                                                      ┃
+	//  ┃ >                                                                    ┃
+	//  ┃                                                                      ┃
+	// We only check for the first ┃ and then an empty line above it - as sometimes the full input block does not load within a snapshot,
+	// this leads to displaying a bunch of newlines.
+	for i := len(lines) - 1; i >= 1; i-- {
+		if strings.TrimSpace(lines[i-1]) == "" &&
+			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
+			lines = lines[:i-1]
+			break
+		}
+	}
 	return strings.Join(lines, "\n")
 }

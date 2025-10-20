@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .sources.stamp
+
+*storybook.log
+storybook-static

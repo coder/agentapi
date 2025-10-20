@@ -87,7 +87,9 @@ func FileServerWithIndexFallback(chatBasePath string) http.Handler {
 		// Try to serve the file directly
 		f, err := chatFS.Open(trimmedPath)
 		if err == nil {
-			defer f.Close()
+			defer func() {
+				_ = f.Close()
+			}()
 			fileServer.ServeHTTP(w, r)
 			return
 		}

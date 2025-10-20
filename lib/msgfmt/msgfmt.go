@@ -1,6 +1,8 @@
 package msgfmt
 
-import "strings"
+import (
+	"strings"
+)
 
 const WhiteSpaceChars = " \t\n\r\f\v"
 
@@ -138,6 +140,24 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 	return msgIdx
 }
 
+// skipTrailingInputBoxLine checks if the next line contains all the given markers
+// and returns the incremented index if found. In case of Gemini and Cursor, the user
+// input is echoed back in a box. This function searches for the markers passed by the
+// caller and returns (currentIdx+1, true) if the next line contains all of them,
+// otherwise returns (currentIdx, false).
+func skipTrailingInputBoxLine(lines []string, currentIdx int, markers ...string) (idx int, found bool) {
+	if currentIdx+1 >= len(lines) {
+		return currentIdx, false
+	}
+	line := lines[currentIdx+1]
+	for _, m := range markers {
+		if !strings.Contains(line, m) {
+			return currentIdx, false
+		}
+	}
+	return currentIdx + 1, true
+}
+
 // RemoveUserInput removes the user input from the message.
 // Goose, Aider, and Claude Code echo back the user's input to
 // make it visible in the terminal. This function makes a best effort
@@ -147,7 +167,7 @@ func findUserInputEndIdx(userInputStartIdx int, msg []rune, userInput []rune) in
 // For instance, if there are any leading or trailing lines with only whitespace,
 // and each line of the input in msgRaw is preceded by a character like `>`,
 // these lines will not be removed.
-func RemoveUserInput(msgRaw string, userInputRaw string) string {
+func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) string {
 	if userInputRaw == "" {
 		return msgRaw
 	}
@@ -166,6 +186,25 @@ func RemoveUserInput(msgRaw string, userInputRaw string) string {
 	// Return the original message starting with the first line
 	// that doesn't contain the echoed user input.
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
+
+	// Skip Gemini/Cursor trailing input box line
+	if agentType == AgentTypeGemini || agentType == AgentTypeCopilot {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
+			lastUserInputLineIdx = idx
+		}
+	} else if agentType == AgentTypeCursor {
+		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
+			lastUserInputLineIdx = idx
+		}
+	} else if agentType == AgentTypeOpencode {
+		// skip +2 lines after the input
+		//   ┃  jkmr (08:46 PM)                                                     ┃
+		//   ┃                                                                      ┃
+		if lastUserInputLineIdx+2 < len(msgLines) {
+			lastUserInputLineIdx += 2
+		}
+	}
+
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")
 }
 
@@ -192,17 +231,39 @@ func trimEmptyLines(message string) string {
 
 type AgentType string
 
+// Remember to add the display name to the agentapi/chat/src/components/chat-provider.tsx
 const (
-	AgentTypeClaude AgentType = "claude"
-	AgentTypeGoose  AgentType = "goose"
-	AgentTypeAider  AgentType = "aider"
-	AgentTypeCodex  AgentType = "codex"
-	AgentTypeCustom AgentType = "custom"
+	AgentTypeClaude   AgentType = "claude"
+	AgentTypeGoose    AgentType = "goose"
+	AgentTypeAider    AgentType = "aider"
+	AgentTypeCodex    AgentType = "codex"
+	AgentTypeGemini   AgentType = "gemini"
+	AgentTypeCopilot  AgentType = "copilot"
+	AgentTypeAmp      AgentType = "amp"
+	AgentTypeCursor   AgentType = "cursor"
+	AgentTypeAuggie   AgentType = "auggie"
+	AgentTypeAmazonQ  AgentType = "amazonq"
+	AgentTypeOpencode AgentType = "opencode"
+	AgentTypeCustom   AgentType = "custom"
 )
 
-func formatGenericMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput)
+func formatGenericMessage(message string, userInput string, agentType AgentType) string {
+	message = RemoveUserInput(message, userInput, agentType)
 	message = removeMessageBox(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
+func formatCodexMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeCodex)
+	message = removeCodexInputBox(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
+func formatOpencodeMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	message = removeOpencodeMessageBox(message)
 	message = trimEmptyLines(message)
 	return message
 }
@@ -210,15 +271,29 @@ func formatGenericMessage(message string, userInput string) string {
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
 	switch agentType {
 	case AgentTypeClaude:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeGoose:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAider:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCodex:
-		return formatGenericMessage(message, userInput)
+		return formatCodexMessage(message, userInput)
+	case AgentTypeGemini:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeCopilot:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAmp:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeCursor:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAuggie:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAmazonQ:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeOpencode:
+		return formatOpencodeMessage(message, userInput)
 	case AgentTypeCustom:
-		return formatGenericMessage(message, userInput)
+		return formatGenericMessage(message, userInput, agentType)
 	default:
 		return message
 	}

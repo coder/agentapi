@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
-const basePath = process.env.BASE_PATH ?? "/chat";
+let basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/chat";
+if (basePath.endsWith("/")) {
+  basePath = basePath.slice(0, -1);
+}
 
 const nextConfig: NextConfig = {
   // Enable static exports

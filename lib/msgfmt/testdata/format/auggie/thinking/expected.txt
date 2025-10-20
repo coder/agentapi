@@ -1,0 +1,48 @@
+  Getting started with Auggie by Augment Code
+  1. You can ask questions, edit files, or run commands
+  2. Your workspace is automatically indexed for best results
+  3. Commands will run automatically
+
+
+  💡 For automation, use 'auggie --print "your task"'
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ › Which repo is this ? 
+
+ » I'll help you identify what repository this is by examining the codebase structure and contents.
+ » . - read file
+   ⎿ Read 40 lines
+     ./CHANGELOG.md
+     ./LICENSE
+     ./Makefile
+     ./README.md
+     ./agentapi
+     ./chat
+     ./cmd
+     ./example.txt
+     ./forge.yaml
+     ./go.mod
+     +30 more lines
+
+ » Let me check the README and other key files to identify this repository.
+ » README.md - read file
+   ⎿ Read 188 lines
+          1     # AgentAPI
+          2     
+          3     Control [Claude Code](https://github.com/anthropics/claude-code), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), 
+     [Gemini](https://github.com/google-gemini/gemini-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), and [Cursor CLI](https://cursor.com/en/cli) with
+      an HTTP API.
+          4     
+          5     ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
+          6     
+          7     You can use AgentAPI:
+          8     
+          9     - to build a unified chat interface for coding agents
+         10     - as a backend in an MCP server that lets one agent control another coding agent
+     +178 more lines
+
+ » This is the AgentAPI repository by Coder.
+
+   AgentAPI is a tool that provides an HTTP API to control various coding agents including:
+
+
+ ⠞ Processing response... (2s • esc to interrupt)

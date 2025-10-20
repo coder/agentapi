@@ -9,7 +9,8 @@ import {
   PropsWithChildren,
   useContext,
 } from "react";
-import { toast } from "sonner";
+import {toast} from "sonner";
+import {getErrorMessage} from "@/lib/error-utils";
 
 interface Message {
   id: number;
@@ -32,6 +33,23 @@ interface MessageUpdateEvent {
 
 interface StatusChangeEvent {
   status: string;
+  agent_type: string;
+}
+
+interface APIErrorDetail {
+  location: string;
+  message: string;
+  value: null | string | number | boolean | object;
+}
+
+interface APIErrorModel {
+  $schema: string;
+  detail: string;
+  errors: APIErrorDetail[];
+  instance: string;
+  status: number;
+  title: string;
+  type: string;
 }
 
 function isDraftMessage(message: Message | DraftMessage): boolean {
@@ -40,24 +58,88 @@ function isDraftMessage(message: Message | DraftMessage): boolean {
 
 type MessageType = "user" | "raw";
 
-type ServerStatus = "online" | "offline" | "unknown";
+export type ServerStatus = "stable" | "running" | "offline" | "unknown";
+
+export interface FileUploadResponse {
+  ok: boolean;
+  filePath?: string;
+}
+
+export type AgentType = "claude" | "goose" | "aider" | "gemini" | "amp" | "codex" | "cursor" | "cursor-agent" | "copilot" | "auggie" | "amazonq" | "opencode" | "custom" | "unknown";
+
+export type AgentColorDisplayNamePair = {
+  displayName: string;
+}
+
+export const AgentType: Record<Exclude<AgentType, "unknown">, AgentColorDisplayNamePair> = {
+  claude: {displayName: "Claude Code"},
+  goose: {displayName: "Goose"},
+  aider: {displayName: "Aider"},
+  gemini: { displayName: "Gemini"},
+  amp: {displayName: "Amp"},
+  codex: {displayName: "Codex"},
+  cursor: { displayName: "Cursor Agent"},
+  "cursor-agent": { displayName: "Cursor Agent"},
+  copilot: {displayName: "Copilot"},
+  auggie: {displayName: "Auggie"},
+  amazonq: {displayName: "Amazon Q"},
+  opencode: {displayName: "Opencode"},
+  custom: { displayName: "Custom"}
+}
 
 interface ChatContextValue {
   messages: (Message | DraftMessage)[];
   loading: boolean;
   serverStatus: ServerStatus;
   sendMessage: (message: string, type?: MessageType) => void;
+  uploadFiles: (formData: FormData) => Promise<FileUploadResponse>;
+  agentType: AgentType;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
+
+const useAgentAPIUrl = (): string => {
+  const searchParams = useSearchParams();
+  const paramsUrl = searchParams.get("url");
+  if (paramsUrl) {
+    return paramsUrl;
+  }
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH;
+  if (!basePath) {
+    throw new Error(
+      "agentAPIUrl is not set. Please set the url query parameter to the URL of the AgentAPI or the NEXT_PUBLIC_BASE_PATH environment variable."
+    );
+  }
+  // NOTE(cian): We use '../' here to construct the agent API URL relative
+  // to the chat's location. Let's say the app is hosted on a subpath
+  // `/@admin/workspace.agent/apps/ccw/`. When you visit this URL you get
+  // redirected to `/@admin/workspace.agent/apps/ccw/chat/embed`. This serves
+  // this React application, but it needs to know where the agent API is hosted.
+  // This will be at the root of where the application is mounted e.g.
+  // `/@admin/workspace.agent/apps/ccw/`. Previously we used
+  // `window.location.origin` but this assumes that the application owns the
+  // entire origin.
+  // See: https://github.com/coder/coder/issues/18779#issuecomment-3133290494 for more context.
+  let chatURL: string = new URL(basePath, window.location.origin).toString();
+  // NOTE: trailing slashes and relative URLs are tricky.
+  // https://developer.mozilla.org/en-US/docs/Web/API/URL_API/Resolving_relative_references#current_directory_relative
+  if (!chatURL.endsWith("/")) {
+    chatURL += "/";
+  }
+  const agentAPIURL = new URL("..", chatURL).toString();
+  if (agentAPIURL.endsWith("/")) {
+    return agentAPIURL.slice(0, -1);
+  }
+  return agentAPIURL;
+};
 
 export function ChatProvider({ children }: PropsWithChildren) {
   const [messages, setMessages] = useState<(Message | DraftMessage)[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
+  const [agentType, setAgentType] = useState<AgentType>("custom");
   const eventSourceRef = useRef<EventSource | null>(null);
-  const searchParams = useSearchParams();
-  const agentAPIUrl = searchParams.get("url") || window.location.origin;
+  const agentAPIUrl = useAgentAPIUrl();
 
   // Set up SSE connection to the events endpoint
   useEffect(() => {
@@ -121,7 +203,16 @@ export function ChatProvider({ children }: PropsWithChildren) {
       // Handle status changes
       eventSource.addEventListener("status_change", (event) => {
         const data: StatusChangeEvent = JSON.parse(event.data);
-        setServerStatus(data.status as ServerStatus);
+        if (data.status === "stable") {
+          setServerStatus("stable");
+        } else if (data.status === "running") {
+          setServerStatus("running");
+        } else {
+          setServerStatus("unknown");
+        }
+
+        // Set agent type
+        setAgentType(data.agent_type === "" ? "unknown" : data.agent_type as AgentType);
       });
 
       // Handle connection open (server is online)
@@ -189,13 +280,13 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as APIErrorModel;
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
         const messages =
           "errors" in errorData
-            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              errorData.errors.map((e: any) => e.message).join(", ")
+            ?
+              errorData.errors.map((e: APIErrorDetail) => e.message).join(", ")
             : "";
 
         const fullDetail = `${detail}: ${messages}`;
@@ -203,20 +294,13 @@ export function ChatProvider({ children }: PropsWithChildren) {
           description: fullDetail,
         });
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      console.error("Error sending message:", error);
-      const detail = error.detail;
-      const messages =
-        "errors" in error
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error.errors.map((e: any) => e.message).join("\n")
-          : "";
 
-      const fullDetail = `${detail}: ${messages}`;
+    } catch (error) {
+      console.error("Error sending message:", error);
+      const message = getErrorMessage(error)
 
       toast.error(`Error sending message`, {
-        description: fullDetail,
+        description: message,
       });
     } finally {
       if (type === "user") {
@@ -228,6 +312,46 @@ export function ChatProvider({ children }: PropsWithChildren) {
     }
   };
 
+  // Upload files to workspace
+  const uploadFiles = async (formData: FormData): Promise<FileUploadResponse> => {
+    let result: FileUploadResponse = {ok: true};
+    try{
+      const response = await fetch(`${agentAPIUrl}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        result.ok = false;
+        const errorData = await response.json() as APIErrorModel;
+        console.error("Failed to send message:", errorData);
+        const detail = errorData.detail;
+        const messages =
+          "errors" in errorData
+            ?
+            errorData.errors.map((e: APIErrorDetail) => e.message).join(", ")
+            : "";
+
+        const fullDetail = `${detail}: ${messages}`;
+        toast.error(`Failed to upload files`, {
+          description: fullDetail,
+        });
+      } else {
+        result = (await response.json()) as FileUploadResponse;
+      }
+
+    } catch (error) {
+      result.ok = false;
+      console.error("Error uploading files:", error);
+      const message = getErrorMessage(error)
+
+      toast.error(`Error uploading files`, {
+        description: message,
+      });
+    }
+    return result;
+  }
+
   return (
     <ChatContext.Provider
       value={{
@@ -235,6 +359,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
         loading,
         sendMessage,
         serverStatus,
+        uploadFiles,
+        agentType,
       }}
     >
       {children}

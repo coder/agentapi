@@ -2,7 +2,7 @@ name: Build Release Binaries
 
 on:
   release:
-    types: [created, published, edited]
+    types: [published]
   push:
     branches: [ main ]
   workflow_dispatch:
@@ -33,6 +33,11 @@ jobs:
     - name: Install Chat Dependencies
       run: cd chat && bun install
 
+    - name: Run make gen and check for unstaged changes
+      run: |
+        make gen
+        ./check_unstaged.sh
+
     - name: Build and Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,6 +45,7 @@ jobs:
       run: |
         build_variants=(
           "linux amd64 agentapi-linux-amd64"
+          "linux arm64 agentapi-linux-arm64"
           "darwin amd64 agentapi-darwin-amd64"
           "darwin arm64 agentapi-darwin-arm64"
           "windows amd64 agentapi-windows-amd64.exe"
@@ -49,7 +55,7 @@ jobs:
           read -r goos goarch artifact_name <<< "$variant"
 
           echo "Building for GOOS=$goos GOARCH=$goarch..."
-          GOOS=$goos GOARCH=$goarch BINPATH="out/$artifact_name" make build
+          CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch BINPATH="out/$artifact_name" make build
         done
 
     - name: Upload Build Artifact

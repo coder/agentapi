@@ -80,7 +80,9 @@ func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- httpapi.Scree
 	if err != nil {
 		return xerrors.Errorf("failed to do request: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 
 	for ev, err := range sse.Read(res.Body, &sse.ReadConfig{
 		// 256KB: screen can be big. The default terminal size is 80x1000,
@@ -115,7 +117,9 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 	if err != nil {
 		return xerrors.Errorf("failed to do request: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 	if res.StatusCode != http.StatusOK {
 		return xerrors.Errorf("failed to write raw input: %w", errors.New(res.Status))
 	}
@@ -132,7 +136,9 @@ func runAttach(remoteUrl string) error {
 	if err != nil {
 		return xerrors.Errorf("failed to make raw: %w", err)
 	}
-	defer term.Restore(stdin, oldState)
+	defer func() {
+		_ = term.Restore(stdin, oldState)
+	}()
 
 	stdinWriter := &ChannelWriter{
 		ch: make(chan []byte, 4096),

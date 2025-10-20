@@ -3,23 +3,19 @@
     "schemas": {
       "AgentStatus": {
         "enum": [
-          "stable",
-          "running"
-        ],
-        "examples": [
+          "running",
           "stable"
         ],
+        "example": "stable",
         "title": "AgentStatus",
         "type": "string"
       },
       "ConversationRole": {
         "enum": [
-          "user",
-          "agent"
-        ],
-        "examples": [
+          "agent",
           "user"
         ],
+        "example": "user",
         "title": "ConversationRole",
         "type": "string"
       },
@@ -45,18 +41,14 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/ErrorModel.json"
-            ],
+            "example": "https://example.com/schemas/ErrorModel.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
-            "examples": [
-              "Property foo is required but is missing."
-            ],
+            "example": "Property foo is required but is missing.",
             "type": "string"
           },
           "errors": {
@@ -64,40 +56,30 @@
             "items": {
               "$ref": "#/components/schemas/ErrorDetail"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "instance": {
             "description": "A URI reference that identifies the specific occurrence of the problem.",
-            "examples": [
-              "https://example.com/error-log/abc123"
-            ],
+            "example": "https://example.com/error-log/abc123",
             "format": "uri",
             "type": "string"
           },
           "status": {
             "description": "HTTP status code",
-            "examples": [
-              400
-            ],
+            "example": 400,
             "format": "int64",
             "type": "integer"
           },
           "title": {
             "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-            "examples": [
-              "Bad Request"
-            ],
+            "example": "Bad Request",
             "type": "string"
           },
           "type": {
             "default": "about:blank",
             "description": "A URI reference to human-readable documentation for the error.",
-            "examples": [
-              "https://example.com/errors/example"
-            ],
+            "example": "https://example.com/errors/example",
             "format": "uri",
             "type": "string"
           }
@@ -109,9 +91,7 @@
         "properties": {
           "content": {
             "description": "Message content. The message is formatted as it appears in the agent's terminal session, meaning that, by default, it consists of lines of text with 80 characters per line.",
-            "examples": [
-              "Hello world"
-            ],
+            "example": "Hello world",
             "type": "string"
           },
           "id": {
@@ -130,8 +110,8 @@
           }
         },
         "required": [
-          "id",
           "content",
+          "id",
           "role",
           "time"
         ],
@@ -142,18 +122,14 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessageRequestBody.json"
-            ],
+            "example": "https://example.com/schemas/MessageRequestBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "content": {
             "description": "Message content",
-            "examples": [
-              "Hello, agent!"
-            ],
+            "example": "Hello, agent!",
             "type": "string"
           },
           "type": {
@@ -172,9 +148,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessageResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/MessageResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -191,12 +165,10 @@
       },
       "MessageType": {
         "enum": [
-          "user",
-          "raw"
-        ],
-        "examples": [
+          "raw",
           "user"
         ],
+        "example": "user",
         "title": "MessageType",
         "type": "string"
       },
@@ -224,8 +196,8 @@
         },
         "required": [
           "id",
-          "role",
           "message",
+          "role",
           "time"
         ],
         "type": "object"
@@ -235,9 +207,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/MessagesResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/MessagesResponseBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -270,12 +240,17 @@
       "StatusChangeBody": {
         "additionalProperties": false,
         "properties": {
+          "agent_type": {
+            "description": "Type of the agent being used by the server.",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Agent status"
           }
         },
         "required": [
+          "agent_type",
           "status"
         ],
         "type": "object"
@@ -285,11 +260,13 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/StatusResponseBody.json"
-            ],
+            "example": "https://example.com/schemas/StatusResponseBody.json",
             "format": "uri",
             "readOnly": true,
+            "type": "string"
+          },
+          "agent_type": {
+            "description": "Type of the agent being used by the server.",
             "type": "string"
           },
           "status": {
@@ -298,7 +275,33 @@
           }
         },
         "required": [
+          "agent_type",
           "status"
+        ],
+        "type": "object"
+      },
+      "UploadResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UploadResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "filePath": {
+            "description": "Path of the file",
+            "type": "string"
+          },
+          "ok": {
+            "description": "Indicates whether the files were uploaded successfully.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "filePath",
+          "ok"
         ],
         "type": "object"
       }
@@ -307,9 +310,9 @@
   "info": {
     "description": "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi",
     "title": "AgentAPI",
-    "version": "0.2.2"
+    "version": "0.10.1"
   },
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "paths": {
     "/events": {
       "get": {
@@ -494,6 +497,61 @@
           }
         },
         "summary": "Get status"
+      }
+    },
+    "/upload": {
+      "post": {
+        "description": "Upload files to the specified upload path.",
+        "operationId": "post-upload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "contentEncoding": "binary",
+                    "contentMediaType": "application/octet-stream",
+                    "description": "file that needs to be uploaded",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post upload"
       }
     }
   }
