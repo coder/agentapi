@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo} from "react";
+import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo, useState} from "react";
 
 interface Message {
   role: string;
@@ -24,18 +24,20 @@ interface ProcessedMessageProps {
 }
 
 export default function MessageList({messages}: MessageListProps) {
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [scrollAreaRef, setScrollAreaRef] = useState<HTMLDivElement | null>(null);
 
   // Track if user is at bottom - default to true for initial scroll
   const isAtBottomRef = useRef(true);
   // Track the last known scroll height to detect new content
   const lastScrollHeightRef = useRef(0);
+  // Track if we're currently doing a programmatic scroll
+  const isProgrammaticScrollRef = useRef(false);
 
   const checkIfAtBottom = useCallback(() => {
-    if (!scrollAreaRef.current) return false;
-    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
+    if (!scrollAreaRef) return false;
+    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
-  }, []);
+  }, [scrollAreaRef]);
 
   // Track Ctrl (Windows/Linux) or Cmd (Mac) key state
   // This is so that underline is only visible when hover + cmd/ctrl
@@ -60,26 +62,30 @@ export default function MessageList({messages}: MessageListProps) {
 
   // Update isAtBottom on scroll
   useEffect(() => {
-    const scrollContainer = scrollAreaRef.current;
-    if (!scrollContainer) return;
+    if (!scrollAreaRef) return;
 
     const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
       isAtBottomRef.current = checkIfAtBottom();
     };
 
     // Initial check
     handleScroll();
 
-    scrollContainer.addEventListener("scroll", handleScroll);
-    return () => scrollContainer.removeEventListener("scroll", handleScroll);
-  }, [checkIfAtBottom]);
+    scrollAreaRef.addEventListener("scroll", handleScroll);
+    scrollAreaRef.addEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
+    return () => {
+      scrollAreaRef.removeEventListener("scroll", handleScroll)
+      scrollAreaRef.removeEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
+
+    };
+  }, [checkIfAtBottom, scrollAreaRef]);
 
   // Handle auto-scrolling when messages change
   useLayoutEffect(() => {
-    if (!scrollAreaRef.current) return;
+    if (!scrollAreaRef) return;
 
-    const scrollContainer = scrollAreaRef.current;
-    const currentScrollHeight = scrollContainer.scrollHeight;
+    const currentScrollHeight = scrollAreaRef.scrollHeight;
 
     // Check if this is new content (scroll height increased)
     const hasNewContent = currentScrollHeight > lastScrollHeightRef.current;
@@ -95,7 +101,8 @@ export default function MessageList({messages}: MessageListProps) {
       hasNewContent &&
       (isFirstRender || isAtBottomRef.current || isNewUserMessage)
     ) {
-      scrollContainer.scrollTo({
+      isProgrammaticScrollRef.current = true;
+      scrollAreaRef.scrollTo({
         top: currentScrollHeight,
         behavior: isFirstRender ? "instant" : "smooth",
       });
@@ -105,7 +112,7 @@ export default function MessageList({messages}: MessageListProps) {
 
     // Update the last known scroll height
     lastScrollHeightRef.current = currentScrollHeight;
-  }, [messages]);
+  }, [messages, scrollAreaRef]);
 
   // If no messages, show a placeholder
   if (messages.length === 0) {
@@ -117,7 +124,7 @@ export default function MessageList({messages}: MessageListProps) {
   }
 
   return (
-    <div className="overflow-y-auto flex-1" ref={scrollAreaRef}>
+    <div className="overflow-y-auto flex-1" ref={setScrollAreaRef}>
       <div
         className="p-4 flex flex-col gap-4 max-w-4xl mx-auto transition-all duration-300 ease-in-out min-h-0">
         {messages.map((message, index) => (
@@ -191,7 +198,6 @@ const ProcessedMessage = React.memo(function ProcessedMessage({
 
   const linkedContent = useMemo(() => {
     return messageContent.split(urlRegex).map((content, idx) => {
-      console.log(content)
       if (urlRegex.test(content)) {
         return (
           <a
