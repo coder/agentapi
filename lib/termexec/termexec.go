@@ -17,7 +17,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const tmuxSessionName = "wingman-agents"
+const DefaultTmuxSessionName = "wingman-agents"
 
 type Process struct {
 	sessionName string
@@ -34,11 +34,15 @@ type StartProcessConfig struct {
 	Args           []string
 	TerminalWidth  uint16
 	TerminalHeight uint16
+	SessionName    string
 }
 
 func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error) {
 	logger := logctx.From(ctx)
-	sessionName := tmuxSessionName
+	sessionName := args.SessionName
+	if sessionName == "" {
+		sessionName = DefaultTmuxSessionName
+	}
 	width := args.TerminalWidth
 	height := args.TerminalHeight
 	if width == 0 {
@@ -71,6 +75,9 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 			return nil, err
 		}
 		logger.Info("tmux session created", "session", sessionName)
+		if err := configureSessionForClients(sessionName); err != nil {
+			logger.Warn("failed to configure tmux session options", "session", sessionName, "error", err)
+		}
 		logger.Info("tmux window created", "session", sessionName, "window", windowID, "pane", paneID)
 	} else {
 		tmuxArgs := []string{"new-window", "-d", "-t", sessionName, "-P", "-F", "#{pane_id},#{window_id}", "--", "env", "TERM=vt100", args.Program}
@@ -86,7 +93,32 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		if err != nil {
 			return nil, err
 		}
-		if resizeErr := resizeWindow(windowID, width, height); resizeErr != nil && !errors.Is(resizeErr, errPaneNotFound) {
+		if err := configureSessionForClients(sessionName); err != nil {
+			logger.Warn("failed to configure tmux session options", "session", sessionName, "error", err)
+		}
+		resizeWidth := width
+		resizeHeight := height
+		if clientWidth, clientHeight, clientErr := clientSize(sessionName); clientErr == nil {
+			if clientWidth > 0 {
+				resizeWidth = clientWidth
+			}
+			if clientHeight > 0 {
+				resizeHeight = clientHeight
+			}
+		} else if !errors.Is(clientErr, errPaneNotFound) {
+			logger.Warn("failed to look up tmux client size", "session", sessionName, "error", clientErr)
+		}
+		if sessionWidth, sessionHeight, sizeErr := sessionSize(sessionName); sizeErr == nil {
+			if sessionWidth > 0 {
+				resizeWidth = sessionWidth
+			}
+			if sessionHeight > 0 {
+				resizeHeight = sessionHeight
+			}
+		} else {
+			logger.Warn("failed to look up tmux session size", "session", sessionName, "error", sizeErr)
+		}
+		if resizeErr := resizeWindow(windowID, resizeWidth, resizeHeight); resizeErr != nil && !errors.Is(resizeErr, errPaneNotFound) {
 			return nil, resizeErr
 		}
 		logger.Info("tmux window created", "session", sessionName, "window", windowID, "pane", paneID)
@@ -278,6 +310,94 @@ func parsePaneWindowIDs(output []byte) (string, string, error) {
 		return "", "", xerrors.Errorf("unexpected tmux output: %q", string(output))
 	}
 	return parts[0], parts[1], nil
+}
+
+func sessionSize(sessionName string) (uint16, uint16, error) {
+	cmd := exec.Command("tmux", "display-message", "-p", "-t", sessionName, "#{session_width},#{session_height}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return 0, 0, errPaneNotFound
+		}
+		return 0, 0, xerrors.Errorf("tmux display-message failed: %w: %s", err, output)
+	}
+	parts := strings.Split(strings.TrimSpace(string(output)), ",")
+	if len(parts) != 2 {
+		return 0, 0, xerrors.Errorf("unexpected tmux output: %q", string(output))
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, xerrors.Errorf("failed to parse session width %q: %w", parts[0], err)
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, xerrors.Errorf("failed to parse session height %q: %w", parts[1], err)
+	}
+	return uint16(width), uint16(height), nil
+}
+
+func clientSize(sessionName string) (uint16, uint16, error) {
+	cmd := exec.Command("tmux", "list-clients", "-t", sessionName, "-F", "#{client_width},#{client_height}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return 0, 0, errPaneNotFound
+		}
+		// When no clients are attached tmux exits with status 1 and the message "no clients".
+		// Treat this as "no size available" rather than an error.
+		out := strings.TrimSpace(string(output))
+		if strings.Contains(out, "no clients") {
+			return 0, 0, nil
+		}
+		return 0, 0, xerrors.Errorf("tmux list-clients failed: %w: %s", err, output)
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) != 2 {
+			continue
+		}
+		width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			return 0, 0, xerrors.Errorf("failed to parse client width %q: %w", parts[0], err)
+		}
+		height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return 0, 0, xerrors.Errorf("failed to parse client height %q: %w", parts[1], err)
+		}
+		return uint16(width), uint16(height), nil
+	}
+	return 0, 0, nil
+}
+
+func configureSessionForClients(sessionName string) error {
+	var errs []error
+	if err := setTmuxOption(sessionName, "window-size", "latest"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := setTmuxOption(sessionName, "aggressive-resize", "on"); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+func setTmuxOption(sessionName, option, value string) error {
+	cmd := exec.Command("tmux", "set-option", "-t", sessionName, option, value)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isTmuxTargetMissing(err, output) {
+			return errPaneNotFound
+		}
+		return xerrors.Errorf("tmux set-option failed: %w: %s", err, output)
+	}
+	return nil
 }
 
 func resizeWindow(windowID string, width, height uint16) error {

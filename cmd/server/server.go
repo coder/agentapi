@@ -85,6 +85,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 
 	termWidth := viper.GetUint16(FlagTermWidth)
 	termHeight := viper.GetUint16(FlagTermHeight)
+	tmuxSession := viper.GetString(FlagTmuxSession)
 
 	if termWidth < 10 {
 		return xerrors.Errorf("term width must be at least 10")
@@ -104,6 +105,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			TerminalWidth:  termWidth,
 			TerminalHeight: termHeight,
 			AgentType:      agentType,
+			SessionName:    tmuxSession,
 		})
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
@@ -259,6 +261,7 @@ const (
 	FlagChatBasePath   = "chat-base-path"
 	FlagTermWidth      = "term-width"
 	FlagTermHeight     = "term-height"
+	FlagTmuxSession    = "tmux-session"
 	FlagAllowedHosts   = "allowed-hosts"
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
@@ -296,6 +299,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagChatBasePath, "c", "/chat", "Base path for assets and routes used in the static files of the chat interface", "string"},
 		{FlagTermWidth, "W", uint16(80), "Width of the emulated terminal", "uint16"},
 		{FlagTermHeight, "H", uint16(1000), "Height of the emulated terminal", "uint16"},
+		{FlagTmuxSession, "", termexec.DefaultTmuxSessionName, "Name of the tmux session used to host agent processes", "string"},
 		// localhost is the default host for the server. Port is ignored during matching.
 		{FlagAllowedHosts, "a", []string{"localhost", "127.0.0.1", "[::1]"}, "HTTP allowed hosts (hostnames only, no ports). Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_HOSTS env var", "stringSlice"},
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.

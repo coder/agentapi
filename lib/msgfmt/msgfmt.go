@@ -250,6 +250,7 @@ const (
 func formatGenericMessage(message string, userInput string, agentType AgentType) string {
 	message = RemoveUserInput(message, userInput, agentType)
 	message = removeMessageBox(message)
+	message = removeTrailingPrompts(message)
 	message = trimEmptyLines(message)
 	return message
 }
@@ -257,6 +258,7 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexInputBox(message)
+	message = removeTrailingPrompts(message)
 	message = trimEmptyLines(message)
 	return message
 }
@@ -264,8 +266,36 @@ func formatCodexMessage(message string, userInput string) string {
 func formatOpencodeMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
 	message = removeOpencodeMessageBox(message)
+	message = removeTrailingPrompts(message)
 	message = trimEmptyLines(message)
 	return message
+}
+
+func removeTrailingPrompts(message string) string {
+	lines := strings.Split(message, "\n")
+	startIdx := 0
+	for ; startIdx < len(lines); startIdx++ {
+		trimmed := strings.TrimSpace(lines[startIdx])
+		if trimmed == "" || trimmed == ">" {
+			continue
+		}
+		break
+	}
+	if startIdx >= len(lines) {
+		return ""
+	}
+	lines = lines[startIdx:]
+	lastIdx := len(lines) - 1
+	for ; lastIdx >= 0; lastIdx-- {
+		trimmed := strings.TrimSpace(lines[lastIdx])
+		if trimmed == "" {
+			continue
+		}
+		if trimmed != ">" {
+			break
+		}
+	}
+	return strings.Join(lines[:lastIdx+1], "\n")
 }
 
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {

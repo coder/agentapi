@@ -100,14 +100,11 @@ func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Clien
 		cwd, err := os.Getwd()
 		require.NoError(t, err, "Failed to get current working directory")
 		binaryPath = filepath.Join(cwd, "..", "out", "agentapi")
-		_, err = os.Stat(binaryPath)
-		if err != nil {
-			t.Logf("Building binary at %s", binaryPath)
-			buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
-			buildCmd.Dir = filepath.Join(cwd, "..")
-			t.Logf("run: %s", buildCmd.String())
-			require.NoError(t, buildCmd.Run(), "Failed to build binary")
-		}
+		t.Logf("Building binary at %s", binaryPath)
+		buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
+		buildCmd.Dir = filepath.Join(cwd, "..")
+		t.Logf("run: %s", buildCmd.String())
+		require.NoError(t, buildCmd.Run(), "Failed to build binary")
 	}
 
 	serverPort, err := getFreePort()
@@ -116,8 +113,13 @@ func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Clien
 	cwd, err := os.Getwd()
 	require.NoError(t, err, "Failed to get current working directory")
 
+	sessionName := fmt.Sprintf("agentapi-%d-%d-%s", os.Getpid(), serverPort, strings.ToLower(t.Name()))
+	sessionName = strings.ReplaceAll(sessionName, string(os.PathSeparator), "-")
+	sessionName = strings.ReplaceAll(sessionName, "/", "-")
+
 	cmd := exec.CommandContext(ctx, binaryPath, "server",
 		fmt.Sprintf("--port=%d", serverPort),
+		fmt.Sprintf("--tmux-session=%s", sessionName),
 		"--",
 		"go", "run", filepath.Join(cwd, "echo.go"), scriptFilePath)
 
@@ -152,6 +154,7 @@ func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Clien
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
+		_ = exec.Command("tmux", "kill-session", "-t", sessionName).Run()
 		wg.Wait()
 	})
 

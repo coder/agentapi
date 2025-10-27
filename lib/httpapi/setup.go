@@ -17,6 +17,7 @@ type SetupProcessConfig struct {
 	TerminalWidth  uint16
 	TerminalHeight uint16
 	AgentType      mf.AgentType
+	SessionName    string
 }
 
 func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Process, error) {
@@ -29,6 +30,7 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 		Args:           config.ProgramArgs,
 		TerminalWidth:  config.TerminalWidth,
 		TerminalHeight: config.TerminalHeight,
+		SessionName:    config.SessionName,
 	})
 	if err != nil {
 		logger.Error(fmt.Sprintf("Error starting process: %v", err))
