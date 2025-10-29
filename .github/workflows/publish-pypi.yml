@@ -36,12 +36,12 @@ jobs:
         id: get_version
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION=$(cat pyproject.toml | grep '^version = ' | cut -d'"' -f2)
+            VERSION="$(cat pyproject.toml | grep '^version = ' | cut -d'"' -f2)"
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: ${VERSION}"
 
       - name: Update version in package files
         run: |
