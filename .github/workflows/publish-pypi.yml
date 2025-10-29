@@ -38,7 +38,7 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="$(cat pyproject.toml | grep '^version = ' | cut -d'"' -f2)"
+            VERSION="$(grep '^version = ' pyproject.toml | cut -d'"' -f2)"
           fi
           echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Extracted version: ${VERSION}"
