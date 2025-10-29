@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.10.2
+
+### Features
+- Improve autoscroll UX
+
 ## v0.10.1
 
 ### Features

@@ -310,7 +310,7 @@
   "info": {
     "description": "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi",
     "title": "AgentAPI",
-    "version": "0.10.1"
+    "version": "0.10.2"
   },
   "openapi": "3.0.3",
   "paths": {
