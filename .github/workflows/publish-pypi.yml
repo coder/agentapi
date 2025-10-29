@@ -1,0 +1,85 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      test_pypi:
+        description: 'Publish to TestPyPI instead of PyPI'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # For trusted publishing
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=$(cat pyproject.toml | grep '^version = ' | cut -d'"' -f2)
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update version in package files
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+
+          # Update pyproject.toml
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+
+          # Update __init__.py
+          sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" src/agentapi/__init__.py
+
+          # Update download.py
+          sed -i "s/VERSION = .*/VERSION = \"$VERSION\"/" src/agentapi/download.py
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Publish to TestPyPI
+        if: github.event.inputs.test_pypi == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          twine upload --repository testpypi dist/*
+
+      - name: Publish to PyPI
+        if: github.event_name == 'release' && github.event.inputs.test_pypi != 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-package
+          path: dist/

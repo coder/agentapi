@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentapi"
+version = "0.10.1"
+description = "Control Claude Code, AmazonQ, Opencode, Goose, Aider, Gemini, GitHub Copilot, and other coding agents with an HTTP API"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+keywords = ["ai", "agent", "api", "claude", "aider", "goose", "copilot"]
+authors = [
+    {name = "Coder", email = "support@coder.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "mypy>=0.950",
+]
+
+[project.urls]
+Homepage = "https://github.com/coder/agentapi"
+Documentation = "https://github.com/coder/agentapi#readme"
+Repository = "https://github.com/coder/agentapi"
+Issues = "https://github.com/coder/agentapi/issues"
+
+[project.scripts]
+agentapi = "agentapi.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agentapi*"]
+
+[tool.setuptools.package-data]
+agentapi = ["py.typed"]
