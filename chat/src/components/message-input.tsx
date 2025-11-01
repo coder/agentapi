@@ -261,15 +261,17 @@ export default function MessageInput({
                 </TabsList>
 
                 <div className={"flex flex-row gap-3"}>
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className="rounded-full"
-                    onClick={handleUploadClick}
+                  {serverStatus !== "running" && <Button
+                      type="submit"
+                      size="icon"
+                      className="rounded-full"
+                      onClick={handleUploadClick}
+                      title={"Upload File"}
                   >
-                    <Upload/>
-                    <span className="sr-only">Upload</span>
+                      <Upload/>
+                      <span className="sr-only">Upload</span>
                   </Button>
+                  }
 
                   {inputMode === "text" && serverStatus !== "running" && (
                     <Button
@@ -277,6 +279,7 @@ export default function MessageInput({
                       disabled={disabled || !message.trim()}
                       size="icon"
                       className="rounded-full"
+                      title={"Send Message"}
                     >
                       <SendIcon/>
                       <span className="sr-only">Send</span>
@@ -291,6 +294,7 @@ export default function MessageInput({
                       onClick={() => {
                         onSendMessage(specialKeys.Escape, "raw");
                       }}
+                      title={"Interrupt"}
                     >
                       <Square/>
                       <span className="sr-only">Stop</span>
@@ -332,20 +336,20 @@ export default function MessageInput({
   );
 }
 
-function Char({ char }: { char: string }) {
+function Char({char}: { char: string }) {
   switch (char) {
     case "ArrowUp":
-      return <ArrowUpIcon className="h-4 w-4" />;
+      return <ArrowUpIcon className="h-4 w-4"/>;
     case "ArrowDown":
-      return <ArrowDownIcon className="h-4 w-4" />;
+      return <ArrowDownIcon className="h-4 w-4"/>;
     case "ArrowRight":
-      return <ArrowRightIcon className="h-4 w-4" />;
+      return <ArrowRightIcon className="h-4 w-4"/>;
     case "ArrowLeft":
-      return <ArrowLeftIcon className="h-4 w-4" />;
+      return <ArrowLeftIcon className="h-4 w-4"/>;
     case "⏎":
-      return <CornerDownLeftIcon className="h-4 w-4" />;
+      return <CornerDownLeftIcon className="h-4 w-4"/>;
     case "Backspace":
-      return <DeleteIcon className="h-4 w-4" />;
+      return <DeleteIcon className="h-4 w-4"/>;
     default:
       return char;
   }
