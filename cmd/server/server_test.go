@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/coder/agentapi/lib/termexec"
 )
 
 type nullWriter struct{}
@@ -230,6 +232,7 @@ func TestServerCmd_AllArgs_Defaults(t *testing.T) {
 		{"chat-base-path default", FlagChatBasePath, "/chat", func() any { return viper.GetString(FlagChatBasePath) }},
 		{"term-width default", FlagTermWidth, uint16(80), func() any { return viper.GetUint16(FlagTermWidth) }},
 		{"term-height default", FlagTermHeight, uint16(1000), func() any { return viper.GetUint16(FlagTermHeight) }},
+		{"tmux-session default", FlagTmuxSession, termexec.DefaultTmuxSessionName, func() any { return viper.GetString(FlagTmuxSession) }},
 		{"allowed-hosts default", FlagAllowedHosts, []string{"localhost", "127.0.0.1", "[::1]"}, func() any { return viper.GetStringSlice(FlagAllowedHosts) }},
 		{"allowed-origins default", FlagAllowedOrigins, []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, func() any { return viper.GetStringSlice(FlagAllowedOrigins) }},
 	}
@@ -264,6 +267,7 @@ func TestServerCmd_AllEnvVars(t *testing.T) {
 		{"AGENTAPI_CHAT_BASE_PATH", "AGENTAPI_CHAT_BASE_PATH", "/api", "/api", func() any { return viper.GetString(FlagChatBasePath) }},
 		{"AGENTAPI_TERM_WIDTH", "AGENTAPI_TERM_WIDTH", "120", uint16(120), func() any { return viper.GetUint16(FlagTermWidth) }},
 		{"AGENTAPI_TERM_HEIGHT", "AGENTAPI_TERM_HEIGHT", "500", uint16(500), func() any { return viper.GetUint16(FlagTermHeight) }},
+		{"AGENTAPI_TMUX_SESSION", "AGENTAPI_TMUX_SESSION", "custom-session", "custom-session", func() any { return viper.GetString(FlagTmuxSession) }},
 		{"AGENTAPI_ALLOWED_HOSTS", "AGENTAPI_ALLOWED_HOSTS", "localhost example.com", []string{"localhost", "example.com"}, func() any { return viper.GetStringSlice(FlagAllowedHosts) }},
 		{"AGENTAPI_ALLOWED_ORIGINS", "AGENTAPI_ALLOWED_ORIGINS", "https://example.com http://localhost:3000", []string{"https://example.com", "http://localhost:3000"}, func() any { return viper.GetStringSlice(FlagAllowedOrigins) }},
 	}
@@ -335,6 +339,13 @@ func TestServerCmd_ArgsPrecedenceOverEnv(t *testing.T) {
 			[]string{"--term-height", "600"},
 			uint16(600),
 			func() any { return viper.GetUint16(FlagTermHeight) },
+		},
+		{
+			"tmux-session: CLI overrides env",
+			"AGENTAPI_TMUX_SESSION", "session-env",
+			[]string{"--tmux-session", "session-cli"},
+			"session-cli",
+			func() any { return viper.GetString(FlagTmuxSession) },
 		},
 		{
 			"allowed-origins: CLI overrides env",

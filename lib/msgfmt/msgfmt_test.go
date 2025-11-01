@@ -216,6 +216,51 @@ func TestTrimEmptyLines(t *testing.T) {
 	}
 }
 
+func TestRemoveTrailingPrompts(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "removes single prompt",
+			input:    "Hello!\n> ",
+			expected: "Hello!",
+		},
+		{
+			name:     "removes prompt with spaces",
+			input:    "Hello!\n   >   ",
+			expected: "Hello!",
+		},
+		{
+			name:     "removes leading prompt",
+			input:    "> \nHello!",
+			expected: "Hello!",
+		},
+		{
+			name:     "only prompts",
+			input:    "> \n> ",
+			expected: "",
+		},
+		{
+			name:     "keeps prompt in middle",
+			input:    "Hello!\n> Something\nDone",
+			expected: "Hello!\n> Something\nDone",
+		},
+		{
+			name:     "keeps message without prompt",
+			input:    "Hello!",
+			expected: "Hello!",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.expected, removeTrailingPrompts(c.input))
+		})
+	}
+}
+
 func TestFormatAgentMessage(t *testing.T) {
 	dir := "testdata/format"
 	agentTypes := []AgentType{AgentTypeClaude, AgentTypeGoose, AgentTypeAider, AgentTypeGemini, AgentTypeCopilot, AgentTypeAmp, AgentTypeCodex, AgentTypeCursor, AgentTypeAuggie, AgentTypeAmazonQ, AgentTypeOpencode, AgentTypeCustom}

@@ -21,6 +21,7 @@ This file provides guidance to AI agents working with code in this repository.
 - `agentapi server -- goose` - Start server with Goose agent
 - `agentapi server --type=codex -- codex` - Start server with Codex (requires explicit type)
 - `agentapi server --type=gemini -- gemini` - Start server with Gemini (requires explicit type)
+- `agentapi server --tmux-session=my-app -- claude` - Override the tmux session name (defaults to `wingman-agents`)
 - `agentapi attach --url localhost:3284` - Attach to running agent terminal
 - Server runs on port 3284 by default
 - Chat UI available at http://localhost:3284/chat
