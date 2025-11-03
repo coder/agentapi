@@ -333,7 +333,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 				}
 
 				// If we still have it as stable, go ahead.
-				if convertStatus(currentStatus) != AgentStatusStable {
+				if convertStatus(s.conversation.Status()) != AgentStatusStable {
 					break
 				}
 
