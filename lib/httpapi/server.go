@@ -327,6 +327,8 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			// Send initial prompt when agent becomes stable for the first time
 			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
 
+				fmt.Printf("AgentType: %s", mf.AgentTypeOpencode)
+
 				// If agent type is opencode
 				if s.agentType == mf.AgentTypeOpencode {
 					time.Sleep(5 * time.Second)
