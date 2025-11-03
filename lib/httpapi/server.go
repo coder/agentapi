@@ -332,6 +332,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 					time.Sleep(5 * time.Second)
 				}
 
+				// If we still have it as stable, go ahead.
+				if convertStatus(currentStatus) != AgentStatusStable {
+					break
+				}
+
 				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
