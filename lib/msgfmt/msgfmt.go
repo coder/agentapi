@@ -255,9 +255,9 @@ func formatCodexMessage(message string, userInput string) string {
 }
 
 func formatOpencodeMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	//message = RemoveUserInput(message, userInput, AgentTypeOpencode)
 	//message = removeOpencodeMessageBox(message)
-	message = trimEmptyLines(message)
+	//message = trimEmptyLines(message)
 	return message
 }
 
