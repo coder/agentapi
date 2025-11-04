@@ -1,6 +1,7 @@
 package msgfmt
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -63,6 +64,11 @@ func removeCodexInputBox(msg string) string {
 
 func removeOpencodeMessageBox(msg string) string {
 	lines := strings.Split(msg, "\n")
+	fmt.Println("\n\n\n\n\n")
+	fmt.Println("===================================")
+	for i := 0; i < len(lines); i++ {
+		fmt.Printf("%d: %s\n", i, lines[i])
+	}
 	// Check the last 3 lines for
 	//
 	//  ┃                                                                      ┃
@@ -74,9 +80,12 @@ func removeOpencodeMessageBox(msg string) string {
 		if strings.ReplaceAll(lines[i-1], " ", "") == "┃┃" &&
 			strings.ReplaceAll(lines[i+1], " ", "") == "┃┃" &&
 			strings.ReplaceAll(lines[i], " ", "") == "┃>┃" {
+			fmt.Printf("Magic at line: %d, %s\n", i, lines[i])
 			lines = lines[:i-1]
 			break
 		}
 	}
+	fmt.Println("===================================")
+	fmt.Println("\n\n\n\n")
 	return strings.Join(lines, "\n")
 }
