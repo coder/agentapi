@@ -1,6 +1,7 @@
 package msgfmt
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -255,7 +256,14 @@ func formatCodexMessage(message string, userInput string) string {
 }
 
 func formatOpencodeMessage(message string, userInput string) string {
-	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	fmt.Println("\n\n\n\n\n")
+	fmt.Println("===================================")
+	if len(message) > 10 {
+		fmt.Println(message[len(message)-7:])
+	}
+	fmt.Println("===================================")
+	fmt.Println("\n\n\n\n\n")
+	//message = RemoveUserInput(message, userInput, AgentTypeOpencode)
 	//message = removeOpencodeMessageBox(message)
 	//message = trimEmptyLines(message)
 	return message
