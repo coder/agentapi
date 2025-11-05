@@ -1,7 +1,6 @@
 package msgfmt
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -71,10 +70,10 @@ func removeOpencodeMessageBox(msg string) string {
 	//  ┃                                                                      ┃
 	// We only check for the first ┃ and then an empty line above it - as sometimes the full input block does not load within a snapshot,
 	// this leads to displaying a bunch of newlines.
-	for i := len(lines) - 2; i >= 1; i-- {
+	for i := len(lines) - 1; i >= 2; i-- {
 		if strings.ReplaceAll(lines[i-2], " ", "") != "┃┃" &&
 			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
-			fmt.Printf("Magic at line: %d, %s\n", i, lines[i])
+			//fmt.Printf("Magic at line: %d, %s\n", i, lines[i])
 			lines = lines[:i-1]
 			break
 		}
