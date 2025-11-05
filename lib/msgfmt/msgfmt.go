@@ -196,6 +196,13 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
 			lastUserInputLineIdx = idx
 		}
+	} else if agentType == AgentTypeOpencode {
+		// skip +2 lines after the input
+		//   ┃  jkmr (08:46 PM)                                                     ┃
+		//   ┃                                                                      ┃
+		if lastUserInputLineIdx+2 < len(msgLines) {
+			lastUserInputLineIdx += 2
+		}
 	}
 
 	return strings.Join(msgLines[lastUserInputLineIdx+1:], "\n")

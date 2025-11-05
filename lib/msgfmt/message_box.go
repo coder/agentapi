@@ -73,7 +73,6 @@ func removeOpencodeMessageBox(msg string) string {
 	for i := len(lines) - 1; i >= 2; i-- {
 		if strings.ReplaceAll(lines[i-2], " ", "") != "┃┃" &&
 			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
-			//fmt.Printf("Magic at line: %d, %s\n", i, lines[i])
 			lines = lines[:i-1]
 			break
 		}
