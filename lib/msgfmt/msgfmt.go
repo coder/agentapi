@@ -258,12 +258,16 @@ func formatCodexMessage(message string, userInput string) string {
 func formatOpencodeMessage(message string, userInput string) string {
 	fmt.Println("\n\n\n\n\n")
 	fmt.Println("===================================")
-	if len(message) > 10 {
-		fmt.Println(message[len(message)-7:])
+	lines := strings.Split(message, "\n")
+	if len(lines) > 10 {
+		for _, data := range lines[len(lines)-7:] {
+			fmt.Println(data)
+		}
+		fmt.Println(lines[len(lines)-7:])
 	}
 	fmt.Println("===================================")
 	fmt.Println("\n\n\n\n\n")
-	//message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
 	//message = removeOpencodeMessageBox(message)
 	//message = trimEmptyLines(message)
 	return message
