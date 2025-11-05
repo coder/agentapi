@@ -144,16 +144,16 @@ func FindNewMessage(oldScreen, newScreen string, agentType msgfmt.AgentType) str
 	oldLines := strings.Split(oldScreen, "\n")
 	newLines := strings.Split(newScreen, "\n")
 
-	fmt.Println("\n\n\n\n\n")
-	fmt.Println("===================================")
-	lines := newLines
-	if len(lines) > 10 {
-		for _, data := range lines[len(lines)-9:] {
-			fmt.Println(data)
-		}
-	}
-	fmt.Println("===================================")
-	fmt.Println("\n\n\n\n\n")
+	//fmt.Println("\n\n\n\n\n")
+	//fmt.Println("===================================")
+	//lines := newLines
+	//if len(lines) > 10 {
+	//	for _, data := range lines[len(lines)-9:] {
+	//		fmt.Println(data)
+	//	}
+	//}
+	//fmt.Println("===================================")
+	//fmt.Println("\n\n\n\n\n")
 
 	oldLinesMap := make(map[string]bool)
 
