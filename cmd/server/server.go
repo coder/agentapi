@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/xerrors"
@@ -71,11 +72,6 @@ func parseAgentType(firstArg string, agentTypeVar string) (AgentType, error) {
 	return AgentTypeCustom, nil
 }
 
-// isStdinPiped checks if stdin is piped (not a terminal)
-func isStdinPiped(stat os.FileInfo) bool {
-	return (stat.Mode() & os.ModeCharDevice) == 0
-}
-
 func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) error {
 	agent := argsToPass[0]
 	agentTypeValue := viper.GetString(FlagType)
@@ -97,7 +93,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	// Read stdin if it's piped, to be used as initial prompt
 	initialPrompt := viper.GetString(FlagInitialPrompt)
 	if initialPrompt == "" {
-		if stat, err := os.Stdin.Stat(); err == nil && isStdinPiped(stat) {
+		if !isatty.IsTerminal(os.Stdin.Fd()) {
 			if stdinData, err := io.ReadAll(os.Stdin); err != nil {
 				return xerrors.Errorf("failed to read stdin: %w", err)
 			} else if len(stdinData) > 0 {

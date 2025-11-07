@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -572,46 +571,3 @@ func TestServerCmd_AllowedOrigins(t *testing.T) {
 		})
 	}
 }
-
-func TestIsStdinPiped(t *testing.T) {
-	tests := []struct {
-		name     string
-		fileInfo os.FileInfo
-		expected bool
-	}{
-		{
-			name:     "regular file (piped)",
-			fileInfo: &mockFileInfo{mode: 0},
-			expected: true,
-		},
-		{
-			name:     "character device (terminal)",
-			fileInfo: &mockFileInfo{mode: os.ModeCharDevice},
-			expected: false,
-		},
-		{
-			name:     "named pipe",
-			fileInfo: &mockFileInfo{mode: os.ModeNamedPipe},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isStdinPiped(tt.fileInfo)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// mockFileInfo implements os.FileInfo for testing
-type mockFileInfo struct {
-	mode os.FileMode
-}
-
-func (m *mockFileInfo) Name() string       { return "stdin" }
-func (m *mockFileInfo) Size() int64        { return 0 }
-func (m *mockFileInfo) Mode() os.FileMode  { return m.mode }
-func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
-func (m *mockFileInfo) IsDir() bool        { return false }
-func (m *mockFileInfo) Sys() interface{}   { return nil }
