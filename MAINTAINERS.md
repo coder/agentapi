@@ -2,7 +2,11 @@
 
 ## Release Process
 
-Before performing a release, perform a local "smoke-test".
+Before performing a release, perform a local "smoke-test":
+
+  - For most changes, simply running `go test ./e2e` may be sufficient.
+  - For agent-specific changes, manual testing may be required.
+
 If everything seems OK, you can proceed to do the following:
 
 1. Update the version string in `internal/version/version.go` and run `make gen`.
