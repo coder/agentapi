@@ -236,27 +236,28 @@ func waitAgentAPIStable(ctx context.Context, t testing.TB, apiClient *agentapisd
 	defer waitCancel()
 
 	start := time.Now()
-	tick := time.NewTicker(time.Millisecond)
-	defer tick.Stop()
-	var prevStatus agentapisdk.AgentStatus
+	var currStatus agentapisdk.AgentStatus
 	defer func() {
 		elapsed := time.Since(start)
-		t.Logf("%s: agent API status: %s (elapsed: %s)", msg, prevStatus, elapsed.Round(100*time.Millisecond))
+		t.Logf("%s: agent API status: %s (elapsed: %s)", msg, currStatus, elapsed.Round(100*time.Millisecond))
 	}()
+	evts, errs, err := apiClient.SubscribeEvents(ctx)
+	require.NoError(t, err, "failed to subscribe to events")
 	for {
 		select {
 		case <-waitCtx.Done():
 			return waitCtx.Err()
-		case <-tick.C:
-			tick.Reset(100 * time.Millisecond)
-			sr, err := apiClient.GetStatus(ctx)
-			if err != nil {
-				continue
+		case evt := <-evts:
+			if esc, ok := evt.(agentapisdk.EventStatusChange); ok {
+				currStatus = esc.Status
+				if currStatus == agentapisdk.StatusStable {
+					return nil
+				}
+			} else {
+				t.Logf("Got %T event", evt)
 			}
-			prevStatus = sr.Status
-			if sr.Status == agentapisdk.StatusStable {
-				return nil
-			}
+		case err := <-errs:
+			return fmt.Errorf("read events: %w", err)
 		}
 	}
 }
