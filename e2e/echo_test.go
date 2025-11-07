@@ -88,12 +88,8 @@ func TestE2E(t *testing.T) {
 
 		script, apiClient := setup(ctx, t, &params{
 			cmdFn: func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
-				script := fmt.Sprintf(`echo "hello agent" | %s server --port=%d -- go run %s %s`,
-					binaryPath,
-					serverPort,
-					filepath.Join(cwd, "echo.go"),
-					scriptFilePath,
-				)
+				defCmd, defArgs := defaultCmdFn(ctx, t, serverPort, binaryPath, cwd, scriptFilePath)
+				script := fmt.Sprintf(`echo "hello agent" | %s %s`, defCmd, strings.Join(defArgs, " "))
 				return "/bin/sh", []string{"-c", script}
 			},
 		})
@@ -154,6 +150,7 @@ func setup(ctx context.Context, t testing.TB, p *params) ([]ScriptEntry, *agenta
 	require.NoError(t, err, "Failed to get current working directory")
 
 	bin, args := p.cmdFn(ctx, t, serverPort, binaryPath, cwd, scriptFilePath)
+	t.Logf("Running command: %s %s", bin, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, bin, args...)
 
 	// Capture output for debugging
