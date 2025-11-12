@@ -228,15 +228,21 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	formatMessage := func(message string, userInput string) string {
 		return mf.FormatAgentMessage(config.AgentType, message, userInput)
 	}
+
+	isAgentReadyForInitialPrompt := func(message string) bool {
+		return mf.IsAgentReadyForInitialPrompt(config.AgentType, message)
+	}
+
 	conversation := st.NewConversation(ctx, st.ConversationConfig{
 		AgentType: config.AgentType,
 		AgentIO:   config.Process,
 		GetTime: func() time.Time {
 			return time.Now()
 		},
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
+		SnapshotInterval:             snapshotInterval,
+		ScreenStabilityLength:        2 * time.Second,
+		FormatMessage:                formatMessage,
+		IsAgentReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
 
