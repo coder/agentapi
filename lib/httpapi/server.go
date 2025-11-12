@@ -327,15 +327,6 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			// Send initial prompt when agent becomes stable for the first time
 			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
 
-				// If agent type is opencode
-				if s.agentType == mf.AgentTypeOpencode {
-					time.Sleep(5 * time.Second)
-					// If we still have it as stable, go ahead.
-					if convertStatus(s.conversation.Status()) != AgentStatusStable {
-						continue
-					}
-				}
-
 				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
