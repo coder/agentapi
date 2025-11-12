@@ -41,6 +41,8 @@ type ConversationConfig struct {
 	// SkipSendMessageStatusCheck skips the check for whether the message can be sent.
 	// This is used in tests
 	SkipSendMessageStatusCheck bool
+	// IsAgentReadyForInitialPrompt detects whether the agent has initialized and is ready to accept the initial prompt
+	IsAgentReadyForInitialPrompt func(message string) bool
 }
 
 type ConversationRole string
@@ -78,6 +80,8 @@ type Conversation struct {
 	InitialPrompt string
 	// InitialPromptSent keeps track if the InitialPrompt has been successfully sent to the agents
 	InitialPromptSent bool
+	// AgentReadyForInitialPrompt keeps track if the agent is ready to accept the initial prompt
+	AgentReadyForInitialPrompt bool
 }
 
 type ConversationStatus string
@@ -401,6 +405,15 @@ func (c *Conversation) statusInner() ConversationStatus {
 			return ConversationStatusChanging
 		}
 	}
+
+	if !c.InitialPromptSent && !c.AgentReadyForInitialPrompt {
+		if c.cfg.IsAgentReadyForInitialPrompt(snapshots[0].screen) {
+			c.AgentReadyForInitialPrompt = true
+			return ConversationStatusStable
+		}
+		return ConversationStatusChanging
+	}
+
 	return ConversationStatusStable
 }
 
