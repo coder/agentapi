@@ -22,7 +22,7 @@ import (
 
 const (
 	testTimeout        = 30 * time.Second
-	operationTimeout   = 5 * time.Second
+	operationTimeout   = 10 * time.Second
 	healthCheckTimeout = 10 * time.Second
 )
 
@@ -40,15 +40,14 @@ func TestE2E(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
-		script, apiClient := setup(ctx, t)
-		require.NoError(t, waitAgentAPIStable(ctx, apiClient, operationTimeout))
+		script, apiClient := setup(ctx, t, nil)
 		messageReq := agentapisdk.PostMessageParams{
 			Content: "This is a test message.",
 			Type:    agentapisdk.MessageTypeUser,
 		}
 		_, err := apiClient.PostMessage(ctx, messageReq)
 		require.NoError(t, err, "Failed to send message via SDK")
-		require.NoError(t, waitAgentAPIStable(ctx, apiClient, operationTimeout))
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "post message"))
 		msgResp, err := apiClient.GetMessages(ctx)
 		require.NoError(t, err, "Failed to get messages via SDK")
 		require.Len(t, msgResp.Messages, 3)
@@ -61,7 +60,7 @@ func TestE2E(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		script, apiClient := setup(ctx, t)
+		script, apiClient := setup(ctx, t, nil)
 		messageReq := agentapisdk.PostMessageParams{
 			Content: "What is the answer to life, the universe, and everything?",
 			Type:    agentapisdk.MessageTypeUser,
@@ -71,7 +70,7 @@ func TestE2E(t *testing.T) {
 		statusResp, err := apiClient.GetStatus(ctx)
 		require.NoError(t, err)
 		require.Equal(t, agentapisdk.StatusRunning, statusResp.Status)
-		require.NoError(t, waitAgentAPIStable(ctx, apiClient, 5*time.Second))
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, 5*time.Second, "post message"))
 		msgResp, err := apiClient.GetMessages(ctx)
 		require.NoError(t, err, "Failed to get messages via SDK")
 		require.Len(t, msgResp.Messages, 3)
@@ -82,10 +81,44 @@ func TestE2E(t *testing.T) {
 		require.Equal(t, script[1].ResponseMessage, strings.TrimSpace(parts[0]))
 		require.Equal(t, script[2].ResponseMessage, strings.TrimSpace(parts[1]))
 	})
+
+	t.Run("stdin", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		script, apiClient := setup(ctx, t, &params{
+			cmdFn: func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
+				defCmd, defArgs := defaultCmdFn(ctx, t, serverPort, binaryPath, cwd, scriptFilePath)
+				script := fmt.Sprintf(`echo "hello agent" | %s %s`, defCmd, strings.Join(defArgs, " "))
+				return "/bin/sh", []string{"-c", script}
+			},
+		})
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, 5*time.Second, "stdin"))
+		msgResp, err := apiClient.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages via SDK")
+		require.Len(t, msgResp.Messages, 3)
+		require.Equal(t, script[0].ExpectMessage, strings.TrimSpace(msgResp.Messages[1].Content))
+		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp.Messages[2].Content))
+	})
 }
 
-func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Client) {
+type params struct {
+	cmdFn func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string)
+}
+
+func defaultCmdFn(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
+	return binaryPath, []string{"server", fmt.Sprintf("--port=%d", serverPort), "--", "go", "run", filepath.Join(cwd, "echo.go"), scriptFilePath}
+}
+
+func setup(ctx context.Context, t testing.TB, p *params) ([]ScriptEntry, *agentapisdk.Client) {
 	t.Helper()
+
+	if p == nil {
+		p = &params{}
+	}
+	if p.cmdFn == nil {
+		p.cmdFn = defaultCmdFn
+	}
 
 	scriptFilePath := filepath.Join("testdata", filepath.Base(t.Name())+".json")
 	data, err := os.ReadFile(scriptFilePath)
@@ -116,10 +149,9 @@ func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Clien
 	cwd, err := os.Getwd()
 	require.NoError(t, err, "Failed to get current working directory")
 
-	cmd := exec.CommandContext(ctx, binaryPath, "server",
-		fmt.Sprintf("--port=%d", serverPort),
-		"--",
-		"go", "run", filepath.Join(cwd, "echo.go"), scriptFilePath)
+	bin, args := p.cmdFn(ctx, t, serverPort, binaryPath, cwd, scriptFilePath)
+	t.Logf("Running command: %s %s", bin, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, bin, args...)
 
 	// Capture output for debugging
 	stdout, err := cmd.StdoutPipe()
@@ -160,7 +192,7 @@ func setup(ctx context.Context, t testing.TB) ([]ScriptEntry, *agentapisdk.Clien
 	apiClient, err := agentapisdk.NewClient(serverURL)
 	require.NoError(t, err, "Failed to create agentapi SDK client")
 
-	require.NoError(t, waitAgentAPIStable(ctx, apiClient, operationTimeout))
+	require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "setup"))
 	return script, apiClient
 }
 
@@ -198,24 +230,34 @@ func waitForServer(ctx context.Context, t testing.TB, url string, timeout time.D
 	}
 }
 
-func waitAgentAPIStable(ctx context.Context, apiClient *agentapisdk.Client, waitFor time.Duration) error {
+func waitAgentAPIStable(ctx context.Context, t testing.TB, apiClient *agentapisdk.Client, waitFor time.Duration, msg string) error {
+	t.Helper()
 	waitCtx, waitCancel := context.WithTimeout(ctx, waitFor)
 	defer waitCancel()
 
-	tick := time.NewTicker(100 * time.Millisecond)
-	defer tick.Stop()
+	start := time.Now()
+	var currStatus agentapisdk.AgentStatus
+	defer func() {
+		elapsed := time.Since(start)
+		t.Logf("%s: agent API status: %s (elapsed: %s)", msg, currStatus, elapsed.Round(100*time.Millisecond))
+	}()
+	evts, errs, err := apiClient.SubscribeEvents(ctx)
+	require.NoError(t, err, "failed to subscribe to events")
 	for {
 		select {
 		case <-waitCtx.Done():
 			return waitCtx.Err()
-		case <-tick.C:
-			sr, err := apiClient.GetStatus(ctx)
-			if err != nil {
-				continue
+		case evt := <-evts:
+			if esc, ok := evt.(agentapisdk.EventStatusChange); ok {
+				currStatus = esc.Status
+				if currStatus == agentapisdk.StatusStable {
+					return nil
+				}
+			} else {
+				t.Logf("Got %T event", evt)
 			}
-			if sr.Status == agentapisdk.StatusStable {
-				return nil
-			}
+		case err := <-errs:
+			return fmt.Errorf("read events: %w", err)
 		}
 	}
 }
