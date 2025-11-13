@@ -112,6 +112,18 @@ export default function MessageInput({
     return () => clearInterval(interval);
   }, [sentChars]);
 
+  // Autofocus on the message input box on user's turn
+  useEffect(() => {
+    if (
+      serverStatus === "stable" &&
+      !disabled &&
+      inputMode === "text" &&
+      textareaRef.current
+    ) {
+      textareaRef.current.focus();
+    }
+  }, [serverStatus, disabled, inputMode]);
+
   const addSentChar = (char: string) => {
     const newChar: SentChar = {
       char,
@@ -332,20 +344,20 @@ export default function MessageInput({
   );
 }
 
-function Char({ char }: { char: string }) {
+function Char({char}: { char: string }) {
   switch (char) {
     case "ArrowUp":
-      return <ArrowUpIcon className="h-4 w-4" />;
+      return <ArrowUpIcon className="h-4 w-4"/>;
     case "ArrowDown":
-      return <ArrowDownIcon className="h-4 w-4" />;
+      return <ArrowDownIcon className="h-4 w-4"/>;
     case "ArrowRight":
-      return <ArrowRightIcon className="h-4 w-4" />;
+      return <ArrowRightIcon className="h-4 w-4"/>;
     case "ArrowLeft":
-      return <ArrowLeftIcon className="h-4 w-4" />;
+      return <ArrowLeftIcon className="h-4 w-4"/>;
     case "⏎":
-      return <CornerDownLeftIcon className="h-4 w-4" />;
+      return <CornerDownLeftIcon className="h-4 w-4"/>;
     case "Backspace":
-      return <DeleteIcon className="h-4 w-4" />;
+      return <DeleteIcon className="h-4 w-4"/>;
     default:
       return char;
   }
