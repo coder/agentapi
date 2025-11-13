@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.0
+
+### Features
+- Support sending initial prompt via stdin
+
 ## v0.10.2
 
 ### Features

@@ -1,0 +1,12 @@
+                    █▀▀█ █▀▀█ █▀▀ █▀▀▄ █▀▀ █▀▀█ █▀▀▄ █▀▀
+                    █░░█ █░░█ █▀▀ █░░█ █░░ █░░█ █░░█ █▀▀
+                    ▀▀▀▀ █▀▀▀ ▀▀▀ ▀  ▀ ▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀
+                                                  v0.6.8
+
+                     /new      new session     ctrl+x n
+                     /help     show help       ctrl+x h
+                     /share    share session   ctrl+x s
+                     /models   list models     ctrl+x m
+
+
+                    Grok Code is free for a limited time
