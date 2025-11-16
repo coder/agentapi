@@ -74,16 +74,36 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		//
 		// Warning: This depends on xpty internals and may break if xpty changes.
 		// A proper fix would require forking xpty or getting upstream changes.
+		// Add defensive programming to catch reflection failures
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("CRITICAL: unsafe reflection failed - xpty library may have changed",
+					"panic", r,
+					"field", "pp",
+					"action", "Terminal will become unresponsive. Please update agentapi or pin xpty version.")
+				// Attempt graceful shutdown
+				if process.execCmd.Process != nil {
+					_ = process.execCmd.Process.Signal(os.Interrupt)
+				}
+			}
+		}()
+
 		pp := util.GetUnexportedField(xp, "pp").(*xpty.PassthroughPipe)
+		logger.Warn("Using unsafe reflection to access xpty internals - this may break on xpty updates",
+			"xpty_version", "0.6.0",
+			"field", "pp")
+
 		for {
 			r, _, err := pp.ReadRune()
 			if err != nil {
 				if err != io.EOF {
 					logger.Error("Error reading from pseudo terminal", "error", err)
+					// Attempt recovery: signal process termination
+					if process.execCmd.Process != nil {
+						logger.Info("Attempting to terminate unresponsive process")
+						_ = process.execCmd.Process.Signal(os.Interrupt)
+					}
 				}
-				// TODO: handle this error better. if this happens, the terminal
-				// state will never be updated anymore and the process will appear
-				// unresponsive.
 				return
 			}
 			process.screenUpdateLock.Lock()
@@ -114,15 +134,20 @@ func (p *Process) Signal(sig os.Signal) error {
 func (p *Process) ReadScreen() string {
 	for range 3 {
 		p.screenUpdateLock.RLock()
-		if time.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
-			state := p.xp.State.String()
-			p.screenUpdateLock.RUnlock()
-			return state
-		}
+		timeSinceUpdate := time.Since(p.lastScreenUpdate)
 		p.screenUpdateLock.RUnlock()
+
+		if timeSinceUpdate >= 16*time.Millisecond {
+			break
+		}
 		time.Sleep(16 * time.Millisecond)
 	}
-	return p.xp.State.String()
+
+	// Always read with lock held to prevent race condition
+	p.screenUpdateLock.RLock()
+	state := p.xp.State.String()
+	p.screenUpdateLock.RUnlock()
+	return state
 }
 
 // Write sends input to the process via the pseudo terminal.

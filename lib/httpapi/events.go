@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +75,9 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 	case st.ConversationStatusChanging:
 		return AgentStatusRunning
 	default:
-		panic(fmt.Sprintf("unknown conversation status: %s", status))
+		// Don't panic - log and return safe default
+		slog.Error("Unknown conversation status", "status", status)
+		return AgentStatusRunning
 	}
 }
 

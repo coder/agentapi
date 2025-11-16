@@ -118,15 +118,18 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	processExitCh := make(chan error, 1)
 	go func() {
 		defer close(processExitCh)
-		if err := process.Wait(); err != nil {
-			if errors.Is(err, termexec.ErrNonZeroExitCode) {
-				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
-			} else {
-				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+		// Only wait for process if it exists (not in --print-openapi mode)
+		if process != nil {
+			if err := process.Wait(); err != nil {
+				if errors.Is(err, termexec.ErrNonZeroExitCode) {
+					processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
+				} else {
+					processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+				}
 			}
-		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
+			if err := srv.Stop(ctx); err != nil {
+				logger.Error("Failed to stop server", "error", err)
+			}
 		}
 	}()
 	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {

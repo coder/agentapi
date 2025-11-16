@@ -2,7 +2,7 @@ package screentracker
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -355,12 +355,16 @@ func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 
 // Assumes that the caller holds the lock
 func (c *Conversation) statusInner() ConversationStatus {
-	// sanity checks
+	// sanity checks - log errors and return safe fallback instead of panicking
 	if c.snapshotBuffer.Capacity() != c.stableSnapshotsThreshold {
-		panic(fmt.Sprintf("snapshot buffer capacity %d is not equal to snapshot threshold %d. can't check stability", c.snapshotBuffer.Capacity(), c.stableSnapshotsThreshold))
+		slog.Error("BUG: snapshot buffer capacity mismatch",
+			"capacity", c.snapshotBuffer.Capacity(),
+			"threshold", c.stableSnapshotsThreshold)
+		return ConversationStatusChanging // Safe fallback
 	}
 	if c.stableSnapshotsThreshold == 0 {
-		panic("stable snapshots threshold is 0. can't check stability")
+		slog.Error("BUG: stable snapshots threshold is 0")
+		return ConversationStatusChanging // Safe fallback
 	}
 
 	snapshots := c.snapshotBuffer.GetAll()

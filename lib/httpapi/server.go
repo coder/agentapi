@@ -61,6 +61,14 @@ func (s *Server) GetOpenAPI() string {
 // because the action of taking a snapshot takes time too.
 const snapshotInterval = 25 * time.Millisecond
 
+const (
+	// MaxMessageSize is the maximum size for user messages (10MB)
+	MaxMessageSize = 10 * 1024 * 1024
+	// MaxRawMessageSize is the maximum size for raw terminal input (1KB)
+	// Raw messages go directly to the terminal, so we're more conservative
+	MaxRawMessageSize = 1024
+)
+
 type ServerConfig struct {
 	AgentType      mf.AgentType
 	Process        *termexec.Process
@@ -264,11 +272,19 @@ func hostAuthorizationMiddleware(allowedHosts []string, badHostHandler http.Hand
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
+		ticker := time.NewTicker(snapshotInterval)
+		defer ticker.Stop()
+
 		for {
-			s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
-			time.Sleep(snapshotInterval)
+			select {
+			case <-ctx.Done():
+				s.logger.Info("Snapshot loop exiting")
+				return
+			case <-ticker.C:
+				s.emitter.UpdateStatusAndEmitChanges(s.conversation.Status())
+				s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
+				s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
+			}
 		}
 	}()
 }
@@ -354,6 +370,18 @@ func (s *Server) getMessages(ctx context.Context, input *struct{}) (*MessagesRes
 
 // createMessage handles POST /message
 func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*MessageResponse, error) {
+	// Validate message size based on type
+	maxSize := MaxMessageSize
+	if input.Body.Type == MessageTypeRaw {
+		maxSize = MaxRawMessageSize
+	}
+
+	if len(input.Body.Content) > maxSize {
+		return nil, huma.Error400BadRequest(
+			fmt.Sprintf("message too large (max %d bytes)", maxSize),
+		)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -447,8 +475,12 @@ func (s *Server) subscribeScreen(ctx context.Context, input *struct{}, send sse.
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
 	s.srv = &http.Server{
-		Addr:    addr,
-		Handler: s.router,
+		Addr:              addr,
+		Handler:           s.router,
+		ReadTimeout:       15 * time.Second, // Prevent slow header attacks
+		WriteTimeout:      0,                 // Disabled for SSE long-polling
+		IdleTimeout:       60 * time.Second,  // Close idle connections
+		ReadHeaderTimeout: 5 * time.Second,   // Specifically for headers
 	}
 
 	return s.srv.ListenAndServe()
