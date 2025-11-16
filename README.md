@@ -1,6 +1,6 @@
 # AgentAPI
 
-Control [Claude Code](https://github.com/anthropics/claude-code), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
+Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [GitHub Copilot](https://github.com/github/copilot-cli), [Sourcegraph Amp](https://github.com/sourcegraph/amp-cli), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
 
 ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
 
@@ -13,7 +13,15 @@ You can use AgentAPI:
 
 ## Quickstart
 
-1. Install `agentapi` by downloading the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
+1. Install `agentapi`:
+
+   ```bash
+   OS=$(uname -s | tr "[:upper:]" "[:lower:]");
+   ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/");
+   curl -fsSL "https://github.com/coder/agentapi/releases/latest/download/agentapi-${OS}-${ARCH}" -o agentapi && chmod +x agentapi
+   ```
+
+   Alternatively, you can download the latest release binary from the [releases page](https://github.com/coder/agentapi/releases).
 
 1. Verify the installation:
 
@@ -65,7 +73,7 @@ agentapi server -- goose
 ```
 
 > [!NOTE]
-> When using Codex, Gemini or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+> When using Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
 
 An OpenAPI schema is available in [openapi.json](openapi.json).
 

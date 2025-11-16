@@ -33,6 +33,11 @@ jobs:
     - name: Install Chat Dependencies
       run: cd chat && bun install
 
+    - name: Run make gen and check for unstaged changes
+      run: |
+        make gen
+        ./check_unstaged.sh
+
     - name: Build and Upload
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -204,13 +204,20 @@ func RemoveUserInput(msgRaw string, userInputRaw string, agentType AgentType) st
 	lastUserInputLineIdx := msgRuneLineLocations[userInputEndIdx]
 
 	// Skip Gemini/Cursor trailing input box line
-	if agentType == AgentTypeGemini {
+	if agentType == AgentTypeGemini || agentType == AgentTypeCopilot {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "╯", "╰"); found {
 			lastUserInputLineIdx = idx
 		}
-	} else if agentType == AgentTypeCursorAgent || agentType == AgentTypeCursor {
+	} else if agentType == AgentTypeCursor {
 		if idx, found := skipTrailingInputBoxLine(msgLines, lastUserInputLineIdx, "┘", "└"); found {
 			lastUserInputLineIdx = idx
+		}
+	} else if agentType == AgentTypeOpencode {
+		// skip +2 lines after the input
+		//   ┃  jkmr (08:46 PM)                                                     ┃
+		//   ┃                                                                      ┃
+		if lastUserInputLineIdx+2 < len(msgLines) {
+			lastUserInputLineIdx += 2
 		}
 	}
 
@@ -240,16 +247,20 @@ func trimEmptyLines(message string) string {
 
 type AgentType string
 
+// Remember to add the display name to the agentapi/chat/src/components/chat-provider.tsx
 const (
-	AgentTypeClaude      AgentType = "claude"
-	AgentTypeGoose       AgentType = "goose"
-	AgentTypeAider       AgentType = "aider"
-	AgentTypeCodex       AgentType = "codex"
-	AgentTypeGemini      AgentType = "gemini"
-	AgentTypeAmp         AgentType = "amp"
-	AgentTypeCursorAgent AgentType = "cursor-agent"
-	AgentTypeCursor      AgentType = "cursor"
-	AgentTypeCustom      AgentType = "custom"
+	AgentTypeClaude   AgentType = "claude"
+	AgentTypeGoose    AgentType = "goose"
+	AgentTypeAider    AgentType = "aider"
+	AgentTypeCodex    AgentType = "codex"
+	AgentTypeGemini   AgentType = "gemini"
+	AgentTypeCopilot  AgentType = "copilot"
+	AgentTypeAmp      AgentType = "amp"
+	AgentTypeCursor   AgentType = "cursor"
+	AgentTypeAuggie   AgentType = "auggie"
+	AgentTypeAmazonQ  AgentType = "amazonq"
+	AgentTypeOpencode AgentType = "opencode"
+	AgentTypeCustom   AgentType = "custom"
 )
 
 func formatGenericMessage(message string, userInput string, agentType AgentType) string {
@@ -266,6 +277,13 @@ func formatCodexMessage(message string, userInput string) string {
 	return message
 }
 
+func formatOpencodeMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeOpencode)
+	message = removeOpencodeMessageBox(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
 	switch agentType {
 	case AgentTypeClaude:
@@ -278,12 +296,18 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 		return formatCodexMessage(message, userInput)
 	case AgentTypeGemini:
 		return formatGenericMessage(message, userInput, agentType)
-	case AgentTypeAmp:
+	case AgentTypeCopilot:
 		return formatGenericMessage(message, userInput, agentType)
-	case AgentTypeCursorAgent:
+	case AgentTypeAmp:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCursor:
 		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAuggie:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeAmazonQ:
+		return formatGenericMessage(message, userInput, agentType)
+	case AgentTypeOpencode:
+		return formatOpencodeMessage(message, userInput)
 	case AgentTypeCustom:
 		return formatGenericMessage(message, userInput, agentType)
 	default:

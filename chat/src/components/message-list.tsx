@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useEffect, useCallback } from "react";
+import React, {useLayoutEffect, useRef, useEffect, useCallback, useMemo, useState} from "react";
 
 interface Message {
   role: string;
@@ -18,59 +18,80 @@ interface MessageListProps {
   messages: (Message | DraftMessage)[];
 }
 
-export default function MessageList({ messages }: MessageListProps) {
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  // Avoid the message list to change its height all the time. It causes some
-  // flickering in the screen because some messages, as the ones displaying
-  // progress statuses, are changing the content(the number of lines) and size
-  // constantily. To minimize it, we keep track of the biggest scroll height of
-  // the content, and use that as the min height of the scroll area.
-  const contentMinHeight = useRef(0);
+interface ProcessedMessageProps {
+  messageContent: string;
+  index: number;
+}
+
+export default function MessageList({messages}: MessageListProps) {
+  const [scrollAreaRef, setScrollAreaRef] = useState<HTMLDivElement | null>(null);
 
   // Track if user is at bottom - default to true for initial scroll
   const isAtBottomRef = useRef(true);
   // Track the last known scroll height to detect new content
   const lastScrollHeightRef = useRef(0);
+  // Track if we're currently doing a programmatic scroll
+  const isProgrammaticScrollRef = useRef(false);
 
   const checkIfAtBottom = useCallback(() => {
-    if (!scrollAreaRef.current) return false;
-    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
+    if (!scrollAreaRef) return false;
+    const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef;
     return scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
+  }, [scrollAreaRef]);
+
+  // Track Ctrl (Windows/Linux) or Cmd (Mac) key state
+  // This is so that underline is only visible when hover + cmd/ctrl
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) document.documentElement.classList.add('modifier-pressed');
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.ctrlKey && !e.metaKey) document.documentElement.classList.remove('modifier-pressed');
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      document.documentElement.classList.remove('modifier-pressed');
+
+    };
   }, []);
 
   // Update isAtBottom on scroll
   useEffect(() => {
-    const scrollContainer = scrollAreaRef.current;
-    if (!scrollContainer) return;
+    if (!scrollAreaRef) return;
 
     const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
       isAtBottomRef.current = checkIfAtBottom();
     };
 
     // Initial check
     handleScroll();
 
-    scrollContainer.addEventListener("scroll", handleScroll);
-    return () => scrollContainer.removeEventListener("scroll", handleScroll);
-  }, [checkIfAtBottom]);
+    scrollAreaRef.addEventListener("scroll", handleScroll);
+    scrollAreaRef.addEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
+    return () => {
+      scrollAreaRef.removeEventListener("scroll", handleScroll)
+      scrollAreaRef.removeEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
+
+    };
+  }, [checkIfAtBottom, scrollAreaRef]);
 
   // Handle auto-scrolling when messages change
   useLayoutEffect(() => {
-    if (!scrollAreaRef.current) return;
+    if (!scrollAreaRef) return;
 
-    const scrollContainer = scrollAreaRef.current;
-    const currentScrollHeight = scrollContainer.scrollHeight;
+    const currentScrollHeight = scrollAreaRef.scrollHeight;
 
     // Check if this is new content (scroll height increased)
     const hasNewContent = currentScrollHeight > lastScrollHeightRef.current;
     const isFirstRender = lastScrollHeightRef.current === 0;
     const isNewUserMessage =
       messages.length > 0 && messages[messages.length - 1].role === "user";
-
-    // Update content min height if needed
-    if (currentScrollHeight > contentMinHeight.current) {
-      contentMinHeight.current = currentScrollHeight;
-    }
 
     // Auto-scroll only if:
     // 1. It's the first render, OR
@@ -80,7 +101,8 @@ export default function MessageList({ messages }: MessageListProps) {
       hasNewContent &&
       (isFirstRender || isAtBottomRef.current || isNewUserMessage)
     ) {
-      scrollContainer.scrollTo({
+      isProgrammaticScrollRef.current = true;
+      scrollAreaRef.scrollTo({
         top: currentScrollHeight,
         behavior: isFirstRender ? "instant" : "smooth",
       });
@@ -90,7 +112,7 @@ export default function MessageList({ messages }: MessageListProps) {
 
     // Update the last known scroll height
     lastScrollHeightRef.current = currentScrollHeight;
-  }, [messages]);
+  }, [messages, scrollAreaRef]);
 
   // If no messages, show a placeholder
   if (messages.length === 0) {
@@ -102,12 +124,10 @@ export default function MessageList({ messages }: MessageListProps) {
   }
 
   return (
-    <div className="overflow-y-auto flex-1" ref={scrollAreaRef}>
+    <div className="overflow-y-auto flex-1" ref={setScrollAreaRef}>
       <div
-        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto"
-        style={{ minHeight: contentMinHeight.current }}
-      >
-        {messages.map((message) => (
+        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto transition-all duration-300 ease-in-out min-h-0">
+        {messages.map((message, index) => (
           <div
             key={message.id ?? "draft"}
             className={`${message.role === "user" ? "text-right" : ""}`}
@@ -127,7 +147,10 @@ export default function MessageList({ messages }: MessageListProps) {
                 {message.role !== "user" && message.content === "" ? (
                   <LoadingDots />
                 ) : (
-                  message.content.trim()
+                  <ProcessedMessage
+                    messageContent={message.content}
+                    index={index}
+                  />
                 )}
               </div>
             </div>
@@ -155,3 +178,41 @@ const LoadingDots = () => (
     <span className="sr-only">Loading...</span>
   </div>
 );
+
+
+const ProcessedMessage = React.memo(function ProcessedMessage({
+                                                                messageContent,
+                                                                index,
+                                                              }: ProcessedMessageProps) {
+  // Regex to find URLs
+  // https://stackoverflow.com/a/17773849
+  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (e.metaKey || e.ctrlKey) {
+      window.open(url, "_blank");
+    } else {
+      e.preventDefault(); // disable normal click to emulate terminal behaviour
+    }
+  }
+
+  const linkedContent = useMemo(() => {
+    return messageContent.split(urlRegex).map((content, idx) => {
+      if (urlRegex.test(content)) {
+        return (
+          <a
+            key={`${index}-${idx}`}
+            href={content}
+            onClick={(e) => handleClick(e, content)}
+            className="cursor-default [.modifier-pressed_&]:hover:underline [.modifier-pressed_&]:hover:cursor-pointer"
+          >
+            {content}
+          </a>
+        );
+      }
+      return <span key={`${index}-${idx}`}>{content}</span>;
+    });
+  }, [index, messageContent, urlRegex]);
+
+  return <>{linkedContent}</>;
+});

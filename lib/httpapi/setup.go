@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/agentapi/lib/logctx"
+	mf "github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/termexec"
 )
 
@@ -18,6 +19,7 @@ type SetupProcessConfig struct {
 	ProgramArgs    []string
 	TerminalWidth  uint16
 	TerminalHeight uint16
+	AgentType      mf.AgentType
 }
 
 func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Process, error) {
@@ -34,6 +36,14 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 	if err != nil {
 		logger.Error(fmt.Sprintf("Error starting process: %v", err))
 		os.Exit(1)
+	}
+
+	// Hack for sourcegraph amp to stop the animation.
+	if config.AgentType == mf.AgentTypeAmp {
+		_, err = process.Write([]byte(" \b"))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Handle SIGINT (Ctrl+C) and send it to the process

@@ -6,6 +6,7 @@ import (
 
 	"github.com/coder/agentapi/cmd/attach"
 	"github.com/coder/agentapi/cmd/server"
+	"github.com/coder/agentapi/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,7 @@ var rootCmd = &cobra.Command{
 	Use:     "agentapi",
 	Short:   "AgentAPI CLI",
 	Long:    `AgentAPI - HTTP API for Claude Code, Goose, Aider, Gemini and Codex`,
-	Version: "0.4.1",
+	Version: version.Version,
 }
 
 func Execute() {

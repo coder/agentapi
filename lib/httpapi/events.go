@@ -54,7 +54,8 @@ type MessageUpdateBody struct {
 }
 
 type StatusChangeBody struct {
-	Status AgentStatus `json:"status" doc:"Agent status"`
+	Status    AgentStatus  `json:"status" doc:"Agent status"`
+	AgentType mf.AgentType `json:"agent_type" doc:"Type of the agent being used by the server."`
 }
 
 type ScreenUpdateBody struct {
@@ -70,6 +71,7 @@ type EventEmitter struct {
 	mu                  sync.Mutex
 	messages            []st.ConversationMessage
 	status              AgentStatus
+	agentType           mf.AgentType
 	chans               map[int]chan Event
 	chanIdx             int
 	subscriptionBufSize int
@@ -169,7 +171,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 	e.messages = newMessages
 }
 
-func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus) {
+func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -178,8 +180,9 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus})
+	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: agentType})
 	e.status = newAgentStatus
+	e.agentType = agentType
 }
 
 func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
@@ -205,7 +208,7 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 	}
 	events = append(events, Event{
 		Type:    EventTypeStatusChange,
-		Payload: StatusChangeBody{Status: e.status},
+		Payload: StatusChangeBody{Status: e.status, AgentType: e.agentType},
 	})
 	events = append(events, Event{
 		Type:    EventTypeScreenUpdate,

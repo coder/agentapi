@@ -48,14 +48,39 @@ func TestParseAgentType(t *testing.T) {
 			want:         AgentTypeGemini,
 		},
 		{
+			firstArg:     "copilot",
+			agentTypeVar: "",
+			want:         AgentTypeCopilot,
+		},
+		{
 			firstArg:     "cursor-agent",
 			agentTypeVar: "",
-			want:         AgentTypeCursorAgent,
+			want:         AgentTypeCursor,
 		},
 		{
 			firstArg:     "cursor",
 			agentTypeVar: "",
 			want:         AgentTypeCursor,
+		},
+		{
+			firstArg:     "amazonq",
+			agentTypeVar: "",
+			want:         AgentTypeAmazonQ,
+		},
+		{
+			firstArg:     "q",
+			agentTypeVar: "",
+			want:         AgentTypeAmazonQ,
+		},
+		{
+			firstArg:     "opencode",
+			agentTypeVar: "",
+			want:         AgentTypeOpencode,
+		},
+		{
+			firstArg:     "auggie",
+			agentTypeVar: "",
+			want:         AgentTypeAuggie,
 		},
 		{
 			firstArg:     "amp",
@@ -83,6 +108,11 @@ func TestParseAgentType(t *testing.T) {
 			want:         AgentTypeGoose,
 		},
 		{
+			firstArg:     "claude",
+			agentTypeVar: "copilot",
+			want:         AgentTypeCopilot,
+		},
+		{
 			firstArg:     "goose",
 			agentTypeVar: "claude",
 			want:         AgentTypeClaude,
@@ -94,13 +124,33 @@ func TestParseAgentType(t *testing.T) {
 		},
 		{
 			firstArg:     "claude",
+			agentTypeVar: "amazonq",
+			want:         AgentTypeAmazonQ,
+		},
+		{
+			firstArg:     "claude",
+			agentTypeVar: "q",
+			want:         AgentTypeAmazonQ,
+		},
+		{
+			firstArg:     "claude",
+			agentTypeVar: "opencode",
+			want:         AgentTypeOpencode,
+		},
+		{
+			firstArg:     "claude",
 			agentTypeVar: "cursor-agent",
-			want:         AgentTypeCursorAgent,
+			want:         AgentTypeCursor,
 		},
 		{
 			firstArg:     "claude",
 			agentTypeVar: "cursor",
 			want:         AgentTypeCursor,
+		},
+		{
+			firstArg:     "claude",
+			agentTypeVar: "auggie",
+			want:         AgentTypeAuggie,
 		},
 		{
 			firstArg:     "aider",

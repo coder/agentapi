@@ -1,0 +1,131 @@
+ ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > Which file is this code from?                                                                                                                                                                             │
+ │                                                                                                                                                                                                             │
+ │   ```ts                                                                                                                                                                                                     │
+ │   // Set up polling for messages and server status                                                                                                                                                          │
+ │   useEffect(() => {                                                                                                                                                                                         │
+ │     // Check server status initially                                                                                                                                                                        │
+ │     checkServerStatus();                                                                                                                                                                                    │
+ │                                                                                                                                                                                                             │
+ │     // Set up polling intervals                                                                                                                                                                             │
+ │     const messageInterval = setInterval(fetchMessages, 1000);                                                                                                                                               │
+ │     const statusInterval = setInterval(checkServerStatus, 250);                                                                                                                                             │
+ │                                                                                                                                                                                                             │
+ │     // Clean up intervals on component unmount                                                                                                                                                              │
+ │     return () => {                                                                                                                                                                                          │
+ │       clearInterval(messageInterval);                                                                                                                                                                       │
+ │       clearInterval(statusInterval);                                                                                                                                                                        │
+ │     };                                                                                                                                                                                                      │
+ │   }, []);                                                                                                                                                                                                   │
+ │   ```                                                                                                                                                                                                       │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ● I'll search for this code in the repository to find which file it belongs to.
+
+ ✓ Search for files containing the useEffect code with polling setup
+   $ find . -type f -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" | xargs grep -l "useEffect.*checkServerStatus\|Set up polling for messages and server status" 2>/dev/null
+   ↪ 1 line...
+
+ ● Let me try a broader search for the specific code patterns in the snippet:
+
+ ✓ Search for files containing checkServerStatus function calls
+   $ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \) -exec grep -l "checkServerStatus" {} \;
+   ↪ 1 line...
+
+ ✓ stop_bash
+   ↪ 1 line...
+
+ ● Let me try a more specific search within the chat directory:
+
+ ✓ Search for checkServerStatus in chat directory
+   $ grep -r "checkServerStatus" chat/ 2>/dev/null || echo "Not found in chat/"
+   ↪ 2 lines...
+
+ ● Let me search for the specific interval patterns:
+
+ ✓ Search for setInterval with fetchMessages
+   $ grep -r "setInterval.*fetchMessages" . 2>/dev/null || echo "Not found"
+   ↪ 67 lines...
+
+ ● I can see this code appears in test data files. Let me look for the actual
+   source file by checking the full useEffect code pattern:
+
+ ✓ Search for the complete useEffect pattern with Set up polling comment
+   $ grep -r "Set up polling for messages and server status" . --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" 2>/dev/null || echo "Not found with exact comment"
+   ↪ 2 lines...
+
+ ● Let me look at one of the test files to see the context:
+
+ ✓ View user.txt
+   ~/Documents/work/agentapi/lib/msgfmt/testdata/remove-user-input/claude/user.txt
+   ↪ 24 lines...
+
+ ● Now I understand! This code snippet is actually from a user question that was
+   used as test data in the message formatting system. Let me search for this
+   specific code in the actual source files by looking at the chat directory more
+   thoroughly:
+
+ ✓ List directory ~/Documents/work/agentapi/chat
+   ↪ 27 items...
+
+ ✓ Search for polling setup in chat src directory
+   $ find chat/src -name "*.ts" -o -name "*.tsx" | xargs grep -l "messageInterval\|statusInterval" 2>/dev/null || echo "Not found in src"
+   ↪ 2 lines...
+
+ ✓ Search for fetchMessages function in chat directory
+   $ find chat -name "*.ts" -o -name "*.tsx" | xargs grep -l "fetchMessages" 2>/dev/null || echo "Not found"
+   ↪ 2 lines...
+
+ ● Let me check the chat/src directory structure:
+
+ ✓ List directory ~/Documents/work/agentapi/chat/src
+   ↪ 11 items...
+
+ ✓ Search for useEffect with intervals in all chat TypeScript files
+   $ find chat -name "*.ts" -o -name "*.tsx" | xargs grep -l "useEffect.*setInterval\|setInterval.*useEffect" 2>/dev/null || echo "Not found"
+   ↪ 2 lines...
+
+ ● Let me check the main chat page or component files:
+
+ ✓ List directory ~/Documents/work/agentapi/chat/src/app
+   ↪ 12 items...
+
+ ✓ View page.tsx
+   ~/Documents/work/agentapi/chat/src/app/page.tsx
+   ↪ 26 lines...
+
+ ● Let me check the Chat component and ChatProvider:
+
+ ✓ List directory ~/Documents/work/agentapi/chat/src/components
+   ↪ 13 items...
+
+ ✓ View chat-provider.tsx
+   ~/Documents/work/agentapi/chat/src/components/chat-provider.tsx
+   ↪ 296 lines...
+
+ ● Based on my search through the repository, I can now provide you with the
+   answer:
+
+   The code snippet you provided is not from an actual source file in this
+   repository. Instead, it appears to be test data that represents a user question
+   about polling code that was used in the message formatting system's test suite.
+
+   Specifically, this code appears in multiple test data files under 
+   lib/msgfmt/testdata/ directories, such as:
+
+     * lib/msgfmt/testdata/remove-user-input/claude/user.txt
+     * lib/msgfmt/testdata/remove-user-input/aider/user.txt
+     * lib/msgfmt/testdata/remove-user-input/goose/user.txt
+     * And several others in various test scenarios
+
+   The test data shows this TypeScript code as an example of a user question that
+   was being processed by different agent message formatters (Claude, Aider, Goose,
+   etc.) to test how they handle and format multi-line code snippets in user input.
+
+   The actual chat functionality in this repository uses a different approach - it
+   uses Server-Sent Events (SSE) for real-time communication instead of polling, as
+   seen in the chat/src/components/chat-provider.tsx file where an EventSource
+   connection is established to listen for message updates and status changes from
+   the server.
+
+ ~/Documents/work/agentapi [⎇ feat-github-cli*]
