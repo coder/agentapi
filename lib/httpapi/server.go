@@ -81,11 +81,13 @@ type ServerConfig struct {
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
 // Viper/Cobra use different separators (space for env vars, comma for flags),
 // so these characters likely indicate user error.
-func parseAllowedHosts(input []string) ([]string, error) {
+func parseAllowedHosts(input []string, logger *slog.Logger) ([]string, error) {
 	if len(input) == 0 {
 		return nil, fmt.Errorf("the list must not be empty")
 	}
 	if slices.Contains(input, "*") {
+		logger.Warn("⚠️  SECURITY WARNING: Host wildcard '*' allows requests from ANY host",
+			"recommendation", "Only use '*' in development. In production, specify exact hosts.")
 		return []string{"*"}, nil
 	}
 	// First pass: whitespace & comma checks (surface these errors first)
@@ -131,11 +133,13 @@ func parseAllowedHosts(input []string) ([]string, error) {
 }
 
 // Validate allowed origins
-func parseAllowedOrigins(input []string) ([]string, error) {
+func parseAllowedOrigins(input []string, logger *slog.Logger) ([]string, error) {
 	if len(input) == 0 {
 		return nil, fmt.Errorf("the list must not be empty")
 	}
 	if slices.Contains(input, "*") {
+		logger.Warn("⚠️  SECURITY WARNING: CORS wildcard '*' allows requests from ANY website",
+			"recommendation", "Only use '*' in development. In production, specify exact origins.")
 		return []string{"*"}, nil
 	}
 	// Viper/Cobra use different separators (space for env vars, comma for flags),
@@ -168,11 +172,11 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	logger := logctx.From(ctx)
 
-	allowedHosts, err := parseAllowedHosts(config.AllowedHosts)
+	allowedHosts, err := parseAllowedHosts(config.AllowedHosts, logger)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to parse allowed hosts: %w", err)
 	}
-	allowedOrigins, err := parseAllowedOrigins(config.AllowedOrigins)
+	allowedOrigins, err := parseAllowedOrigins(config.AllowedOrigins, logger)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to parse allowed origins: %w", err)
 	}
@@ -404,7 +408,13 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 
 // subscribeEvents is an SSE endpoint that sends events to the client
 func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.Sender) {
-	subscriberId, ch, stateEvents := s.emitter.Subscribe()
+	subscriberId, ch, stateEvents, err := s.emitter.Subscribe()
+	if err != nil {
+		s.logger.Error("Failed to subscribe", "error", err)
+		// Send error to client and close connection
+		_ = send.Data(map[string]string{"error": err.Error()})
+		return
+	}
 	defer s.emitter.Unsubscribe(subscriberId)
 	s.logger.Info("New subscriber", "subscriberId", subscriberId)
 	for _, event := range stateEvents {
@@ -438,7 +448,13 @@ func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.
 }
 
 func (s *Server) subscribeScreen(ctx context.Context, input *struct{}, send sse.Sender) {
-	subscriberId, ch, stateEvents := s.emitter.Subscribe()
+	subscriberId, ch, stateEvents, err := s.emitter.Subscribe()
+	if err != nil {
+		s.logger.Error("Failed to subscribe to screen", "error", err)
+		// Send error to client and close connection
+		_ = send.Data(map[string]string{"error": err.Error()})
+		return
+	}
 	defer s.emitter.Unsubscribe(subscriberId)
 	s.logger.Info("New screen subscriber", "subscriberId", subscriberId)
 	for _, event := range stateEvents {

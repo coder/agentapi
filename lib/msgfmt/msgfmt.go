@@ -4,7 +4,26 @@ import (
 	"strings"
 )
 
-const WhiteSpaceChars = " \t\n\r\f\v"
+const (
+	// WhiteSpaceChars defines all whitespace characters for trimming
+	WhiteSpaceChars = " \t\n\r\f\v"
+
+	// Message parsing heuristics - these are empirically determined values
+	// based on how different agents echo user input back to the terminal
+
+	// MaxUserInputPrefixRunesToMatch is how many runes from the first line of user input
+	// we use to search for the echoed input in the agent's message
+	MaxUserInputPrefixRunesToMatch = 6
+	// MaxLinesToSearchForUserInput is how many lines of the agent message we search
+	// for the echoed user input (user input is typically at the start)
+	MaxLinesToSearchForUserInput = 5
+	// DefaultPrefixRunesToSearch is the minimum number of runes to search in the message
+	// when looking for user input, regardless of line count
+	DefaultPrefixRunesToSearch = 25
+	// MaxRuneLookahead is how many runes ahead we look when trying to match
+	// the next rune between message and user input (handles character omission/insertion)
+	MaxRuneLookahead = 5
+)
 
 func TrimWhitespace(msg string) string {
 	return strings.Trim(msg, WhiteSpaceChars)
@@ -58,17 +77,16 @@ func normalizeAndGetRuneLineMapping(msgRaw string) ([]rune, []string, []int) {
 
 // Find where the user input starts in the message
 func findUserInputStartIdx(msg []rune, msgRuneLineLocations []int, userInput []rune, userInputLineLocations []int) int {
-	// We take up to 6 runes from the first line of the user input
-	// and search for it in the message. 6 is arbitrary.
+	// We take up to MaxUserInputPrefixRunesToMatch runes from the first line of the user input
+	// and search for it in the message.
 	// We only look at the first line to avoid running into user input
 	// being broken up by UI elements.
-	maxUserInputPrefixLen := 6
 	userInputPrefixLen := -1
 	for i, lineIdx := range userInputLineLocations {
 		if lineIdx > 0 {
 			break
 		}
-		if i >= maxUserInputPrefixLen {
+		if i >= MaxUserInputPrefixRunesToMatch {
 			break
 		}
 		userInputPrefixLen = i + 1
@@ -78,20 +96,18 @@ func findUserInputStartIdx(msg []rune, msgRuneLineLocations []int, userInput []r
 	}
 	userInputPrefix := userInput[:userInputPrefixLen]
 
-	// We'll only search the first 5 lines or 25 runes of the message,
-	// whichever has more runes. This number is arbitrary. The intuition
-	// is that user input is echoed back at the start of the message. The first
-	// line or two may contain some UI elements.
+	// We'll only search the first MaxLinesToSearchForUserInput lines or DefaultPrefixRunesToSearch runes
+	// of the message, whichever has more runes. The intuition is that user input is echoed back at
+	// the start of the message. The first line or two may contain some UI elements.
 	msgPrefixLen := 0
 	for i, lineIdx := range msgRuneLineLocations {
-		if lineIdx > 5 {
+		if lineIdx > MaxLinesToSearchForUserInput {
 			break
 		}
 		msgPrefixLen = i + 1
 	}
-	defaultRunesFromMsg := 25
-	if msgPrefixLen < defaultRunesFromMsg {
-		msgPrefixLen = defaultRunesFromMsg
+	if msgPrefixLen < DefaultPrefixRunesToSearch {
+		msgPrefixLen = DefaultPrefixRunesToSearch
 	}
 	if msgPrefixLen > len(msg) {
 		msgPrefixLen = len(msg)
@@ -105,11 +121,11 @@ func findUserInputStartIdx(msg []rune, msgRuneLineLocations []int, userInput []r
 // We're assuming that user input likely won't be truncated much,
 // but it's likely some characters will be missing (e.g. OpenAI Codex strips
 // "```" and instead formats enclosed text as a code block).
-// We're going to see if any of the next 5 runes in the message
-// match any of the next 5 runes in the user input.
+// We're going to see if any of the next MaxRuneLookahead runes in the message
+// match any of the next MaxRuneLookahead runes in the user input.
 func findNextMatch(knownMsgMatchIdx int, knownUserInputMatchIdx int, msg []rune, userInput []rune) (int, int) {
-	for i := range 5 {
-		for j := range 5 {
+	for i := range MaxRuneLookahead {
+		for j := range MaxRuneLookahead {
 			userInputIdx := knownUserInputMatchIdx + i + 1
 			msgIdx := knownMsgMatchIdx + j + 1
 

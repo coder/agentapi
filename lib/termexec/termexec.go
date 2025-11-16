@@ -17,6 +17,15 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const (
+	// ScreenStabilityCheckInterval is how often we check if the terminal screen has stabilized
+	// This corresponds to ~60 FPS checking rate
+	ScreenStabilityCheckInterval = 16 * time.Millisecond
+	// ScreenStabilityRetries is how many times we retry reading the screen
+	// before giving up on waiting for stability
+	ScreenStabilityRetries = 3
+)
+
 type Process struct {
 	xp               *xpty.Xpty
 	execCmd          *exec.Cmd
@@ -123,8 +132,9 @@ func (p *Process) Signal(sig os.Signal) error {
 }
 
 // ReadScreen returns the contents of the terminal window.
-// It waits for the terminal to be stable for 16ms before
-// returning, or 48 ms since it's called, whichever is sooner.
+// It waits for the terminal to be stable for ScreenStabilityCheckInterval before
+// returning, or up to ScreenStabilityRetries * ScreenStabilityCheckInterval total,
+// whichever is sooner.
 //
 // This logic acts as a kind of vsync. Agents regularly redraw
 // parts of the screen. If we naively snapshotted the screen,
@@ -132,15 +142,15 @@ func (p *Process) Signal(sig os.Signal) error {
 // result in a malformed agent message being returned to the
 // user.
 func (p *Process) ReadScreen() string {
-	for range 3 {
+	for range ScreenStabilityRetries {
 		p.screenUpdateLock.RLock()
 		timeSinceUpdate := time.Since(p.lastScreenUpdate)
 		p.screenUpdateLock.RUnlock()
 
-		if timeSinceUpdate >= 16*time.Millisecond {
+		if timeSinceUpdate >= ScreenStabilityCheckInterval {
 			break
 		}
-		time.Sleep(16 * time.Millisecond)
+		time.Sleep(ScreenStabilityCheckInterval)
 	}
 
 	// Always read with lock held to prevent race condition

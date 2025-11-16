@@ -12,7 +12,8 @@ import (
 func TestEventEmitter(t *testing.T) {
 	t.Run("single-subscription", func(t *testing.T) {
 		emitter := NewEventEmitter(10)
-		_, ch, stateEvents := emitter.Subscribe()
+		_, ch, stateEvents, err := emitter.Subscribe()
+		assert.NoError(t, err)
 		assert.Empty(t, ch)
 		assert.Equal(t, []Event{
 			{
@@ -63,7 +64,8 @@ func TestEventEmitter(t *testing.T) {
 		emitter := NewEventEmitter(10)
 		channels := make([]<-chan Event, 0, 10)
 		for i := 0; i < 10; i++ {
-			_, ch, _ := emitter.Subscribe()
+			_, ch, _, err := emitter.Subscribe()
+			assert.NoError(t, err)
 			channels = append(channels, ch)
 		}
 		now := time.Now()
@@ -82,7 +84,8 @@ func TestEventEmitter(t *testing.T) {
 
 	t.Run("close-channel", func(t *testing.T) {
 		emitter := NewEventEmitter(1)
-		_, ch, _ := emitter.Subscribe()
+		_, ch, _, err := emitter.Subscribe()
+		assert.NoError(t, err)
 		for i := range 5 {
 			emitter.UpdateMessagesAndEmitChanges([]st.ConversationMessage{
 				{Id: i, Message: fmt.Sprintf("Hello, world! %d", i), Role: st.ConversationRoleUser, Time: time.Now()},
@@ -96,5 +99,18 @@ func TestEventEmitter(t *testing.T) {
 		default:
 			t.Fatalf("read should not block")
 		}
+	})
+
+	t.Run("subscriber-limit", func(t *testing.T) {
+		emitter := NewEventEmitter(10)
+		// Subscribe up to the limit
+		for i := 0; i < MaxSSESubscribers; i++ {
+			_, _, _, err := emitter.Subscribe()
+			assert.NoError(t, err, "subscription %d should succeed", i)
+		}
+		// Next subscription should fail
+		_, _, _, err := emitter.Subscribe()
+		assert.Error(t, err)
+		assert.IsType(t, &SubscriberLimitError{}, err)
 	})
 }

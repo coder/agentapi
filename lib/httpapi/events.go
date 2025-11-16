@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,6 +12,15 @@ import (
 	"github.com/coder/agentapi/lib/util"
 	"github.com/danielgtaylor/huma/v2"
 )
+
+// SubscriberLimitError is returned when the maximum number of SSE subscribers is reached
+type SubscriberLimitError struct {
+	Limit int
+}
+
+func (e *SubscriberLimitError) Error() string {
+	return fmt.Sprintf("subscriber limit reached: %d", e.Limit)
+}
 
 type EventType string
 
@@ -86,6 +96,13 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 // Listeners must actively drain the channel, so it's important to
 // set this to a value that is large enough to handle the expected
 // number of events.
+
+const (
+	// MaxSSESubscribers limits the number of concurrent SSE connections
+	// to prevent resource exhaustion attacks
+	MaxSSESubscribers = 100
+)
+
 func NewEventEmitter(subscriptionBufSize int) *EventEmitter {
 	return &EventEmitter{
 		mu:                  sync.Mutex{},
@@ -115,6 +132,9 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 		default:
 			// If the channel is full, close it.
 			// Listeners must actively drain the channel.
+			slog.Warn("Closing slow SSE subscriber - channel buffer full",
+				"subscriberId", chanId,
+				"bufferSize", e.subscriptionBufSize)
 			e.unsubscribeInner(chanId)
 		}
 	}
@@ -198,16 +218,26 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 // - a subscription ID that can be used to unsubscribe.
 // - a channel for receiving events.
 // - a list of events that allow to recreate the state of the conversation right before the subscription was created.
-func (e *EventEmitter) Subscribe() (int, <-chan Event, []Event) {
+// - an error if the maximum number of subscribers has been reached.
+func (e *EventEmitter) Subscribe() (int, <-chan Event, []Event, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	// Check subscriber limit to prevent resource exhaustion
+	if len(e.chans) >= MaxSSESubscribers {
+		slog.Warn("SSE subscriber limit reached - rejecting new connection",
+			"limit", MaxSSESubscribers,
+			"current", len(e.chans))
+		return 0, nil, nil, &SubscriberLimitError{Limit: MaxSSESubscribers}
+	}
+
 	stateEvents := e.currentStateAsEvents()
 
 	// Once a channel becomes full, it will be closed.
 	ch := make(chan Event, e.subscriptionBufSize)
 	e.chans[e.chanIdx] = ch
 	e.chanIdx++
-	return e.chanIdx - 1, ch, stateEvents
+	return e.chanIdx - 1, ch, stateEvents, nil
 }
 
 // Assumes the caller holds the lock.
