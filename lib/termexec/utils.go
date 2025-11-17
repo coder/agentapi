@@ -47,7 +47,7 @@ func calcOpencodeDynamicHeader(newLines []string) (int, bool) {
 func removeDynamicHeader(screen string, agentType msgfmt.AgentType) (string, bool) {
 	lines := strings.Split(screen, "\n")
 	dynamicHeaderEnd := -1
-	continueRemoving := true
+	var continueRemoving bool
 	if agentType == msgfmt.AgentTypeAmp {
 		dynamicHeaderEnd, continueRemoving = calcAmpDynamicHeader(lines)
 	} else if agentType == msgfmt.AgentTypeOpencode {
