@@ -406,3 +406,140 @@ func TestPartsToString(t *testing.T) {
 		),
 	)
 }
+
+func TestInitialPromptReadiness(t *testing.T) {
+	now := time.Now()
+	changing := st.ConversationStatusChanging
+	stable := st.ConversationStatusStable
+
+	t.Run("agent not ready - status remains changing", func(t *testing.T) {
+		cfg := st.ConversationConfig{
+			GetTime:               func() time.Time { return now },
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second,
+			AgentIO:               &testAgent{screen: "loading..."},
+			IsAgentReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+		}
+		c := st.NewConversation(context.Background(), cfg, "initial prompt here")
+
+		// Fill buffer with stable snapshots, but agent is not ready
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+
+		// Even though screen is stable, status should be changing because agent is not ready
+		assert.Equal(t, changing, c.Status())
+		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.False(t, c.InitialPromptSent)
+	})
+
+	t.Run("agent becomes ready - status changes to stable", func(t *testing.T) {
+		cfg := st.ConversationConfig{
+			GetTime:               func() time.Time { return now },
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second,
+			AgentIO:               &testAgent{screen: "loading..."},
+			IsAgentReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+		}
+		c := st.NewConversation(context.Background(), cfg, "initial prompt here")
+
+		// Agent not ready initially
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+		assert.Equal(t, changing, c.Status())
+
+		// Agent becomes ready
+		c.AddSnapshot("ready")
+		c.AddSnapshot("ready")
+		c.AddSnapshot("ready")
+		assert.Equal(t, stable, c.Status())
+		assert.True(t, c.AgentReadyForInitialPrompt)
+		assert.False(t, c.InitialPromptSent)
+	})
+
+	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
+		cfg := st.ConversationConfig{
+			GetTime:               func() time.Time { return now },
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second,
+			AgentIO:               &testAgent{screen: "loading..."},
+			IsAgentReadyForInitialPrompt: func(message string) bool {
+				return false // Agent never ready
+			},
+		}
+		// Empty initial prompt means no need to wait for readiness
+		c := st.NewConversation(context.Background(), cfg, "")
+
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+		c.AddSnapshot("loading...")
+
+		// Status should be stable because no initial prompt to wait for
+		assert.Equal(t, stable, c.Status())
+		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.InitialPromptSent) // Set to true when initial prompt is empty
+	})
+
+	t.Run("initial prompt sent - normal status logic applies", func(t *testing.T) {
+		cfg := st.ConversationConfig{
+			GetTime:               func() time.Time { return now },
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second,
+			AgentIO:               &testAgent{screen: "processing..."},
+			IsAgentReadyForInitialPrompt: func(message string) bool {
+				return false // Agent never ready
+			},
+		}
+		c := st.NewConversation(context.Background(), cfg, "initial prompt here")
+		// Manually mark as sent to simulate that initial prompt was already sent
+		c.InitialPromptSent = true
+
+		c.AddSnapshot("processing...")
+		c.AddSnapshot("processing...")
+		c.AddSnapshot("processing...")
+
+		// Status should be stable because initial prompt was already sent
+		assert.Equal(t, stable, c.Status())
+		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.InitialPromptSent)
+	})
+
+	t.Run("agent readiness detected once - stays ready", func(t *testing.T) {
+		cfg := st.ConversationConfig{
+			GetTime:               func() time.Time { return now },
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second,
+			AgentIO:               &testAgent{screen: "ready"},
+			IsAgentReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+		}
+		c := st.NewConversation(context.Background(), cfg, "initial prompt here")
+
+		// Agent becomes ready
+		c.AddSnapshot("ready")
+		c.AddSnapshot("ready")
+		c.AddSnapshot("ready")
+		assert.Equal(t, stable, c.Status())
+		assert.True(t, c.AgentReadyForInitialPrompt)
+
+		// After agent is detected as ready, normal status logic applies
+		// Screen changes should cause changing status
+		c.AddSnapshot("changing")
+		assert.Equal(t, changing, c.Status())
+		assert.True(t, c.AgentReadyForInitialPrompt)
+
+		// Once screen stabilizes again, status should be stable
+		// AgentReadyForInitialPrompt remains true
+		c.AddSnapshot("stable now")
+		c.AddSnapshot("stable now")
+		c.AddSnapshot("stable now")
+		assert.Equal(t, stable, c.Status())
+		assert.True(t, c.AgentReadyForInitialPrompt)
+	})
+}
