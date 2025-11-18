@@ -6,8 +6,8 @@ import (
 	"github.com/coder/agentapi/lib/msgfmt"
 )
 
-func calcAmpDynamicHeader(lines []string) (int, bool) {
-	dynamicHeaderEnd := -1
+func calcAmpAnimatedContent(lines []string) (int, bool) {
+	animatedContentEnd := -1
 	firstTextEncountered := false
 	continueRemoving := true
 
@@ -22,16 +22,16 @@ func calcAmpDynamicHeader(lines []string) (int, bool) {
 			}
 			if firstTextEncountered && len(strings.Trim(lines[i], " \n")) == 0 && len(strings.Trim(lines[i+1], " \n")) == 0 &&
 				len(strings.Trim(lines[i+2], " \n")) == 0 {
-				dynamicHeaderEnd = i
+				animatedContentEnd = i
 				break
 
 			}
 		}
 	}
-	return dynamicHeaderEnd, continueRemoving
+	return animatedContentEnd, continueRemoving
 }
 
-func calcOpencodeDynamicHeader(lines []string) (int, bool) {
+func calcOpencodeAnimatedContent(lines []string) (int, bool) {
 	// Skip header lines for Opencode agent type to avoid false positives
 	// The header contains dynamic content (token count, context percentage, cost)
 	// that changes between screens, causing line comparison mismatches:
@@ -44,16 +44,16 @@ func calcOpencodeDynamicHeader(lines []string) (int, bool) {
 	return -1, true
 }
 
-func removeDynamicHeader(screen string, agentType msgfmt.AgentType) (string, bool) {
+func removeAnimatedContent(screen string, agentType msgfmt.AgentType) (string, bool) {
 	lines := strings.Split(screen, "\n")
-	dynamicHeaderEnd := -1
+	animatedContentEnd := -1
 	var continueRemoving bool
 	if agentType == msgfmt.AgentTypeAmp {
-		dynamicHeaderEnd, continueRemoving = calcAmpDynamicHeader(lines)
+		animatedContentEnd, continueRemoving = calcAmpAnimatedContent(lines)
 	} else if agentType == msgfmt.AgentTypeOpencode {
-		dynamicHeaderEnd, continueRemoving = calcOpencodeDynamicHeader(lines)
+		animatedContentEnd, continueRemoving = calcOpencodeAnimatedContent(lines)
 	} else {
 		continueRemoving = false
 	}
-	return strings.Join(lines[dynamicHeaderEnd+1:], "\n"), continueRemoving
+	return strings.Join(lines[animatedContentEnd+1:], "\n"), continueRemoving
 }

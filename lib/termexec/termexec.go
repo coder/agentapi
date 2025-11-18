@@ -19,12 +19,12 @@ import (
 )
 
 type Process struct {
-	xp                 *xpty.Xpty
-	execCmd            *exec.Cmd
-	screenUpdateLock   sync.RWMutex
-	lastScreenUpdate   time.Time
-	checkDynamicHeader bool
-	agentType          msgfmt.AgentType
+	xp                   *xpty.Xpty
+	execCmd              *exec.Cmd
+	screenUpdateLock     sync.RWMutex
+	lastScreenUpdate     time.Time
+	checkAnimatedContent bool
+	agentType            msgfmt.AgentType
 }
 
 type StartProcessConfig struct {
@@ -50,7 +50,7 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		return nil, err
 	}
 
-	process := &Process{xp: xp, execCmd: execCmd, checkDynamicHeader: true, agentType: args.AgentType}
+	process := &Process{xp: xp, execCmd: execCmd, checkAnimatedContent: true, agentType: args.AgentType}
 
 	go func() {
 		// HACK: Working around xpty concurrency limitations
@@ -122,16 +122,16 @@ func (p *Process) ReadScreen() string {
 		if time.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
 			state = p.xp.State.String()
 			p.screenUpdateLock.RUnlock()
-			if p.checkDynamicHeader {
-				state, p.checkDynamicHeader = removeDynamicHeader(state, p.agentType)
+			if p.checkAnimatedContent {
+				state, p.checkAnimatedContent = removeAnimatedContent(state, p.agentType)
 			}
 			return state
 		}
 		p.screenUpdateLock.RUnlock()
 		time.Sleep(16 * time.Millisecond)
 	}
-	if p.checkDynamicHeader {
-		state, p.checkDynamicHeader = removeDynamicHeader(p.xp.State.String(), p.agentType)
+	if p.checkAnimatedContent {
+		state, p.checkAnimatedContent = removeAnimatedContent(p.xp.State.String(), p.agentType)
 	}
 	return state
 }
