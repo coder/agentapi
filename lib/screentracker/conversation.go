@@ -407,7 +407,7 @@ func (c *Conversation) statusInner() ConversationStatus {
 	}
 
 	if !c.InitialPromptSent && !c.AgentReadyForInitialPrompt {
-		if c.cfg.IsAgentReadyForInitialPrompt(snapshots[0].screen) {
+		if len(snapshots) > 0 && c.cfg.IsAgentReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
 			c.AgentReadyForInitialPrompt = true
 			return ConversationStatusStable
 		}

@@ -34,26 +34,17 @@ func IsAgentReadyForInitialPrompt(agentType AgentType, message string) bool {
 func isGenericAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
 	messageWithoutInputBox := removeMessageBox(message)
-	if len(messageWithoutInputBox) == len(message) {
-		return false
-	}
-	return true
+	return len(messageWithoutInputBox) != len(message)
 }
 
 func isOpencodeAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
 	messageWithoutInputBox := removeOpencodeMessageBox(message)
-	if len(messageWithoutInputBox) == len(message) {
-		return false
-	}
-	return true
+	return len(messageWithoutInputBox) != len(message)
 }
 
 func isCodexAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
 	messageWithoutInputBox := removeCodexInputBox(message)
-	if len(messageWithoutInputBox) == len(message) {
-		return false
-	}
-	return true
+	return len(messageWithoutInputBox) != len(message)
 }
