@@ -418,7 +418,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second,
 			AgentIO:               &testAgent{screen: "loading..."},
-			IsAgentReadyForInitialPrompt: func(message string) bool {
+			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
 		}
@@ -431,7 +431,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 
 		// Even though screen is stable, status should be changing because agent is not ready
 		assert.Equal(t, changing, c.Status())
-		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.False(t, c.ReadyForInitialPrompt)
 		assert.False(t, c.InitialPromptSent)
 	})
 
@@ -441,7 +441,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second,
 			AgentIO:               &testAgent{screen: "loading..."},
-			IsAgentReadyForInitialPrompt: func(message string) bool {
+			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
 		}
@@ -458,7 +458,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c.AddSnapshot("ready")
 		c.AddSnapshot("ready")
 		assert.Equal(t, stable, c.Status())
-		assert.True(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.ReadyForInitialPrompt)
 		assert.False(t, c.InitialPromptSent)
 	})
 
@@ -468,7 +468,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second,
 			AgentIO:               &testAgent{screen: "loading..."},
-			IsAgentReadyForInitialPrompt: func(message string) bool {
+			ReadyForInitialPrompt: func(message string) bool {
 				return false // Agent never ready
 			},
 		}
@@ -481,7 +481,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 
 		// Status should be stable because no initial prompt to wait for
 		assert.Equal(t, stable, c.Status())
-		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.False(t, c.ReadyForInitialPrompt)
 		assert.True(t, c.InitialPromptSent) // Set to true when initial prompt is empty
 	})
 
@@ -491,7 +491,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second,
 			AgentIO:               &testAgent{screen: "processing..."},
-			IsAgentReadyForInitialPrompt: func(message string) bool {
+			ReadyForInitialPrompt: func(message string) bool {
 				return false // Agent never ready
 			},
 		}
@@ -505,7 +505,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 
 		// Status should be stable because initial prompt was already sent
 		assert.Equal(t, stable, c.Status())
-		assert.False(t, c.AgentReadyForInitialPrompt)
+		assert.False(t, c.ReadyForInitialPrompt)
 		assert.True(t, c.InitialPromptSent)
 	})
 
@@ -515,7 +515,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second,
 			AgentIO:               &testAgent{screen: "ready"},
-			IsAgentReadyForInitialPrompt: func(message string) bool {
+			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
 		}
@@ -526,20 +526,20 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c.AddSnapshot("ready")
 		c.AddSnapshot("ready")
 		assert.Equal(t, stable, c.Status())
-		assert.True(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.ReadyForInitialPrompt)
 
 		// After agent is detected as ready, normal status logic applies
 		// Screen changes should cause changing status
 		c.AddSnapshot("changing")
 		assert.Equal(t, changing, c.Status())
-		assert.True(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.ReadyForInitialPrompt)
 
 		// Once screen stabilizes again, status should be stable
-		// AgentReadyForInitialPrompt remains true
+		// ReadyForInitialPrompt remains true
 		c.AddSnapshot("stable now")
 		c.AddSnapshot("stable now")
 		c.AddSnapshot("stable now")
 		assert.Equal(t, stable, c.Status())
-		assert.True(t, c.AgentReadyForInitialPrompt)
+		assert.True(t, c.ReadyForInitialPrompt)
 	})
 }

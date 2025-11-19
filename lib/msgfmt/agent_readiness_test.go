@@ -9,16 +9,16 @@ import (
 
 func TestIsAgentReadyForInitialPrompt(t *testing.T) {
 	dir := "testdata/initialization"
-	agentTypes := []AgentType{AgentTypeClaude, AgentTypeGoose, AgentTypeAider, AgentTypeGemini, AgentTypeCopilot, AgentTypeAmp, AgentTypeCodex, AgentTypeCursor, AgentTypeAuggie, AgentTypeAmazonQ, AgentTypeOpencode, AgentTypeCustom}
+	agentTypes := []AgentType{AgentTypeClaude, AgentTypeGoose, AgentTypeAider, AgentTypeGemini, AgentTypeCopilot, AgentTypeAmp, AgentTypeCodex, AgentTypeCursor, AgentTypeAuggie, AgentTypeAmazonQ, AgentTypeOpencode}
 	for _, agentType := range agentTypes {
 		t.Run(string(agentType), func(t *testing.T) {
 			t.Run("ready", func(t *testing.T) {
 				cases, err := testdataDir.ReadDir(path.Join(dir, string(agentType), "ready"))
 				if err != nil {
-					t.Skipf("failed to read ready cases for agent type %s: %s", agentType, err)
+					t.Errorf("failed to read ready cases for agent type %s: %s", agentType, err)
 				}
 				if len(cases) == 0 {
-					t.Skipf("no ready cases found for agent type %s", agentType)
+					t.Errorf("no ready cases found for agent type %s", agentType)
 				}
 				for _, c := range cases {
 					if c.IsDir() {
@@ -35,10 +35,10 @@ func TestIsAgentReadyForInitialPrompt(t *testing.T) {
 			t.Run("not_ready", func(t *testing.T) {
 				cases, err := testdataDir.ReadDir(path.Join(dir, string(agentType), "not_ready"))
 				if err != nil {
-					t.Skipf("failed to read not_ready cases for agent type %s: %s", agentType, err)
+					t.Errorf("failed to read not_ready cases for agent type %s: %s", agentType, err)
 				}
 				if len(cases) == 0 {
-					t.Skipf("no not_ready cases found for agent type %s", agentType)
+					t.Errorf("no not_ready cases found for agent type %s", agentType)
 				}
 				for _, c := range cases {
 					if c.IsDir() {

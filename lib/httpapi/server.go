@@ -239,10 +239,10 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		GetTime: func() time.Time {
 			return time.Now()
 		},
-		SnapshotInterval:             snapshotInterval,
-		ScreenStabilityLength:        2 * time.Second,
-		FormatMessage:                formatMessage,
-		IsAgentReadyForInitialPrompt: isAgentReadyForInitialPrompt,
+		SnapshotInterval:      snapshotInterval,
+		ScreenStabilityLength: 2 * time.Second,
+		FormatMessage:         formatMessage,
+		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
 
