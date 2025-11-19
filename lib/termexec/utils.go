@@ -20,14 +20,12 @@ func calcOpencodeAnimatedContent(lines []string) (int, bool) {
 }
 
 func removeAnimatedContent(screen string, agentType msgfmt.AgentType) (string, bool) {
-	lines := strings.Split(screen, "\n")
-	animatedContentEnd := -1
-	var continueRemoving bool
 	switch agentType {
 	case msgfmt.AgentTypeOpencode:
-		animatedContentEnd, continueRemoving = calcOpencodeAnimatedContent(lines)
+		lines := strings.Split(screen, "\n")
+		animatedContentEnd, continueRemoving := calcOpencodeAnimatedContent(lines)
+		return strings.Join(lines[animatedContentEnd+1:], "\n"), continueRemoving
 	default:
 		return screen, false
 	}
-	return strings.Join(lines[animatedContentEnd+1:], "\n"), continueRemoving
 }
