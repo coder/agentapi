@@ -337,6 +337,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
 					s.conversation.InitialPromptSent = true
+					s.conversation.ReadyForInitialPrompt = false
 					currentStatus = st.ConversationStatusChanging
 					s.logger.Info("Initial prompt sent successfully")
 				}
