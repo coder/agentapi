@@ -268,6 +268,13 @@ func formatOpencodeMessage(message string, userInput string) string {
 	return message
 }
 
+func formatAmpMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeAmp)
+	message = removeAmpMessageBox(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
 func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
 	switch agentType {
 	case AgentTypeClaude:
@@ -283,7 +290,7 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeCopilot:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAmp:
-		return formatGenericMessage(message, userInput, agentType)
+		return formatAmpMessage(message, userInput)
 	case AgentTypeCursor:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAuggie:
