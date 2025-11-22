@@ -79,3 +79,24 @@ func removeOpencodeMessageBox(msg string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+func removeAmpMessageBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	msgBoxEndFound := false
+	msgBoxStartIdx := len(lines)
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !msgBoxEndFound && strings.HasPrefix(line, "╰") && strings.HasSuffix(line, "╯") {
+			msgBoxEndFound = true
+		}
+		if msgBoxEndFound && strings.HasPrefix(line, "╭") && strings.HasSuffix(line, "╮") {
+			msgBoxStartIdx = i
+			break
+		}
+	}
+	formattedMsg := strings.Join(lines[:msgBoxStartIdx], "\n")
+	if len(formattedMsg) == 0 {
+		return "Welcome to Amp"
+	}
+	return formattedMsg
+}
