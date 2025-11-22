@@ -63,17 +63,17 @@ func removeCodexInputBox(msg string) string {
 
 func removeOpencodeMessageBox(msg string) string {
 	lines := strings.Split(msg, "\n")
-	// Check the last 3 lines for
 	//
-	//  ┃                                                                      ┃
-	//  ┃ >                                                                    ┃
-	//  ┃                                                                      ┃
-	// We only check for the first ┃ and then an empty line above it - as sometimes the full input block does not load within a snapshot,
-	// this leads to displaying a bunch of newlines.
-	for i := len(lines) - 1; i >= 2; i-- {
-		if strings.ReplaceAll(lines[i-2], " ", "") != "┃┃" &&
-			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
-			lines = lines[:i-1]
+	//  ┃
+	//  ┃
+	//  ┃
+	//  ┃  Build  Anthropic Claude Sonnet 4
+	//  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+	//                                tab switch agent  ctrl+p commands
+	//
+	for i := len(lines) - 1; i >= 4; i-- {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀") {
+			lines = lines[:i-4]
 			break
 		}
 	}
