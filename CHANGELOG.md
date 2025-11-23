@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.1
+
+### Features
+- Add tooltips for buttons
+- Autofocus message box on user's turn
+- Add msgfmt logic for amp module
+- Update msgfmt for latest version in opencode
+
 ## v0.11.0
 
 ### Features
