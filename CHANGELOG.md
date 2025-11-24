@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.2
+
+### Features
+- Improved handling of initial prompt
+
 ## v0.11.1
 
 ### Features
