@@ -15,7 +15,7 @@ func IsAgentReadyForInitialPrompt(agentType AgentType, message string) bool {
 	case AgentTypeCopilot:
 		return isGenericAgentReadyForInitialPrompt(message)
 	case AgentTypeAmp:
-		return isGenericAgentReadyForInitialPrompt(message)
+		return isAmpAgentReadyForInitialPrompt(message)
 	case AgentTypeCursor:
 		return isGenericAgentReadyForInitialPrompt(message)
 	case AgentTypeAuggie:
@@ -46,5 +46,11 @@ func isOpencodeAgentReadyForInitialPrompt(message string) bool {
 func isCodexAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
 	messageWithoutInputBox := removeCodexInputBox(message)
+	return len(messageWithoutInputBox) != len(message)
+}
+
+func isAmpAgentReadyForInitialPrompt(message string) bool {
+	message = trimEmptyLines(message)
+	messageWithoutInputBox := removeAmpMessageBox(message)
 	return len(messageWithoutInputBox) != len(message)
 }
