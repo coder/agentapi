@@ -228,6 +228,11 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	formatMessage := func(message string, userInput string) string {
 		return mf.FormatAgentMessage(config.AgentType, message, userInput)
 	}
+
+	isAgentReadyForInitialPrompt := func(message string) bool {
+		return mf.IsAgentReadyForInitialPrompt(config.AgentType, message)
+	}
+
 	conversation := st.NewConversation(ctx, st.ConversationConfig{
 		AgentType: config.AgentType,
 		AgentIO:   config.Process,
@@ -237,6 +242,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
+		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 	}, config.InitialPrompt)
 	emitter := NewEventEmitter(1024)
 
@@ -331,6 +337,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
 					s.conversation.InitialPromptSent = true
+					s.conversation.ReadyForInitialPrompt = false
 					currentStatus = st.ConversationStatusChanging
 					s.logger.Info("Initial prompt sent successfully")
 				}

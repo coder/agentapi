@@ -1,0 +1,25 @@
+
+
+                                                                                                                                        ▄
+                                                                                                       █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+                                                                                                       █░░█ █░░█ █▀▀▀ █░░█ █░░░ █░░█ █░░█ █▀▀▀
+                                                                                                       ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+                                                                                                                                        1.0.98
+
+                                                                                                       Commands                         ctrl+p
+                                                                                                       List sessions                  ctrl+x l
+                                                                                                       Switch model                   ctrl+x m
+                                                                                                       Switch agent                        tab
+
+
+                                                                                     ┃
+                                                                                     ┃
+                                                                                     ┃
+                                                                                     ┃  Build  Anthropic Claude Sonnet 4
+                                                                                     ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                                               tab switch agent  ctrl+p commands
+
+
+
+
+ opencode v1.0.98  ~/Documents/work/agentapi
