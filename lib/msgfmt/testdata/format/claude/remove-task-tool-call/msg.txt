@@ -1,0 +1,15 @@
+> How are you?
+                                                                                
+⏺ I'm doing well! How can I help you with your coding project today?            
+
+● coder - coder_report_task (MCP)(summary: "Need clarification on
+                                 task requirements from user",
+                                 link: "", state: "failure")
+  ⎿  {
+       "message": "Thanks for reporting!"
+     }
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ? for shortcuts                                                               

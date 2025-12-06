@@ -102,17 +102,17 @@ func removeAmpMessageBox(msg string) string {
 }
 
 func removeClaudeReportTaskToolCall(msg string) string {
-	// If we encounter a line starting with `● coder - coder_report_task (MCP)` -- to  {
+	// If we encounter a line starting with `● coder - coder_report_task (MCP)` -- to  }
 	lines := strings.Split(msg, "\n")
 	toolCallEndIdx := -1
 	toolCallStartIdx := -1
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
-			toolCallStartIdx = i
-		}
-		if toolCallStartIdx != -1 && line == "{" {
+		if line == "}" {
 			toolCallEndIdx = i
+		}
+		if toolCallEndIdx != -1 && strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
+			toolCallStartIdx = i
 			break
 		}
 	}
