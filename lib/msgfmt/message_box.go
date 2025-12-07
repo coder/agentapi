@@ -129,8 +129,7 @@ func removeClaudeReportTaskToolCall(msg string) string {
 		return msg
 	}
 
-	// Remove tool calls in reverse order to preserve indices
-	// toolCallIdxs is already in reverse order from backwards iteration
+	// Remove tool calls from the message
 	for _, idxPair := range toolCallIdxs {
 		start, end := idxPair[0], idxPair[1]
 		lines = append(lines[:start], lines[end+1:]...)
