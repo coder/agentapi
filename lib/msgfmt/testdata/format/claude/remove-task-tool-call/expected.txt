@@ -1,12 +1,6 @@
 ● I'll build a snake game for you. Let me start by reporting my
    progress and creating a task list.
 
-● coder - coder_report_task (MCP)(summary: "Building a snake game
-                                 with HTML/CSS/JavaScript", link:
-                                 "", state: "working")
-  ⎿  {
-       "message": "Thanks for reporting!"
-     }
 
 ● Now I'll create a complete snake game with HTML, CSS, and
   JavaScript:

@@ -102,24 +102,38 @@ func removeAmpMessageBox(msg string) string {
 }
 
 func removeClaudeReportTaskToolCall(msg string) string {
-	// If we encounter a line starting with `● coder - coder_report_task (MCP)` -- to  }
+	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` and end with `}`
 	lines := strings.Split(msg, "\n")
 	toolCallEndIdx := -1
-	toolCallStartIdx := -1
+
+	// Store all tool call start and end indices [[start, end], ...]
+	var toolCallIdxs [][]int
+
+	// Iterate backwards to find all occurrences
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if line == "}" {
+		if line == "}" && toolCallEndIdx == -1 {
 			toolCallEndIdx = i
 		}
 		if toolCallEndIdx != -1 && strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
-			toolCallStartIdx = i
-			break
+			// Store [start, end] pair
+			toolCallIdxs = append(toolCallIdxs, []int{i, toolCallEndIdx})
+			// Reset to find the next tool call
+			toolCallEndIdx = -1
 		}
 	}
-	// If we didn't find the marker, return the original message
-	if toolCallEndIdx == -1 {
+
+	// If no tool calls found, return original message
+	if len(toolCallIdxs) == 0 {
 		return msg
 	}
-	// Remove from the opening brace to the marker line (inclusive)
-	return strings.Join(append(lines[:toolCallStartIdx], lines[toolCallEndIdx+1:]...), "\n")
+
+	// Remove tool calls in reverse order to preserve indices
+	// toolCallIdxs is already in reverse order from backwards iteration
+	for _, idxPair := range toolCallIdxs {
+		start, end := idxPair[0], idxPair[1]
+		lines = append(lines[:start], lines[end+1:]...)
+	}
+
+	return strings.Join(lines, "\n")
 }
