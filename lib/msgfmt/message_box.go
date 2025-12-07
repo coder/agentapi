@@ -112,12 +112,13 @@ func removeClaudeReportTaskToolCall(msg string) string {
 	// Iterate backwards to find all occurrences
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if line == "}" && toolCallEndIdx == -1 {
+		if line == "}" {
 			toolCallEndIdx = i
 		}
 		if toolCallEndIdx != -1 && strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
 			// Store [start, end] pair
 			toolCallIdxs = append(toolCallIdxs, []int{i, toolCallEndIdx})
+
 			// Reset to find the next tool call
 			toolCallEndIdx = -1
 		}
