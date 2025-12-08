@@ -102,25 +102,25 @@ func removeAmpMessageBox(msg string) string {
 }
 
 func removeClaudeReportTaskToolCall(msg string) string {
-	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` and end with `}`
+	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` till we encounter the next line starting with ●
 	lines := strings.Split(msg, "\n")
-	toolCallEndIdx := -1
+
+	toolCallStartIdx := -1
 
 	// Store all tool call start and end indices [[start, end], ...]
 	var toolCallIdxs [][]int
 
-	// Iterate backwards to find all occurrences
-	for i := len(lines) - 1; i >= 0; i-- {
+	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-		if line == "}" {
-			toolCallEndIdx = i
-		}
-		if toolCallEndIdx != -1 && strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
+
+		if strings.HasPrefix(line, "● coder - coder_report_task (MCP)") {
+			toolCallStartIdx = i
+		} else if toolCallStartIdx != -1 && strings.HasPrefix(line, "●") {
 			// Store [start, end] pair
-			toolCallIdxs = append(toolCallIdxs, []int{i, toolCallEndIdx})
+			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, i})
 
 			// Reset to find the next tool call
-			toolCallEndIdx = -1
+			toolCallStartIdx = -1
 		}
 	}
 
@@ -130,9 +130,10 @@ func removeClaudeReportTaskToolCall(msg string) string {
 	}
 
 	// Remove tool calls from the message
-	for _, idxPair := range toolCallIdxs {
+	for i := len(toolCallIdxs) - 1; i >= 0; i-- {
+		idxPair := toolCallIdxs[i]
 		start, end := idxPair[0], idxPair[1]
-		lines = append(lines[:start], lines[end+1:]...)
+		lines = append(lines[:start], lines[end:]...)
 	}
 
 	return strings.Join(lines, "\n")
