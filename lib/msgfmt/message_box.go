@@ -106,6 +106,7 @@ func removeClaudeReportTaskToolCall(msg string) string {
 	lines := strings.Split(msg, "\n")
 
 	toolCallStartIdx := -1
+	newLineAfterToolCallIdx := -1
 
 	// Store all tool call start and end indices [[start, end], ...]
 	var toolCallIdxs [][]int
@@ -121,7 +122,17 @@ func removeClaudeReportTaskToolCall(msg string) string {
 
 			// Reset to find the next tool call
 			toolCallStartIdx = -1
+			newLineAfterToolCallIdx = -1
 		}
+		if len(line) == 0 && toolCallStartIdx != -1 && newLineAfterToolCallIdx == -1 {
+			newLineAfterToolCallIdx = i
+		}
+	}
+
+	// Handle the case where the last tool call goes till the end of the message
+	// And a failsafe when the next message is not prefixed with ●
+	if toolCallStartIdx != -1 && newLineAfterToolCallIdx != -1 {
+		toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, newLineAfterToolCallIdx})
 	}
 
 	// If no tool calls found, return original message
