@@ -226,7 +226,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	humaConfig.Info.Description = "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi"
 	api := humachi.New(router, humaConfig)
 	formatMessage := func(message string, userInput string) string {
-		return mf.FormatAgentMessage(config.AgentType, message, userInput)
+		return mf.FormatAgentMessage(config.AgentType, message, userInput, logger)
 	}
 
 	isAgentReadyForInitialPrompt := func(message string) bool {

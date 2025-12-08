@@ -1,6 +1,7 @@
 package msgfmt
 
 import (
+	"log/slog"
 	"strings"
 )
 
@@ -254,10 +255,10 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 	return message
 }
 
-func formatClaudeMessage(message string, userInput string) string {
+func formatClaudeMessage(message string, userInput string, logger *slog.Logger) string {
 	message = RemoveUserInput(message, userInput, AgentTypeClaude)
 	message = removeMessageBox(message)
-	message = removeClaudeReportTaskToolCall(message)
+	message = removeClaudeReportTaskToolCall(message, logger)
 	message = trimEmptyLines(message)
 	return message
 }
@@ -283,10 +284,10 @@ func formatAmpMessage(message string, userInput string) string {
 	return message
 }
 
-func FormatAgentMessage(agentType AgentType, message string, userInput string) string {
+func FormatAgentMessage(agentType AgentType, message string, userInput string, logger *slog.Logger) string {
 	switch agentType {
 	case AgentTypeClaude:
-		return formatClaudeMessage(message, userInput)
+		return formatClaudeMessage(message, userInput, logger)
 	case AgentTypeGoose:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeAider:

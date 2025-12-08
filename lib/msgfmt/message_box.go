@@ -1,6 +1,7 @@
 package msgfmt
 
 import (
+	"log/slog"
 	"strings"
 )
 
@@ -101,7 +102,7 @@ func removeAmpMessageBox(msg string) string {
 	return formattedMsg
 }
 
-func removeClaudeReportTaskToolCall(msg string) string {
+func removeClaudeReportTaskToolCall(msg string, logger *slog.Logger) string {
 	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` till we encounter the next line starting with ●
 	lines := strings.Split(msg, "\n")
 
@@ -144,6 +145,11 @@ func removeClaudeReportTaskToolCall(msg string) string {
 	for i := len(toolCallIdxs) - 1; i >= 0; i-- {
 		idxPair := toolCallIdxs[i]
 		start, end := idxPair[0], idxPair[1]
+
+		// Capture the tool call content before removing it
+		toolCallContent := strings.Join(lines[start:end], "\n")
+		logger.Info("Removing tool call", "content", toolCallContent)
+
 		lines = append(lines[:start], lines[end:]...)
 	}
 
