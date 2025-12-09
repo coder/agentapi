@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.3
+
+### Features
+- format claude messages to skip the coder_report_task tool call
+
 ## v0.11.2
 
 ### Features
