@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.4
+
+### Features
+- Temporarily remove coder report_task tool-call logs
+
 ## v0.11.3
 
 ### Features
