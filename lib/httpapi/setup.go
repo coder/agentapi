@@ -32,6 +32,7 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 		Args:           config.ProgramArgs,
 		TerminalWidth:  config.TerminalWidth,
 		TerminalHeight: config.TerminalHeight,
+		AgentType:      config.AgentType,
 	})
 	if err != nil {
 		logger.Error(fmt.Sprintf("Error starting process: %v", err))
