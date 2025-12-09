@@ -1,21 +1,42 @@
 name: PR Preview Cleanup
 
 on:
-  pull_request:
-    types: [closed]
+    workflow_run:
+        workflows: ["PR Preview Cleanup Signal"]
+        types:
+            - completed
 
 permissions:
-  contents: write
+    contents: write
+    pull-requests: write
 
 jobs:
-  cleanup:
-    name: Delete PR Release
-    runs-on: ubuntu-latest
+    cleanup:
+        name: Delete PR Release
+        runs-on: ubuntu-latest
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
-    steps:
-      - name: Delete PR Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: 'agentapi_${{ github.event.pull_request.number }}'
-        run: |
-          gh release delete "$RELEASE_TAG" --cleanup-tag --yes --repo ${{ github.repository }} || true
+        steps:
+            - name: Download cleanup signal
+              uses: actions/download-artifact@v4
+              with:
+                  name: cleanup-signal
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+
+            - name: Read PR number
+              id: pr
+              run: echo "number=$(cat number)" >> "${GITHUB_OUTPUT}"
+
+            - name: Delete PR Release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_TAG: "agentapi_${{ steps.pr.outputs.number }}"
+              run: |
+                  # Check if release exists and delete it
+                  if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} &>/dev/null; then
+                    echo "Deleting release $RELEASE_TAG"
+                    gh release delete "$RELEASE_TAG" --cleanup-tag --yes --repo ${{ github.repository }}
+                  else
+                    echo "Release $RELEASE_TAG does not exist, nothing to delete"
+                  fi
