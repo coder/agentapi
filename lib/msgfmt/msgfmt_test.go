@@ -2,7 +2,6 @@ package msgfmt
 
 import (
 	"embed"
-	"log/slog"
 	"path"
 	"strings"
 	"testing"
@@ -234,7 +233,7 @@ func TestFormatAgentMessage(t *testing.T) {
 					assert.NoError(t, err)
 					expected, err := testdataDir.ReadFile(path.Join(dir, string(agentType), c.Name(), "expected.txt"))
 					assert.NoError(t, err)
-					assert.Equal(t, string(expected), FormatAgentMessage(agentType, string(msg), string(userInput), slog.Default()))
+					assert.Equal(t, string(expected), FormatAgentMessage(agentType, string(msg), string(userInput)))
 				})
 			}
 		})
