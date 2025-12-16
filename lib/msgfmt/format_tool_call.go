@@ -5,6 +5,8 @@ import (
 )
 
 func removeClaudeReportTaskToolCall(msg string) (string, []string) {
+	msg = "\n" + msg // This handles the case where the message starts with a tool call
+
 	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` till we encounter the next line starting with ●
 	lines := strings.Split(msg, "\n")
 
@@ -18,9 +20,9 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 		line := strings.TrimSpace(lines[i])
 		nextLine := strings.TrimSpace(lines[i+1])
 
-		if strings.Contains(prevLine, "coder - coder_report_task (MCP)") {
-			toolCallStartIdx = i - 1
-		} else if toolCallStartIdx != -1 && line == "\"message\": \"Thanks for reporting!\"" && nextLine == "}" && strings.Replace(prevLine, " ", "", -1) == "⎿{" {
+		if strings.Contains(line, "coder - coder_report_task (MCP)") {
+			toolCallStartIdx = i
+		} else if toolCallStartIdx != -1 && line == "\"message\": \"Thanks for reporting!\"" && nextLine == "}" && strings.HasSuffix(prevLine, "{") {
 			// Store [start, end] pair
 			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, min(len(lines), i+2)})
 
@@ -31,7 +33,7 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 
 	// If no tool calls found, return original message
 	if len(toolCallIdxs) == 0 {
-		return strings.TrimSuffix(msg, "\n"), []string{}
+		return strings.TrimLeft(msg, "\n"), []string{}
 	}
 
 	toolCallMessages := make([]string, 0)
@@ -45,7 +47,7 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 
 		lines = append(lines[:start], lines[end:]...)
 	}
-	return strings.Join(lines, "\n"), toolCallMessages
+	return strings.TrimLeft(strings.Join(lines, "\n"), "\n"), toolCallMessages
 }
 
 func FormatToolCall(agentType AgentType, message string) (string, []string) {
