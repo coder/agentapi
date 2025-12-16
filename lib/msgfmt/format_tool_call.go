@@ -18,7 +18,7 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 		line := strings.TrimSpace(lines[i])
 		nextLine := strings.TrimSpace(lines[i+1])
 
-		if strings.HasPrefix(prevLine, "● coder - coder_report_task (MCP)") {
+		if strings.Contains(prevLine, "coder - coder_report_task (MCP)") {
 			toolCallStartIdx = i
 		} else if toolCallStartIdx != -1 && line == "\"message\": \"Thanks for reporting!\"" && nextLine == "}" && strings.Replace(prevLine, " ", "", -1) == "⎿{" {
 			// Store [start, end] pair
