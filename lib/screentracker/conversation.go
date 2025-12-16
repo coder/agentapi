@@ -44,9 +44,9 @@ type ConversationConfig struct {
 	SkipSendMessageStatusCheck bool
 	// ReadyForInitialPrompt detects whether the agent has initialized and is ready to accept the initial prompt
 	ReadyForInitialPrompt func(message string) bool
-	FormatToolCall        func(message string) (string, []string)
-	// Logger for logging tool calls and other events
-	Logger *slog.Logger
+	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
+	FormatToolCall func(message string) (string, []string)
+	Logger         *slog.Logger
 }
 
 type ConversationRole string
@@ -86,7 +86,7 @@ type Conversation struct {
 	InitialPromptSent bool
 	// ReadyForInitialPrompt keeps track if the agent is ready to accept the initial prompt
 	ReadyForInitialPrompt bool
-	//
+	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
 }
 

@@ -254,14 +254,6 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 	return message
 }
 
-//func formatClaudeMessage(message string, userInput string) string {
-//	message = RemoveUserInput(message, userInput, AgentTypeClaude)
-//	message = removeMessageBox(message)
-//	message = removeClaudeReportTaskToolCall(message)
-//	message = trimEmptyLines(message)
-//	return message
-//}
-
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexInputBox(message)

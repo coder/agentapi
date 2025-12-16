@@ -7,7 +7,7 @@ import (
 func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 	msg = "\n" + msg // This handles the case where the message starts with a tool call
 
-	// Remove all tool calls that start with `● coder - coder_report_task (MCP)` till we encounter the next line starting with ●
+	// Remove all tool calls that start with `● coder - coder_report_task (MCP)`
 	lines := strings.Split(msg, "\n")
 
 	toolCallStartIdx := -1
