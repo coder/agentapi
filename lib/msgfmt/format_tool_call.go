@@ -1,7 +1,6 @@
 package msgfmt
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -29,8 +28,6 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 			toolCallStartIdx = -1
 		}
 	}
-
-	fmt.Println("ToolCallIdxs:", toolCallIdxs)
 
 	// If no tool calls found, return original message
 	if len(toolCallIdxs) == 0 {

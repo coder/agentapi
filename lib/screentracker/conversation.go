@@ -121,8 +121,9 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 				Time:    cfg.GetTime(),
 			},
 		},
-		InitialPrompt:     initialPrompt,
-		InitialPromptSent: len(initialPrompt) == 0,
+		InitialPrompt:      initialPrompt,
+		InitialPromptSent:  len(initialPrompt) == 0,
+		toolCallMessageSet: make(map[string]bool),
 	}
 	return c
 }
