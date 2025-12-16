@@ -54,6 +54,28 @@ func FormatToolCall(agentType AgentType, message string) (string, []string) {
 	switch agentType {
 	case AgentTypeClaude:
 		return removeClaudeReportTaskToolCall(message)
+	case AgentTypeGoose:
+		return message, []string{}
+	case AgentTypeAider:
+		return message, []string{}
+	case AgentTypeCodex:
+		return message, []string{}
+	case AgentTypeGemini:
+		return message, []string{}
+	case AgentTypeCopilot:
+		return message, []string{}
+	case AgentTypeAmp:
+		return message, []string{}
+	case AgentTypeCursor:
+		return message, []string{}
+	case AgentTypeAuggie:
+		return message, []string{}
+	case AgentTypeAmazonQ:
+		return message, []string{}
+	case AgentTypeOpencode:
+		return message, []string{}
+	case AgentTypeCustom:
+		return message, []string{}
 	default:
 		return message, []string{}
 	}
