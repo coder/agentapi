@@ -222,6 +222,7 @@ func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time
 	for _, toolCall := range toolCalls {
 		if c.toolCallMessageSet[toolCall] == false {
 			c.toolCallMessageSet[toolCall] = true
+			c.cfg.Logger.Info("Tool call detected", "toolCall", toolCall)
 		}
 	}
 	shouldCreateNewMessage := len(c.messages) == 0 || c.messages[len(c.messages)-1].Role == ConversationRoleUser
@@ -236,10 +237,7 @@ func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time
 	}
 	if shouldCreateNewMessage {
 		c.messages = append(c.messages, conversationMessage)
-		// Logging all the tool calls till now
-		for toolCall := range c.toolCallMessageSet {
-			c.cfg.Logger.Info("Tool call detected", "toolCall", toolCall)
-		}
+
 		// Cleanup
 		c.toolCallMessageSet = make(map[string]bool)
 
