@@ -1,6 +1,7 @@
 package msgfmt
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -29,6 +30,8 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 		}
 	}
 
+	fmt.Println("ToolCallIdxs:", toolCallIdxs)
+
 	// If no tool calls found, return original message
 	if len(toolCallIdxs) == 0 {
 		return strings.TrimSuffix(msg, "\n"), []string{}
@@ -45,7 +48,7 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 
 		lines = append(lines[:start], lines[end:]...)
 	}
-	return strings.TrimSuffix(strings.Join(lines, "\n"), "\n\n"), toolCallMessages
+	return strings.Join(lines, "\n"), toolCallMessages
 }
 
 func FormatToolCall(agentType AgentType, message string) (string, []string) {
