@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.6
+
+### Features
+- Bump Next.js to 15.4.10
+
 ## v0.11.5
 
 ### Features
