@@ -233,7 +233,16 @@ func TestFormatAgentMessage(t *testing.T) {
 					assert.NoError(t, err)
 					expected, err := testdataDir.ReadFile(path.Join(dir, string(agentType), c.Name(), "expected.txt"))
 					assert.NoError(t, err)
-					assert.Equal(t, string(expected), FormatAgentMessage(agentType, string(msg), string(userInput)))
+					output, toolCalls := FormatToolCall(agentType, FormatAgentMessage(agentType, string(msg), string(userInput)))
+					assert.Equal(t, string(expected), output)
+
+					// Assert on the tool calls if there's an expected file
+					expectedToolCallsPath := path.Join(dir, string(agentType), c.Name(), "expected_tool_calls.txt")
+					if expectedToolCallsData, err := testdataDir.ReadFile(expectedToolCallsPath); err == nil {
+						expectedToolCalls := string(expectedToolCallsData)
+						actualToolCalls := strings.Join(toolCalls, "\n---\n")
+						assert.Equal(t, expectedToolCalls, actualToolCalls)
+					}
 				})
 			}
 		})
