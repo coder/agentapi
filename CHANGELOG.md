@@ -6,6 +6,11 @@
 - Add tool call logging.
 - Improve parsing/detection of tool call messages.
 
+## v0.12.0
+
+### Features
+- Bump Next.js to 15.4.10
+
 ## v0.11.4
 
 ### Features
