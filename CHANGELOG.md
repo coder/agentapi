@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.5
+
+### Features
+- Add tool call logging.
+- Improve parsing/detection of tool call messages.
+
 ## v0.11.4
 
 ### Features
