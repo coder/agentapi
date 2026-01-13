@@ -51,7 +51,6 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 }
 
 func removeCodexReportTaskToolCall(msg string) (string, []string) {
-	msg += "\n" // This handles the case where the message ends with a tool call
 	lines := strings.Split(msg, "\n")
 
 	toolCallStartIdx := -1
@@ -59,23 +58,29 @@ func removeCodexReportTaskToolCall(msg string) (string, []string) {
 	// Store all tool call start and end indices [[start, end], ...]
 	var toolCallIdxs [][]int
 
-	for idx := 0; idx < len(lines)-1; {
+	for idx := 0; idx < len(lines); {
 		line := strings.TrimSpace(lines[idx])
-		nextLine := strings.TrimSpace(lines[idx+1])
 
-		if strings.Replace(line, " ", "", -1) == "•Called" && strings.Contains(nextLine, "Coder.coder_report_task") {
-			toolCallStartIdx = idx
-		} else if toolCallStartIdx != -1 && line == "{\"message\": \"Thanks for reporting!\"}" {
+		// Check for tool call start (requires looking at next line)
+		if idx+1 < len(lines) {
+			nextLine := strings.TrimSpace(lines[idx+1])
+			if strings.Replace(line, " ", "", -1) == "•Called" && strings.Contains(nextLine, "Coder.coder_report_task") {
+				toolCallStartIdx = idx
+			}
+		}
+
+		// Check for tool call end
+		if toolCallStartIdx != -1 && line == "{\"message\": \"Thanks for reporting!\"}" {
 			// Store [start, end] pair
 			// trim all the remaining empty lines after tool call
-			for idx+1 < len(lines)-1 {
+			for idx+1 < len(lines) {
 				if strings.TrimSpace(lines[idx+1]) == "" {
 					idx++
 				} else {
 					break
 				}
 			}
-			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, min(len(lines), idx+1)})
+			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, idx + 1})
 
 			// Reset to find the next tool call
 			toolCallStartIdx = -1
