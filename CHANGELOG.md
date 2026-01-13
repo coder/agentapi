@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.7
+
+### Features
+- format codex messages to skip the coder_report_task tool call
+
 ## v0.11.6
 
 ### Features
