@@ -1,0 +1,11 @@
+• Codex says: I'm starting by reporting the task as working with a
+  summary about reviewing the repository structure to gather       
+  information for planning the snake game implementation. Next,    
+  I'll inspect the repository files.
+
+• I'm drafting a concise final message starting with "Codex says:"
+  that briefly explains adding a terminal-based snake game in
+  snake.py, highlights key features like controls and scoring,
+  notes the need to run with python3 due to missing python alias,
+  includes usage instructions, and suggests next steps—all
+  formatted as short bullet points with a simple optional header.
