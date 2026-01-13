@@ -58,7 +58,7 @@ func removeCodexReportTaskToolCall(msg string) (string, []string) {
 	// Store all tool call start and end indices [[start, end], ...]
 	var toolCallIdxs [][]int
 
-	for idx := 0; idx < len(lines); {
+	for idx := 0; idx < len(lines); idx++ {
 		line := strings.TrimSpace(lines[idx])
 
 		// Check for tool call start (requires looking at next line)
@@ -71,21 +71,16 @@ func removeCodexReportTaskToolCall(msg string) (string, []string) {
 
 		// Check for tool call end
 		if toolCallStartIdx != -1 && line == "{\"message\": \"Thanks for reporting!\"}" {
-			// Store [start, end] pair
-			// trim all the remaining empty lines after tool call
-			for idx+1 < len(lines) {
-				if strings.TrimSpace(lines[idx+1]) == "" {
-					idx++
-				} else {
-					break
-				}
+			// Find the end of trailing empty lines after tool call
+			endIdx := idx + 1
+			for endIdx < len(lines) && strings.TrimSpace(lines[endIdx]) == "" {
+				endIdx++
 			}
-			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, idx + 1})
+			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, endIdx})
 
 			// Reset to find the next tool call
 			toolCallStartIdx = -1
 		}
-		idx++
 	}
 
 	// If no tool calls found, return original message
