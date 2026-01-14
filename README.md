@@ -75,6 +75,10 @@ agentapi server -- goose
 > [!NOTE]
 > When using Claude, Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
 
+
+> [!NOTE]
+> When using Amp, set `"amp.terminal.animation": false` in `~/.config/amp/settings.json` to disable terminal animations, which can interfere with AgentAPI's message parsing.
+
 An OpenAPI schema is available in [openapi.json](openapi.json).
 
 By default, the server runs on port 3284. Additionally, the server exposes the same OpenAPI schema at http://localhost:3284/openapi.json and the available endpoints in a documentation UI at http://localhost:3284/docs.
