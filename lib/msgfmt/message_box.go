@@ -28,7 +28,7 @@ func findGreaterThanMessageBox(lines []string) int {
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
 		if strings.Contains(lines[i], "───────────────") &&
-			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│")) &&
+			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│")) || strings.Contains(lines[i+1], "❯") &&
 			strings.Contains(lines[i+2], "───────────────") {
 			return i
 		}
