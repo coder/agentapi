@@ -2,7 +2,7 @@
 
 ## v0.11.8
 
-### Features
+### Fix
 - Update message box formatting detection for Claude
 
 ## v0.11.7
