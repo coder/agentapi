@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.8
+
+### Fix
+- Update message box formatting detection for Claude
+
 ## v0.11.7
 
 ### Features
