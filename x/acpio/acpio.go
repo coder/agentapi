@@ -18,6 +18,7 @@ type ACPAgentIO struct {
 	mu        sync.RWMutex
 	response  strings.Builder
 	logger    *slog.Logger
+	onChunk   func(chunk string) // called on each streaming chunk
 }
 
 // acpClient implements acp.Client to handle callbacks from the agent
@@ -39,7 +40,11 @@ func (c *acpClient) SessionUpdate(ctx context.Context, params acp.SessionNotific
 				"textLen", len(text.Text))
 			c.agentIO.mu.Lock()
 			c.agentIO.response.WriteString(text.Text)
+			onChunk := c.agentIO.onChunk
 			c.agentIO.mu.Unlock()
+			if onChunk != nil {
+				onChunk(text.Text)
+			}
 		}
 	}
 	return nil
@@ -80,6 +85,13 @@ func (c *acpClient) ReleaseTerminal(ctx context.Context, params acp.ReleaseTermi
 
 func (c *acpClient) WaitForTerminalExit(ctx context.Context, params acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
 	return acp.WaitForTerminalExitResponse{}, nil
+}
+
+// SetOnChunk sets a callback that will be called for each streaming chunk.
+func (a *ACPAgentIO) SetOnChunk(fn func(chunk string)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onChunk = fn
 }
 
 // NewWithPipes creates an ACPAgentIO connected via the provided pipes

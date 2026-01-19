@@ -238,9 +238,16 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
+	emitter := NewEventEmitter(1024)
+
 	var conversation st.ConversationTracker
 	if config.Transport == "acp" {
-		conversation = st.NewACPConversation(config.Process, logger, config.InitialPrompt)
+		// Create onUpdate callback to emit events when messages change during streaming
+		onUpdate := func() {
+			emitter.UpdateMessagesAndEmitChanges(conversation.Messages())
+			emitter.UpdateStatusAndEmitChanges(conversation.Status(), config.AgentType)
+		}
+		conversation = st.NewACPConversation(config.Process, logger, config.InitialPrompt, onUpdate)
 	} else {
 		conversation = st.NewConversation(ctx, st.ConversationConfig{
 			AgentType: config.AgentType,
@@ -256,7 +263,6 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 			Logger:                logger,
 		}, config.InitialPrompt)
 	}
-	emitter := NewEventEmitter(1024)
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")

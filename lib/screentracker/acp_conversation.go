@@ -9,35 +9,55 @@ import (
 	"time"
 )
 
+// ACPChunkCallback is called for each streaming chunk from the agent.
+type ACPChunkCallback func(chunk string)
+
+// StreamingAgentIO extends AgentIO with streaming support.
+type StreamingAgentIO interface {
+	AgentIO
+	SetOnChunk(fn func(chunk string))
+}
+
 // ACPConversation tracks conversations with ACP-based agents.
 // Unlike PTY-based Conversation, ACP has blocking writes where the
 // response is complete when Write() returns.
 type ACPConversation struct {
-	mu        sync.Mutex
-	agentIO   AgentIO
-	messages  []ConversationMessage
-	prompting bool // true while Write() is in progress
-	logger    *slog.Logger
+	mu                sync.Mutex
+	agentIO           AgentIO
+	messages          []ConversationMessage
+	prompting         bool // true while Write() is in progress
+	streamingResponse strings.Builder
+	logger            *slog.Logger
+	onUpdate          func() // called when messages change
 
 	// Initial prompt handling
-	initialPrompt           string
-	initialPromptSent       bool
-	readyForInitialPrompt   bool
+	initialPrompt         string
+	initialPromptSent     bool
+	readyForInitialPrompt bool
 }
 
 // NewACPConversation creates a new ACPConversation.
-func NewACPConversation(agentIO AgentIO, logger *slog.Logger, initialPrompt string) *ACPConversation {
+// If onUpdate is provided, it will be called whenever messages change (for event emission).
+func NewACPConversation(agentIO AgentIO, logger *slog.Logger, initialPrompt string, onUpdate func()) *ACPConversation {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ACPConversation{
+	c := &ACPConversation{
 		agentIO:           agentIO,
 		logger:            logger,
 		initialPrompt:     initialPrompt,
 		initialPromptSent: len(initialPrompt) == 0,
+		onUpdate:          onUpdate,
 		// ACP agents are ready immediately (no screen detection needed)
 		readyForInitialPrompt: true,
 	}
+
+	// If the agentIO supports streaming, wire up the chunk callback
+	if streamingIO, ok := agentIO.(StreamingAgentIO); ok {
+		streamingIO.SetOnChunk(c.handleChunk)
+	}
+
+	return c
 }
 
 // SendMessage sends a message to the agent asynchronously.
@@ -67,6 +87,14 @@ func (c *ACPConversation) SendMessage(messageParts ...MessagePart) error {
 		Message: message,
 		Time:    time.Now(),
 	})
+	// Add placeholder for streaming agent response
+	c.messages = append(c.messages, ConversationMessage{
+		Id:      len(c.messages),
+		Role:    ConversationRoleAgent,
+		Message: "",
+		Time:    time.Now(),
+	})
+	c.streamingResponse.Reset()
 	c.prompting = true
 	c.mu.Unlock()
 
@@ -78,29 +106,51 @@ func (c *ACPConversation) SendMessage(messageParts ...MessagePart) error {
 	return nil
 }
 
+// handleChunk is called for each streaming chunk from the agent.
+func (c *ACPConversation) handleChunk(chunk string) {
+	c.mu.Lock()
+	c.streamingResponse.WriteString(chunk)
+	// Update the last message (the streaming agent response)
+	if len(c.messages) > 0 {
+		c.messages[len(c.messages)-1].Message = c.streamingResponse.String()
+	}
+	onUpdate := c.onUpdate
+	c.mu.Unlock()
+
+	if onUpdate != nil {
+		onUpdate()
+	}
+}
+
 // executePrompt runs the actual agent request in background
 func (c *ACPConversation) executePrompt(messageParts []MessagePart) {
 	err := ExecuteParts(c.agentIO, messageParts...)
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	c.prompting = false
 
 	if err != nil {
 		c.logger.Error("ACPConversation message failed", "error", err)
+		// Remove the empty streaming message on error
+		if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == ConversationRoleAgent &&
+			c.messages[len(c.messages)-1].Message == "" {
+			c.messages = c.messages[:len(c.messages)-1]
+		}
+		c.mu.Unlock()
 		return
 	}
 
-	// Agent response is now in ReadScreen()
-	response := strings.TrimSpace(c.agentIO.ReadScreen())
-	if response != "" {
-		c.messages = append(c.messages, ConversationMessage{
-			Id:      len(c.messages),
-			Role:    ConversationRoleAgent,
-			Message: response,
-			Time:    time.Now(),
-		})
+	// Final response should already be in the last message via streaming
+	// but ensure it's finalized
+	response := c.streamingResponse.String()
+	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == ConversationRoleAgent {
+		c.messages[len(c.messages)-1].Message = strings.TrimSpace(response)
+	}
+	onUpdate := c.onUpdate
+	c.mu.Unlock()
+
+	if onUpdate != nil {
+		onUpdate()
 	}
 
 	c.logger.Debug("ACPConversation message complete", "responseLen", len(response))

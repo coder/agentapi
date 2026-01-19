@@ -13,15 +13,36 @@ func textMsg(s string) MessagePartText {
 	return MessagePartText{Content: s}
 }
 
+// streamingMockAgentIO wraps MockAgentIO and implements StreamingAgentIO
+type streamingMockAgentIO struct {
+	*MockAgentIO
+	onChunk  func(string)
+	response string // response to send as chunks when Write is called
+}
+
+func (s *streamingMockAgentIO) SetOnChunk(fn func(string)) {
+	s.onChunk = fn
+}
+
+func (s *streamingMockAgentIO) triggerChunks() {
+	if s.onChunk != nil && s.response != "" {
+		s.onChunk(s.response)
+	}
+}
+
 func TestACPConversation_SendMessage(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 
-	agent := NewMockAgentIO(ctrl)
-	agent.EXPECT().Write([]byte("Hi there")).Return(8, nil)
-	agent.EXPECT().ReadScreen().Return("Hello! How can I help you?")
+	mock := NewMockAgentIO(ctrl)
+	agent := &streamingMockAgentIO{MockAgentIO: mock, response: "Hello! How can I help you?"}
 
-	conv := NewACPConversation(agent, nil, "")
+	mock.EXPECT().Write([]byte("Hi there")).DoAndReturn(func(data []byte) (int, error) {
+		agent.triggerChunks()
+		return len(data), nil
+	})
+
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	err := conv.SendMessage(textMsg("Hi there"))
 	require.NoError(t, err)
@@ -49,7 +70,7 @@ func TestACPConversation_SendMessage_EmptyRejected(t *testing.T) {
 	agent := NewMockAgentIO(ctrl)
 	// No Write() expected - empty message should be rejected before calling agent
 
-	conv := NewACPConversation(agent, nil, "")
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	err := conv.SendMessage(textMsg(""))
 	assert.ErrorIs(t, err, MessageValidationErrorEmpty)
@@ -59,15 +80,17 @@ func TestACPConversation_SendMessage_RejectsWhilePrompting(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 
-	agent := NewMockAgentIO(ctrl)
+	mock := NewMockAgentIO(ctrl)
+	agent := &streamingMockAgentIO{MockAgentIO: mock, response: "Response"}
+
 	// First write blocks for 100ms
-	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+	mock.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
 		time.Sleep(100 * time.Millisecond)
+		agent.triggerChunks()
 		return len(data), nil
 	})
-	agent.EXPECT().ReadScreen().Return("Response")
 
-	conv := NewACPConversation(agent, nil, "")
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	// First message starts processing
 	err := conv.SendMessage(textMsg("First"))
@@ -86,8 +109,11 @@ func TestACPConversation_SendMessage_RejectsWhilePrompting(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 
 	// Now a new message should work
-	agent.EXPECT().Write(gomock.Any()).Return(6, nil)
-	agent.EXPECT().ReadScreen().Return("Response 2")
+	agent.response = "Response 2"
+	mock.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+		agent.triggerChunks()
+		return len(data), nil
+	})
 
 	err = conv.SendMessage(textMsg("Third"))
 	require.NoError(t, err)
@@ -102,15 +128,17 @@ func TestACPConversation_Status(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 
-	agent := NewMockAgentIO(ctrl)
+	mock := NewMockAgentIO(ctrl)
+	agent := &streamingMockAgentIO{MockAgentIO: mock, response: "Response"}
+
 	// Write blocks for 100ms to simulate agent processing
-	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+	mock.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
 		time.Sleep(100 * time.Millisecond)
+		agent.triggerChunks()
 		return len(data), nil
 	})
-	agent.EXPECT().ReadScreen().Return("Response")
 
-	conv := NewACPConversation(agent, nil, "")
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	// Initially stable
 	assert.Equal(t, ConversationStatusStable, conv.Status())
@@ -132,15 +160,17 @@ func TestACPConversation_Messages_ThreadSafe(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 
-	agent := NewMockAgentIO(ctrl)
+	mock := NewMockAgentIO(ctrl)
+	agent := &streamingMockAgentIO{MockAgentIO: mock, response: "Response"}
+
 	// Single write since concurrent sends are now rejected
-	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+	mock.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
 		time.Sleep(50 * time.Millisecond)
+		agent.triggerChunks()
 		return len(data), nil
 	})
-	agent.EXPECT().ReadScreen().Return("Response")
 
-	conv := NewACPConversation(agent, nil, "")
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	// Send one message
 	err := conv.SendMessage(textMsg("Message"))
@@ -168,7 +198,7 @@ func TestACPConversation_InitialPrompt(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	agent := NewMockAgentIO(ctrl)
-	conv := NewACPConversation(agent, nil, "Hello, world!")
+	conv := NewACPConversation(agent, nil, "Hello, world!", nil)
 
 	assert.Equal(t, "Hello, world!", conv.GetInitialPrompt())
 	assert.False(t, conv.IsInitialPromptSent())
@@ -185,7 +215,7 @@ func TestACPConversation_Screen(t *testing.T) {
 	agent := NewMockAgentIO(ctrl)
 	agent.EXPECT().ReadScreen().Return("Current screen content")
 
-	conv := NewACPConversation(agent, nil, "")
+	conv := NewACPConversation(agent, nil, "", nil)
 
 	assert.Equal(t, "Current screen content", conv.Screen())
 }
