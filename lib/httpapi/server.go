@@ -23,6 +23,7 @@ import (
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
+	"github.com/coder/agentapi/x/acpio"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -247,7 +248,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 			emitter.UpdateMessagesAndEmitChanges(conversation.Messages())
 			emitter.UpdateStatusAndEmitChanges(conversation.Status(), config.AgentType)
 		}
-		conversation = st.NewACPConversation(config.Process, logger, config.InitialPrompt, onUpdate)
+		conversation = acpio.NewConversation(config.Process, logger, config.InitialPrompt, onUpdate)
 	} else {
 		conversation = st.NewConversation(ctx, st.ConversationConfig{
 			AgentType: config.AgentType,

@@ -1,4 +1,4 @@
-package screentracker
+package acpio
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	st "github.com/coder/agentapi/lib/screentracker"
 )
 
 // ACPChunkCallback is called for each streaming chunk from the agent.
@@ -14,7 +16,7 @@ type ACPChunkCallback func(chunk string)
 
 // StreamingAgentIO extends AgentIO with streaming support.
 type StreamingAgentIO interface {
-	AgentIO
+	st.AgentIO
 	SetOnChunk(fn func(chunk string))
 }
 
@@ -23,8 +25,8 @@ type StreamingAgentIO interface {
 // response is complete when Write() returns.
 type ACPConversation struct {
 	mu                sync.Mutex
-	agentIO           AgentIO
-	messages          []ConversationMessage
+	agentIO           st.AgentIO
+	messages          []st.ConversationMessage
 	prompting         bool // true while Write() is in progress
 	streamingResponse strings.Builder
 	logger            *slog.Logger
@@ -36,9 +38,9 @@ type ACPConversation struct {
 	readyForInitialPrompt bool
 }
 
-// NewACPConversation creates a new ACPConversation.
+// NewConversation creates a new ACPConversation.
 // If onUpdate is provided, it will be called whenever messages change (for event emission).
-func NewACPConversation(agentIO AgentIO, logger *slog.Logger, initialPrompt string, onUpdate func()) *ACPConversation {
+func NewConversation(agentIO st.AgentIO, logger *slog.Logger, initialPrompt string, onUpdate func()) *ACPConversation {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -64,7 +66,7 @@ func NewACPConversation(agentIO AgentIO, logger *slog.Logger, initialPrompt stri
 // It returns immediately after recording the user message and starts
 // the agent request in a background goroutine. Returns an error if
 // a message is already being processed.
-func (c *ACPConversation) SendMessage(messageParts ...MessagePart) error {
+func (c *ACPConversation) SendMessage(messageParts ...st.MessagePart) error {
 	message := messageParts[0].String()
 	for _, part := range messageParts[1:] {
 		message += part.String()
@@ -72,25 +74,25 @@ func (c *ACPConversation) SendMessage(messageParts ...MessagePart) error {
 	message = strings.TrimSpace(message)
 
 	if message == "" {
-		return MessageValidationErrorEmpty
+		return st.MessageValidationErrorEmpty
 	}
 
 	// Check if already prompting and set state atomically
 	c.mu.Lock()
 	if c.prompting {
 		c.mu.Unlock()
-		return MessageValidationErrorChanging
+		return st.MessageValidationErrorChanging
 	}
-	c.messages = append(c.messages, ConversationMessage{
+	c.messages = append(c.messages, st.ConversationMessage{
 		Id:      len(c.messages),
-		Role:    ConversationRoleUser,
+		Role:    st.ConversationRoleUser,
 		Message: message,
 		Time:    time.Now(),
 	})
 	// Add placeholder for streaming agent response
-	c.messages = append(c.messages, ConversationMessage{
+	c.messages = append(c.messages, st.ConversationMessage{
 		Id:      len(c.messages),
-		Role:    ConversationRoleAgent,
+		Role:    st.ConversationRoleAgent,
 		Message: "",
 		Time:    time.Now(),
 	})
@@ -123,8 +125,8 @@ func (c *ACPConversation) handleChunk(chunk string) {
 }
 
 // executePrompt runs the actual agent request in background
-func (c *ACPConversation) executePrompt(messageParts []MessagePart) {
-	err := ExecuteParts(c.agentIO, messageParts...)
+func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
+	err := st.ExecuteParts(c.agentIO, messageParts...)
 
 	c.mu.Lock()
 	c.prompting = false
@@ -132,7 +134,7 @@ func (c *ACPConversation) executePrompt(messageParts []MessagePart) {
 	if err != nil {
 		c.logger.Error("ACPConversation message failed", "error", err)
 		// Remove the empty streaming message on error
-		if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == ConversationRoleAgent &&
+		if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent &&
 			c.messages[len(c.messages)-1].Message == "" {
 			c.messages = c.messages[:len(c.messages)-1]
 		}
@@ -143,7 +145,7 @@ func (c *ACPConversation) executePrompt(messageParts []MessagePart) {
 	// Final response should already be in the last message via streaming
 	// but ensure it's finalized
 	response := c.streamingResponse.String()
-	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == ConversationRoleAgent {
+	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent {
 		c.messages[len(c.messages)-1].Message = strings.TrimSpace(response)
 	}
 	onUpdate := c.onUpdate
@@ -157,17 +159,17 @@ func (c *ACPConversation) executePrompt(messageParts []MessagePart) {
 }
 
 // Status returns the current conversation status.
-func (c *ACPConversation) Status() ConversationStatus {
+func (c *ACPConversation) Status() st.ConversationStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.prompting {
-		return ConversationStatusChanging // agent is processing
+		return st.ConversationStatusChanging // agent is processing
 	}
-	return ConversationStatusStable
+	return st.ConversationStatusStable
 }
 
 // Messages returns the conversation history.
-func (c *ACPConversation) Messages() []ConversationMessage {
+func (c *ACPConversation) Messages() []st.ConversationMessage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return slices.Clone(c.messages)
@@ -214,4 +216,4 @@ func (c *ACPConversation) SetReadyForInitialPrompt(ready bool) {
 }
 
 // Ensure ACPConversation implements ConversationTracker
-var _ Conversation = (*ACPConversation)(nil)
+var _ st.Conversation = (*ACPConversation)(nil)
