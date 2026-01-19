@@ -72,7 +72,7 @@ type ConversationMessage struct {
 	Time    time.Time
 }
 
-type Conversation struct {
+type PTYConversation struct {
 	cfg ConversationConfig
 	// How many stable snapshots are required to consider the screen stable
 	stableSnapshotsThreshold    int
@@ -108,9 +108,9 @@ func getStableSnapshotsThreshold(cfg ConversationConfig) int {
 	return threshold + 1
 }
 
-func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt string) *Conversation {
+func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt string) *PTYConversation {
 	threshold := getStableSnapshotsThreshold(cfg)
-	c := &Conversation{
+	c := &PTYConversation{
 		cfg:                      cfg,
 		stableSnapshotsThreshold: threshold,
 		snapshotBuffer:           NewRingBuffer[screenSnapshot](threshold),
@@ -128,7 +128,7 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 	return c
 }
 
-func (c *Conversation) StartSnapshotLoop(ctx context.Context) {
+func (c *PTYConversation) StartSnapshotLoop(ctx context.Context) {
 	go func() {
 		for {
 			select {
@@ -199,7 +199,7 @@ func FindNewMessage(oldScreen, newScreen string, agentType msgfmt.AgentType) str
 	return strings.Join(newSectionLines[startLine:endLine+1], "\n")
 }
 
-func (c *Conversation) lastMessage(role ConversationRole) ConversationMessage {
+func (c *PTYConversation) lastMessage(role ConversationRole) ConversationMessage {
 	for i := len(c.messages) - 1; i >= 0; i-- {
 		if c.messages[i].Role == role {
 			return c.messages[i]
@@ -209,7 +209,7 @@ func (c *Conversation) lastMessage(role ConversationRole) ConversationMessage {
 }
 
 // This function assumes that the caller holds the lock
-func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time) {
+func (c *PTYConversation) updateLastAgentMessage(screen string, timestamp time.Time) {
 	agentMessage := FindNewMessage(c.screenBeforeLastUserMessage, screen, c.cfg.AgentType)
 	lastUserMessage := c.lastMessage(ConversationRoleUser)
 	var toolCalls []string
@@ -248,7 +248,7 @@ func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time
 }
 
 // assumes the caller holds the lock
-func (c *Conversation) addSnapshotInner(screen string) {
+func (c *PTYConversation) addSnapshotInner(screen string) {
 	snapshot := screenSnapshot{
 		timestamp: c.cfg.GetTime(),
 		screen:    screen,
@@ -257,7 +257,7 @@ func (c *Conversation) addSnapshotInner(screen string) {
 	c.updateLastAgentMessage(screen, snapshot.timestamp)
 }
 
-func (c *Conversation) AddSnapshot(screen string) {
+func (c *PTYConversation) AddSnapshot(screen string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -307,7 +307,7 @@ func ExecuteParts(writer AgentIO, parts ...MessagePart) error {
 	return nil
 }
 
-func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, messageParts ...MessagePart) error {
+func (c *PTYConversation) writeMessageWithConfirmation(ctx context.Context, messageParts ...MessagePart) error {
 	if c.cfg.SkipWritingMessage {
 		return nil
 	}
@@ -363,7 +363,7 @@ var MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of l
 var MessageValidationErrorEmpty = xerrors.New("message must not be empty")
 var MessageValidationErrorChanging = xerrors.New("message can only be sent when the agent is waiting for user input")
 
-func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
+func (c *PTYConversation) SendMessage(messageParts ...MessagePart) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -400,7 +400,7 @@ func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 }
 
 // Assumes that the caller holds the lock
-func (c *Conversation) statusInner() ConversationStatus {
+func (c *PTYConversation) statusInner() ConversationStatus {
 	// sanity checks
 	if c.snapshotBuffer.Capacity() != c.stableSnapshotsThreshold {
 		panic(fmt.Sprintf("snapshot buffer capacity %d is not equal to snapshot threshold %d. can't check stability", c.snapshotBuffer.Capacity(), c.stableSnapshotsThreshold))
@@ -438,14 +438,14 @@ func (c *Conversation) statusInner() ConversationStatus {
 	return ConversationStatusStable
 }
 
-func (c *Conversation) Status() ConversationStatus {
+func (c *PTYConversation) Status() ConversationStatus {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	return c.statusInner()
 }
 
-func (c *Conversation) Messages() []ConversationMessage {
+func (c *PTYConversation) Messages() []ConversationMessage {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -454,7 +454,7 @@ func (c *Conversation) Messages() []ConversationMessage {
 	return result
 }
 
-func (c *Conversation) Screen() string {
+func (c *PTYConversation) Screen() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -467,25 +467,25 @@ func (c *Conversation) Screen() string {
 
 // Interface methods for ConversationTracker compatibility
 
-func (c *Conversation) GetInitialPrompt() string {
+func (c *PTYConversation) GetInitialPrompt() string {
 	return c.InitialPrompt
 }
 
-func (c *Conversation) IsInitialPromptSent() bool {
+func (c *PTYConversation) IsInitialPromptSent() bool {
 	return c.InitialPromptSent
 }
 
-func (c *Conversation) SetInitialPromptSent(sent bool) {
+func (c *PTYConversation) SetInitialPromptSent(sent bool) {
 	c.InitialPromptSent = sent
 }
 
-func (c *Conversation) IsReadyForInitialPrompt() bool {
+func (c *PTYConversation) IsReadyForInitialPrompt() bool {
 	return c.ReadyForInitialPrompt
 }
 
-func (c *Conversation) SetReadyForInitialPrompt(ready bool) {
+func (c *PTYConversation) SetReadyForInitialPrompt(ready bool) {
 	c.ReadyForInitialPrompt = ready
 }
 
 // Ensure Conversation implements ConversationTracker
-var _ ConversationTracker = (*Conversation)(nil)
+var _ Conversation = (*PTYConversation)(nil)

@@ -39,7 +39,7 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation st.ConversationTracker
+	conversation st.Conversation
 	agentio      st.AgentIO
 	agentType    mf.AgentType
 	emitter      *EventEmitter
@@ -240,7 +240,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	emitter := NewEventEmitter(1024)
 
-	var conversation st.ConversationTracker
+	var conversation st.Conversation
 	if config.Transport == "acp" {
 		// Create onUpdate callback to emit events when messages change during streaming
 		onUpdate := func() {

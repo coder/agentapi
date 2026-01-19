@@ -4,11 +4,11 @@ package screentracker
 
 import "context"
 
-// ConversationTracker is the interface for tracking conversations with agents.
+// Conversation is the interface for tracking conversations with agents.
 // It has two implementations:
-// - Conversation: for PTY-based agents (polling, screen diffing)
+// - PTYConversation: for PTY-based agents (polling, screen diffing)
 // - ACPConversation: for ACP-based agents (blocking writes, explicit responses)
-type ConversationTracker interface {
+type Conversation interface {
 	// SendMessage sends a message to the agent
 	SendMessage(messageParts ...MessagePart) error
 

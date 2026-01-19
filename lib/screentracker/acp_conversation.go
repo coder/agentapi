@@ -214,4 +214,4 @@ func (c *ACPConversation) SetReadyForInitialPrompt(ready bool) {
 }
 
 // Ensure ACPConversation implements ConversationTracker
-var _ ConversationTracker = (*ACPConversation)(nil)
+var _ Conversation = (*ACPConversation)(nil)

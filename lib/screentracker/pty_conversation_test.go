@@ -133,10 +133,10 @@ func TestMessages(t *testing.T) {
 			Time:    now,
 		}
 	}
-	sendMsg := func(c *st.Conversation, msg string) error {
+	sendMsg := func(c *st.PTYConversation, msg string) error {
 		return c.SendMessage(st.MessagePartText{Content: msg})
 	}
-	newConversation := func(opts ...func(*st.ConversationConfig)) *st.Conversation {
+	newConversation := func(opts ...func(*st.ConversationConfig)) *st.PTYConversation {
 		cfg := st.ConversationConfig{
 			GetTime:                    func() time.Time { return now },
 			SnapshotInterval:           1 * time.Second,
