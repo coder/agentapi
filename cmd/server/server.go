@@ -132,6 +132,10 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		agentIO = process
 	}
 	port := viper.GetInt(FlagPort)
+	transport := "pty"
+	if useACP {
+		transport = "acp"
+	}
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
 		Process:        agentIO,
@@ -140,6 +144,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
+		Transport:      transport,
 	})
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)

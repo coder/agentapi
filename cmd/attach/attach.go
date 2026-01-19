@@ -1,6 +1,7 @@
 package attach
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coder/agentapi/lib/httpapi"
+	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/spf13/cobra"
 	sse "github.com/tmaxmax/go-sse"
 	"golang.org/x/term"
@@ -72,6 +74,28 @@ func (m model) View() string {
 	return m.screen
 }
 
+// StatusBody matches the /status response structure
+type StatusBody struct {
+	Status    string `json:"status"`
+	AgentType string `json:"agent_type"`
+	Transport string `json:"transport"`
+}
+
+func GetStatus(ctx context.Context, url string) (StatusBody, error) {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url+"/status", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return StatusBody{}, xerrors.Errorf("failed to get status: %w", err)
+	}
+	defer res.Body.Close()
+
+	var status StatusBody
+	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+		return StatusBody{}, xerrors.Errorf("failed to decode status: %w", err)
+	}
+	return status, nil
+}
+
 func ReadScreenOverHTTP(ctx context.Context, url string, ch chan<- httpapi.ScreenUpdateBody) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -124,6 +148,63 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 		return xerrors.Errorf("failed to write raw input: %w", errors.New(res.Status))
 	}
 
+	return nil
+}
+
+func WriteUserMessageOverHTTP(ctx context.Context, url string, msg string) error {
+	messageRequest := httpapi.MessageRequestBody{
+		Type:    httpapi.MessageTypeUser,
+		Content: msg,
+	}
+	messageRequestBytes, err := json.Marshal(messageRequest)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal message request: %w", err)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(messageRequestBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return xerrors.Errorf("failed to do request: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return xerrors.Errorf("failed to write user message: %w", errors.New(res.Status))
+	}
+	return nil
+}
+
+// ACPEvent represents an event from the /events SSE stream
+type ACPEvent struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+// ReadEventsOverHTTP reads events from /events SSE stream and sends message updates to the channel
+func ReadEventsOverHTTP(ctx context.Context, url string, ch chan<- httpapi.MessageUpdateBody) error {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.Header.Set("Accept", "text/event-stream")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return xerrors.Errorf("failed to connect to events stream: %w", err)
+	}
+	defer res.Body.Close()
+
+	for ev, err := range sse.Read(res.Body, &sse.ReadConfig{
+		MaxEventSize: 256 * 1024,
+	}) {
+		if err != nil {
+			return xerrors.Errorf("failed to read sse: %w", err)
+		}
+		if ev.Type == string(httpapi.EventTypeMessageUpdate) {
+			var msg httpapi.MessageUpdateBody
+			if err := json.Unmarshal([]byte(ev.Data), &msg); err != nil {
+				continue
+			}
+			ch <- msg
+		}
+	}
 	return nil
 }
 
@@ -219,6 +300,83 @@ func runAttach(remoteUrl string) error {
 	return err
 }
 
+// runAttachACP handles attach for ACP transport using the /events stream
+func runAttachACP(remoteUrl string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Track messages by ID for rendering
+	messages := make(map[int]httpapi.MessageUpdateBody)
+	var maxMsgID int
+
+	msgCh := make(chan httpapi.MessageUpdateBody, 64)
+	readEventsErrCh := make(chan error, 1)
+	go func() {
+		defer close(readEventsErrCh)
+		if err := ReadEventsOverHTTP(ctx, remoteUrl+"/events", msgCh); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			readEventsErrCh <- err
+		}
+	}()
+
+	// Render messages to terminal
+	renderMessages := func() {
+		// Clear screen and move cursor to top
+		fmt.Print("\033[2J\033[H")
+		for i := 0; i <= maxMsgID; i++ {
+			if msg, ok := messages[i]; ok {
+				role := "User"
+				if msg.Role == st.ConversationRoleAgent {
+					role = "Agent"
+				}
+				fmt.Printf("── %s ──\n%s\n\n", role, msg.Message)
+			}
+		}
+		fmt.Print("Press Ctrl+C to exit, or type a message and press Enter:\n> ")
+	}
+
+	// Initial render
+	renderMessages()
+
+	// Handle input in a separate goroutine
+	inputCh := make(chan string, 1)
+	inputErrCh := make(chan error, 1)
+	go func() {
+		defer close(inputErrCh)
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line != "" {
+				inputCh <- line
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			inputErrCh <- err
+		}
+	}()
+
+	for {
+		select {
+		case msg := <-msgCh:
+			messages[msg.Id] = msg
+			if msg.Id > maxMsgID {
+				maxMsgID = msg.Id
+			}
+			renderMessages()
+		case line := <-inputCh:
+			if err := WriteUserMessageOverHTTP(ctx, remoteUrl+"/message", line); err != nil {
+				return xerrors.Errorf("failed to send message: %w", err)
+			}
+		case err := <-readEventsErrCh:
+			return err
+		case err := <-inputErrCh:
+			return err
+		}
+	}
+}
+
 var remoteUrlArg string
 
 var AttachCmd = &cobra.Command{
@@ -235,7 +393,20 @@ var AttachCmd = &cobra.Command{
 			remoteUrl = "http://" + remoteUrl
 		}
 		remoteUrl = strings.TrimRight(remoteUrl, "/")
-		if err := runAttach(remoteUrl); err != nil {
+
+		// Check transport type
+		status, err := GetStatus(context.Background(), remoteUrl)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get server status: %+v\n", err)
+			os.Exit(1)
+		}
+
+		if status.Transport == "acp" {
+			err = runAttachACP(remoteUrl)
+		} else {
+			err = runAttach(remoteUrl)
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Attach failed: %+v\n", err)
 			os.Exit(1)
 		}

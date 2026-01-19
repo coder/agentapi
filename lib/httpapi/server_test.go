@@ -284,6 +284,49 @@ func TestServer_AllowedHosts(t *testing.T) {
 	}
 }
 
+func TestServer_StatusTransport(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		transport string
+	}{
+		{"pty transport", "pty"},
+		{"acp transport", "acp"},
+		{"empty transport", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+				AgentType:      msgfmt.AgentTypeClaude,
+				Process:        nil,
+				Port:           0,
+				ChatBasePath:   "/chat",
+				AllowedHosts:   []string{"*"},
+				AllowedOrigins: []string{"*"},
+				Transport:      tc.transport,
+			})
+			require.NoError(t, err)
+			tsServer := httptest.NewServer(s.Handler())
+			t.Cleanup(tsServer.Close)
+
+			resp, err := http.Get(tsServer.URL + "/status")
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = resp.Body.Close() })
+
+			var body struct {
+				Transport string `json:"transport"`
+			}
+			err = json.NewDecoder(resp.Body).Decode(&body)
+			require.NoError(t, err)
+			require.Equal(t, tc.transport, body.Transport)
+		})
+	}
+}
+
 func TestServer_CORSPreflightWithHosts(t *testing.T) {
 	cases := []struct {
 		name               string

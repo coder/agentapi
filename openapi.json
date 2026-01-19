@@ -272,11 +272,16 @@
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
+          },
+          "transport": {
+            "description": "Transport used for agent communication. 'pty' for terminal emulation, 'acp' for Agent Control Protocol.",
+            "type": "string"
           }
         },
         "required": [
           "agent_type",
-          "status"
+          "status",
+          "transport"
         ],
         "type": "object"
       },

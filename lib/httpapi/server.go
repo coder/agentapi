@@ -45,6 +45,7 @@ type Server struct {
 	emitter      *EventEmitter
 	chatBasePath string
 	tempDir      string
+	transport    string
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -101,6 +102,7 @@ type ServerConfig struct {
 	AllowedHosts   []string
 	AllowedOrigins []string
 	InitialPrompt  string
+	Transport      string
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -269,6 +271,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
+		transport:    config.Transport,
 	}
 
 	// Register API routes
@@ -418,6 +421,7 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 	resp := &StatusResponse{}
 	resp.Body.Status = agentStatus
 	resp.Body.AgentType = s.agentType
+	resp.Body.Transport = s.transport
 
 	return resp, nil
 }
