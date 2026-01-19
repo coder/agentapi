@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,10 +145,6 @@ func runMockAgent(t *testing.T, exchanges []Exchange, input io.Reader, output io
 				output.Write(data)
 				output.Write([]byte("\n"))
 			} else if _, hasResult := respObj["result"]; hasResult {
-				// Brief delay to allow notification handler goroutines to complete.
-				// The SDK (v0.6.3) spawns goroutines for notifications without waiting,
-				// so we need this to ensure they finish before the response is sent.
-				time.Sleep(5 * time.Millisecond)
 				// It's a response, add the request id
 				response := map[string]json.RawMessage{
 					"jsonrpc": json.RawMessage(`"2.0"`),
