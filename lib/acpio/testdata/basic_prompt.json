@@ -1,0 +1,17 @@
+[
+  {
+    "expect": {"method": "initialize"},
+    "respond": [{"result": {"protocolVersion": 1, "agentCapabilities": {}}}]
+  },
+  {
+    "expect": {"method": "session/new"},
+    "respond": [{"result": {"sessionId": "sess-1"}}]
+  },
+  {
+    "expect": {"method": "session/prompt"},
+    "respond": [
+      {"method": "session/update", "params": {"sessionId": "sess-1", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Hi there!"}}}},
+      {"result": {"stopReason": "endTurn"}}
+    ]
+  }
+]
