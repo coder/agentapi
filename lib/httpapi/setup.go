@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coder/agentapi/lib/acpio"
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/agentapi/x/acpio"
 )
 
 // AgentIO is the interface for agent communication (re-exported from screentracker)
