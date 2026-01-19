@@ -4,15 +4,21 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/coder/agentapi/lib/acpio"
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"
+	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
 )
+
+// AgentIO is the interface for agent communication (re-exported from screentracker)
+type AgentIO = st.AgentIO
 
 type SetupProcessConfig struct {
 	Program        string
@@ -57,4 +63,48 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 	}()
 
 	return process, nil
+}
+
+type SetupACPConfig struct {
+	Program     string
+	ProgramArgs []string
+}
+
+func SetupACP(ctx context.Context, config SetupACPConfig) (*acpio.ACPAgentIO, error) {
+	logger := logctx.From(ctx)
+
+	args := config.ProgramArgs
+	logger.Info(fmt.Sprintf("Running (ACP): %s %s", config.Program, strings.Join(args, " ")))
+
+	cmd := exec.CommandContext(ctx, config.Program, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start process: %w", err)
+	}
+
+	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		return nil, fmt.Errorf("failed to initialize ACP connection: %w", err)
+	}
+
+	// Handle SIGINT (Ctrl+C) - kill the process
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalCh
+		logger.Info("Received signal, killing ACP agent")
+		_ = cmd.Process.Kill()
+	}()
+
+	return agentIO, nil
 }

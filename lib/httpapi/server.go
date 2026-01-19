@@ -23,7 +23,6 @@ import (
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
-	"github.com/coder/agentapi/lib/termexec"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -41,7 +40,7 @@ type Server struct {
 	mu           sync.RWMutex
 	logger       *slog.Logger
 	conversation *st.Conversation
-	agentio      *termexec.Process
+	agentio      st.AgentIO
 	agentType    mf.AgentType
 	emitter      *EventEmitter
 	chatBasePath string
@@ -96,7 +95,7 @@ const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
 	AgentType      mf.AgentType
-	Process        *termexec.Process
+	Process        st.AgentIO
 	Port           int
 	ChatBasePath   string
 	AllowedHosts   []string
