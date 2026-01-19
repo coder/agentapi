@@ -82,7 +82,7 @@ func setupMockAgent(t *testing.T, fixturePath string) *ACPAgentIO {
 	})
 
 	ctx := context.Background()
-	agentIO, err := NewWithPipes(ctx, c2aW, a2cR)
+	agentIO, err := NewWithPipes(ctx, c2aW, a2cR, nil)
 	require.NoError(t, err)
 	return agentIO
 }

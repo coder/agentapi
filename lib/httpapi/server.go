@@ -39,7 +39,7 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.Conversation
+	conversation st.ConversationTracker
 	agentio      st.AgentIO
 	agentType    mf.AgentType
 	emitter      *EventEmitter
@@ -238,19 +238,24 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
-	conversation := st.NewConversation(ctx, st.ConversationConfig{
-		AgentType: config.AgentType,
-		AgentIO:   config.Process,
-		GetTime: func() time.Time {
-			return time.Now()
-		},
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
-		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
-		FormatToolCall:        formatToolCall,
-		Logger:                logger,
-	}, config.InitialPrompt)
+	var conversation st.ConversationTracker
+	if config.Transport == "acp" {
+		conversation = st.NewACPConversation(config.Process, logger, config.InitialPrompt)
+	} else {
+		conversation = st.NewConversation(ctx, st.ConversationConfig{
+			AgentType: config.AgentType,
+			AgentIO:   config.Process,
+			GetTime: func() time.Time {
+				return time.Now()
+			},
+			SnapshotInterval:      snapshotInterval,
+			ScreenStabilityLength: 2 * time.Second,
+			FormatMessage:         formatMessage,
+			ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
+			FormatToolCall:        formatToolCall,
+			Logger:                logger,
+		}, config.InitialPrompt)
+	}
 	emitter := NewEventEmitter(1024)
 
 	// Create temporary directory for uploads
@@ -339,13 +344,13 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			currentStatus := s.conversation.Status()
 
 			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+			if !s.conversation.IsInitialPromptSent() && convertStatus(currentStatus) == AgentStatusStable {
 
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.GetInitialPrompt())...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
+					s.conversation.SetInitialPromptSent(true)
+					s.conversation.SetReadyForInitialPrompt(false)
 					currentStatus = st.ConversationStatusChanging
 					s.logger.Info("Initial prompt sent successfully")
 				}

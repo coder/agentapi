@@ -464,3 +464,28 @@ func (c *Conversation) Screen() string {
 	}
 	return snapshots[len(snapshots)-1].screen
 }
+
+// Interface methods for ConversationTracker compatibility
+
+func (c *Conversation) GetInitialPrompt() string {
+	return c.InitialPrompt
+}
+
+func (c *Conversation) IsInitialPromptSent() bool {
+	return c.InitialPromptSent
+}
+
+func (c *Conversation) SetInitialPromptSent(sent bool) {
+	c.InitialPromptSent = sent
+}
+
+func (c *Conversation) IsReadyForInitialPrompt() bool {
+	return c.ReadyForInitialPrompt
+}
+
+func (c *Conversation) SetReadyForInitialPrompt(ready bool) {
+	c.ReadyForInitialPrompt = ready
+}
+
+// Ensure Conversation implements ConversationTracker
+var _ ConversationTracker = (*Conversation)(nil)

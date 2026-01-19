@@ -214,8 +214,9 @@ const (
 	FlagAllowedHosts   = "allowed-hosts"
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
-	FlagInitialPrompt  = "initial-prompt"
+	FlagInitialPrompt   = "initial-prompt"
 	FlagExperimentalACP = "experimental-acp"
+	FlagVerbose         = "verbose"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -229,7 +230,11 @@ func CreateServerCmd() *cobra.Command {
 			if viper.GetBool(FlagExit) {
 				return
 			}
-			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			logLevel := slog.LevelInfo
+			if viper.GetBool(FlagVerbose) {
+				logLevel = slog.LevelDebug
+			}
+			logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 			if viper.GetBool(FlagPrintOpenAPI) {
 				// We don't want log output here.
 				logger = slog.New(logctx.DiscardHandler)
@@ -255,6 +260,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
 		{FlagExperimentalACP, "", false, "Use experimental ACP protocol for agent communication", "bool"},
+		{FlagVerbose, "v", false, "Enable verbose (debug) logging", "bool"},
 	}
 
 	for _, spec := range flagSpecs {

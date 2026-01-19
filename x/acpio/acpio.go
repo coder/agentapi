@@ -3,6 +3,7 @@ package acpio
 import (
 	"context"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -16,6 +17,7 @@ type ACPAgentIO struct {
 	sessionID acp.SessionId
 	mu        sync.RWMutex
 	response  strings.Builder
+	logger    *slog.Logger
 }
 
 // acpClient implements acp.Client to handle callbacks from the agent
@@ -26,8 +28,15 @@ type acpClient struct {
 var _ acp.Client = (*acpClient)(nil)
 
 func (c *acpClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
+	c.agentIO.logger.Debug("SessionUpdate received",
+		"sessionId", params.SessionId,
+		"hasAgentMessageChunk", params.Update.AgentMessageChunk != nil)
+
 	if params.Update.AgentMessageChunk != nil {
 		if text := params.Update.AgentMessageChunk.Content.Text; text != nil {
+			c.agentIO.logger.Debug("AgentMessageChunk text",
+				"text", text.Text,
+				"textLen", len(text.Text))
 			c.agentIO.mu.Lock()
 			c.agentIO.response.WriteString(text.Text)
 			c.agentIO.mu.Unlock()
@@ -73,22 +82,29 @@ func (c *acpClient) WaitForTerminalExit(ctx context.Context, params acp.WaitForT
 	return acp.WaitForTerminalExitResponse{}, nil
 }
 
-// NewWithPipes creates an ACPAgentIO connected via the provided pipes (for testing)
-func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader) (*ACPAgentIO, error) {
-	agentIO := &ACPAgentIO{ctx: ctx}
+// NewWithPipes creates an ACPAgentIO connected via the provided pipes
+func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, logger *slog.Logger) (*ACPAgentIO, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	agentIO := &ACPAgentIO{ctx: ctx, logger: logger}
 	client := &acpClient{agentIO: agentIO}
 
 	conn := acp.NewClientSideConnection(client, toAgent, fromAgent)
 	agentIO.conn = conn
 
+	logger.Debug("Initializing ACP connection")
+
 	// Initialize the connection
-	_, err := conn.Initialize(ctx, acp.InitializeRequest{
+	initResp, err := conn.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion:    acp.ProtocolVersionNumber,
 		ClientCapabilities: acp.ClientCapabilities{},
 	})
 	if err != nil {
+		logger.Error("Failed to initialize ACP connection", "error", err)
 		return nil, err
 	}
+	logger.Debug("ACP initialized", "protocolVersion", initResp.ProtocolVersion)
 
 	// Create a session
 	sessResp, err := conn.NewSession(ctx, acp.NewSessionRequest{
@@ -96,33 +112,51 @@ func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader) (
 		McpServers: []acp.McpServer{},
 	})
 	if err != nil {
+		logger.Error("Failed to create ACP session", "error", err)
 		return nil, err
 	}
 	agentIO.sessionID = sessResp.SessionId
+	logger.Debug("ACP session created", "sessionId", sessResp.SessionId)
 
 	return agentIO, nil
 }
 
 // Write sends a message to the agent via ACP prompt
 func (a *ACPAgentIO) Write(data []byte) (int, error) {
-	// Clear previous response
-	a.mu.Lock()
-	a.response.Reset()
-	a.mu.Unlock()
-
 	text := string(data)
 
 	// Strip bracketed paste escape sequences if present
 	text = strings.TrimPrefix(text, "\x1b[200~")
 	text = strings.TrimSuffix(text, "\x1b[201~")
+	text = strings.TrimSpace(text)
 
-	_, err := a.conn.Prompt(a.ctx, acp.PromptRequest{
+	// Don't send empty prompts
+	if text == "" {
+		a.logger.Debug("Ignoring empty prompt", "rawDataLen", len(data))
+		return len(data), nil
+	}
+
+	// Clear previous response
+	a.mu.Lock()
+	a.response.Reset()
+	a.mu.Unlock()
+
+	a.logger.Debug("Sending prompt",
+		"sessionId", a.sessionID,
+		"text", text,
+		"textLen", len(text),
+		"rawDataLen", len(data))
+
+	resp, err := a.conn.Prompt(a.ctx, acp.PromptRequest{
 		SessionId: a.sessionID,
 		Prompt:    []acp.ContentBlock{acp.TextBlock(text)},
 	})
 	if err != nil {
+		a.logger.Error("Prompt failed", "error", err)
 		return 0, err
 	}
+
+	a.logger.Debug("Prompt completed", "stopReason", resp.StopReason)
 
 	return len(data), nil
 }

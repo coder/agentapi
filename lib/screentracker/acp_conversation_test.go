@@ -1,0 +1,191 @@
+package screentracker
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+)
+
+func textMsg(s string) MessagePartText {
+	return MessagePartText{Content: s}
+}
+
+func TestACPConversation_SendMessage(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	agent.EXPECT().Write([]byte("Hi there")).Return(8, nil)
+	agent.EXPECT().ReadScreen().Return("Hello! How can I help you?")
+
+	conv := NewACPConversation(agent, nil, "")
+
+	err := conv.SendMessage(textMsg("Hi there"))
+	require.NoError(t, err)
+
+	// SendMessage returns immediately, wait for background goroutine
+	require.Eventually(t, func() bool {
+		return conv.Status() == ConversationStatusStable
+	}, time.Second, 10*time.Millisecond)
+
+	// Verify messages tracked
+	msgs := conv.Messages()
+	require.Len(t, msgs, 2)
+
+	assert.Equal(t, ConversationRoleUser, msgs[0].Role)
+	assert.Equal(t, "Hi there", msgs[0].Message)
+
+	assert.Equal(t, ConversationRoleAgent, msgs[1].Role)
+	assert.Equal(t, "Hello! How can I help you?", msgs[1].Message)
+}
+
+func TestACPConversation_SendMessage_EmptyRejected(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	// No Write() expected - empty message should be rejected before calling agent
+
+	conv := NewACPConversation(agent, nil, "")
+
+	err := conv.SendMessage(textMsg(""))
+	assert.ErrorIs(t, err, MessageValidationErrorEmpty)
+}
+
+func TestACPConversation_SendMessage_RejectsWhilePrompting(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	// First write blocks for 100ms
+	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+		time.Sleep(100 * time.Millisecond)
+		return len(data), nil
+	})
+	agent.EXPECT().ReadScreen().Return("Response")
+
+	conv := NewACPConversation(agent, nil, "")
+
+	// First message starts processing
+	err := conv.SendMessage(textMsg("First"))
+	require.NoError(t, err)
+
+	// Status should be changing
+	assert.Equal(t, ConversationStatusChanging, conv.Status())
+
+	// Second message should be rejected while first is processing
+	err = conv.SendMessage(textMsg("Second"))
+	assert.ErrorIs(t, err, MessageValidationErrorChanging)
+
+	// Wait for first to complete
+	require.Eventually(t, func() bool {
+		return conv.Status() == ConversationStatusStable
+	}, time.Second, 10*time.Millisecond)
+
+	// Now a new message should work
+	agent.EXPECT().Write(gomock.Any()).Return(6, nil)
+	agent.EXPECT().ReadScreen().Return("Response 2")
+
+	err = conv.SendMessage(textMsg("Third"))
+	require.NoError(t, err)
+
+	// Wait for third message to complete
+	require.Eventually(t, func() bool {
+		return conv.Status() == ConversationStatusStable
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestACPConversation_Status(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	// Write blocks for 100ms to simulate agent processing
+	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+		time.Sleep(100 * time.Millisecond)
+		return len(data), nil
+	})
+	agent.EXPECT().ReadScreen().Return("Response")
+
+	conv := NewACPConversation(agent, nil, "")
+
+	// Initially stable
+	assert.Equal(t, ConversationStatusStable, conv.Status())
+
+	// Send message (returns immediately, runs in background)
+	err := conv.SendMessage(textMsg("Hello"))
+	require.NoError(t, err)
+
+	// Should be "changing" immediately after SendMessage returns
+	assert.Equal(t, ConversationStatusChanging, conv.Status())
+
+	// Wait for completion
+	require.Eventually(t, func() bool {
+		return conv.Status() == ConversationStatusStable
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestACPConversation_Messages_ThreadSafe(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	// Single write since concurrent sends are now rejected
+	agent.EXPECT().Write(gomock.Any()).DoAndReturn(func(data []byte) (int, error) {
+		time.Sleep(50 * time.Millisecond)
+		return len(data), nil
+	})
+	agent.EXPECT().ReadScreen().Return("Response")
+
+	conv := NewACPConversation(agent, nil, "")
+
+	// Send one message
+	err := conv.SendMessage(textMsg("Message"))
+	require.NoError(t, err)
+
+	// Read messages while send is in progress - should not panic
+	for i := 0; i < 5; i++ {
+		_ = conv.Messages()
+		_ = conv.Status()
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Wait for completion
+	require.Eventually(t, func() bool {
+		return conv.Status() == ConversationStatusStable
+	}, time.Second, 10*time.Millisecond)
+
+	// Should have 2 messages (1 user + 1 agent)
+	msgs := conv.Messages()
+	assert.Len(t, msgs, 2)
+}
+
+func TestACPConversation_InitialPrompt(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	conv := NewACPConversation(agent, nil, "Hello, world!")
+
+	assert.Equal(t, "Hello, world!", conv.GetInitialPrompt())
+	assert.False(t, conv.IsInitialPromptSent())
+	assert.True(t, conv.IsReadyForInitialPrompt()) // ACP is always ready
+
+	conv.SetInitialPromptSent(true)
+	assert.True(t, conv.IsInitialPromptSent())
+}
+
+func TestACPConversation_Screen(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+
+	agent := NewMockAgentIO(ctrl)
+	agent.EXPECT().ReadScreen().Return("Current screen content")
+
+	conv := NewACPConversation(agent, nil, "")
+
+	assert.Equal(t, "Current screen content", conv.Screen())
+}

@@ -91,7 +91,7 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*acpio.ACPAgentIO, er
 		return nil, fmt.Errorf("failed to start process: %w", err)
 	}
 
-	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout)
+	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout, logger)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to initialize ACP connection: %w", err)
@@ -103,6 +103,9 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*acpio.ACPAgentIO, er
 	go func() {
 		<-signalCh
 		logger.Info("Received signal, killing ACP agent")
+		_ = stdin.Close()
+		_ = stdout.Close()
+		// wait for the process to exit
 		_ = cmd.Process.Kill()
 	}()
 
