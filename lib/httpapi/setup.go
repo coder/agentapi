@@ -97,15 +97,11 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*acpio.ACPAgentIO, er
 		return nil, fmt.Errorf("failed to initialize ACP connection: %w", err)
 	}
 
-	// Handle SIGINT (Ctrl+C) - kill the process
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-signalCh
-		logger.Info("Received signal, killing ACP agent")
+		<-ctx.Done()
+		logger.Info("Context done, closing ACP agent")
 		_ = stdin.Close()
 		_ = stdout.Close()
-		// wait for the process to exit
 		_ = cmd.Process.Kill()
 	}()
 

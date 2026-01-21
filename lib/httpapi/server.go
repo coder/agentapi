@@ -347,25 +347,32 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
+		tick := time.NewTicker(snapshotInterval)
+		defer tick.Stop()
 		for {
-			currentStatus := s.conversation.Status()
+			select {
+			case <-tick.C:
+				currentStatus := s.conversation.Status()
 
-			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.IsInitialPromptSent() && convertStatus(currentStatus) == AgentStatusStable {
+				// Send initial prompt when agent becomes stable for the first time
+				if !s.conversation.IsInitialPromptSent() && convertStatus(currentStatus) == AgentStatusStable {
 
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.GetInitialPrompt())...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.SetInitialPromptSent(true)
-					s.conversation.SetReadyForInitialPrompt(false)
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
+					if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.GetInitialPrompt())...); err != nil {
+						s.logger.Error("Failed to send initial prompt", "error", err)
+					} else {
+						s.conversation.SetInitialPromptSent(true)
+						s.conversation.SetReadyForInitialPrompt(false)
+						currentStatus = st.ConversationStatusChanging
+						s.logger.Info("Initial prompt sent successfully")
+					}
 				}
+				s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
+				s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
+				s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
+			case <-ctx.Done():
+				s.logger.Info("Context done, stopping snapshot loop")
+				return
 			}
-			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
-			time.Sleep(snapshotInterval)
 		}
 	}()
 }
