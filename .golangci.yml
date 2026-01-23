@@ -4,6 +4,7 @@ linters:
     - exhaustive
   settings:
     exhaustive:
+      default-signifies-exhaustive: true
       check:
         - "switch"
         - "map"

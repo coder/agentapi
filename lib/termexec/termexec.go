@@ -13,15 +13,18 @@ import (
 
 	"github.com/ActiveState/termtest/xpty"
 	"github.com/coder/agentapi/lib/logctx"
+	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/util"
 	"golang.org/x/xerrors"
 )
 
 type Process struct {
-	xp               *xpty.Xpty
-	execCmd          *exec.Cmd
-	screenUpdateLock sync.RWMutex
-	lastScreenUpdate time.Time
+	xp                   *xpty.Xpty
+	execCmd              *exec.Cmd
+	screenUpdateLock     sync.RWMutex
+	lastScreenUpdate     time.Time
+	checkAnimatedContent bool
+	agentType            msgfmt.AgentType
 }
 
 type StartProcessConfig struct {
@@ -29,6 +32,7 @@ type StartProcessConfig struct {
 	Args           []string
 	TerminalWidth  uint16
 	TerminalHeight uint16
+	AgentType      msgfmt.AgentType
 }
 
 func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error) {
@@ -46,7 +50,7 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		return nil, err
 	}
 
-	process := &Process{xp: xp, execCmd: execCmd}
+	process := &Process{xp: xp, execCmd: execCmd, checkAnimatedContent: true, agentType: args.AgentType}
 
 	go func() {
 		// HACK: Working around xpty concurrency limitations
@@ -112,17 +116,24 @@ func (p *Process) Signal(sig os.Signal) error {
 // result in a malformed agent message being returned to the
 // user.
 func (p *Process) ReadScreen() string {
+	var state string
 	for range 3 {
 		p.screenUpdateLock.RLock()
 		if time.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
-			state := p.xp.State.String()
+			state = p.xp.State.String()
 			p.screenUpdateLock.RUnlock()
+			if p.checkAnimatedContent {
+				state, p.checkAnimatedContent = removeAnimatedContent(state, p.agentType)
+			}
 			return state
 		}
 		p.screenUpdateLock.RUnlock()
 		time.Sleep(16 * time.Millisecond)
 	}
-	return p.xp.State.String()
+	if p.checkAnimatedContent {
+		state, p.checkAnimatedContent = removeAnimatedContent(p.xp.State.String(), p.agentType)
+	}
+	return state
 }
 
 // Write sends input to the process via the pseudo terminal.
