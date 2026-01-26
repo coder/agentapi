@@ -128,8 +128,8 @@ func (p *Process) ReadScreen() string {
 		}
 		p.screenUpdateLock.RUnlock()
 		timer := p.clock.NewTimer(16 * time.Millisecond)
+		defer timer.Stop()
 		<-timer.C
-		timer.Stop()
 	}
 	return p.xp.State.String()
 }
