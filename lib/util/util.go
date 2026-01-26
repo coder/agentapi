@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/xerrors"
 )
@@ -15,6 +16,7 @@ type WaitTimeout struct {
 	MinInterval time.Duration
 	MaxInterval time.Duration
 	InitialWait bool
+	Clock       quartz.Clock
 }
 
 var WaitTimedOut = xerrors.New("timeout waiting for condition")
@@ -22,6 +24,11 @@ var WaitTimedOut = xerrors.New("timeout waiting for condition")
 // WaitFor waits for a condition to be true or the timeout to expire.
 // It will wait for the condition to be true with exponential backoff.
 func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, error)) error {
+	clock := timeout.Clock
+	if clock == nil {
+		clock = quartz.NewReal()
+	}
+
 	minInterval := timeout.MinInterval
 	maxInterval := timeout.MaxInterval
 	timeoutDuration := timeout.Timeout
@@ -34,7 +41,8 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 	if timeoutDuration == 0 {
 		timeoutDuration = 10 * time.Second
 	}
-	timeoutAfter := time.After(timeoutDuration)
+	timeoutTimer := clock.NewTimer(timeoutDuration)
+	defer timeoutTimer.Stop()
 
 	if minInterval > maxInterval {
 		return xerrors.Errorf("minInterval is greater than maxInterval")
@@ -42,13 +50,22 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 
 	interval := minInterval
 	if timeout.InitialWait {
-		time.Sleep(interval)
+		initialTimer := clock.NewTimer(interval)
+		select {
+		case <-initialTimer.C:
+		case <-ctx.Done():
+			initialTimer.Stop()
+			return ctx.Err()
+		case <-timeoutTimer.C:
+			initialTimer.Stop()
+			return WaitTimedOut
+		}
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeoutAfter:
+		case <-timeoutTimer.C:
 			return WaitTimedOut
 		default:
 			ok, err := condition()
@@ -58,7 +75,16 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 			if ok {
 				return nil
 			}
-			time.Sleep(interval)
+			sleepTimer := clock.NewTimer(interval)
+			select {
+			case <-sleepTimer.C:
+			case <-ctx.Done():
+				sleepTimer.Stop()
+				return ctx.Err()
+			case <-timeoutTimer.C:
+				sleepTimer.Stop()
+				return WaitTimedOut
+			}
 			interval = min(interval*2, maxInterval)
 		}
 	}

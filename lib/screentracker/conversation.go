@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/util"
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/xerrors"
 )
@@ -27,8 +28,8 @@ type AgentIO interface {
 type ConversationConfig struct {
 	AgentType msgfmt.AgentType
 	AgentIO   AgentIO
-	// GetTime returns the current time
-	GetTime func() time.Time
+	// Clock provides time operations for the conversation
+	Clock quartz.Clock
 	// How often to take a snapshot for the stability check
 	SnapshotInterval time.Duration
 	// How long the screen should not change to be considered stable
@@ -109,6 +110,9 @@ func getStableSnapshotsThreshold(cfg ConversationConfig) int {
 }
 
 func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt string) *Conversation {
+	if cfg.Clock == nil {
+		cfg.Clock = quartz.NewReal()
+	}
 	threshold := getStableSnapshotsThreshold(cfg)
 	c := &Conversation{
 		cfg:                      cfg,
@@ -118,7 +122,7 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 			{
 				Message: "",
 				Role:    ConversationRoleAgent,
-				Time:    cfg.GetTime(),
+				Time:    cfg.Clock.Now(),
 			},
 		},
 		InitialPrompt:      initialPrompt,
@@ -130,11 +134,13 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 
 func (c *Conversation) StartSnapshotLoop(ctx context.Context) {
 	go func() {
+		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(c.cfg.SnapshotInterval):
+			case <-ticker.C:
 				// It's important that we hold the lock while reading the screen.
 				// There's a race condition that occurs without it:
 				// 1. The screen is read
@@ -250,7 +256,7 @@ func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time
 // assumes the caller holds the lock
 func (c *Conversation) addSnapshotInner(screen string) {
 	snapshot := screenSnapshot{
-		timestamp: c.cfg.GetTime(),
+		timestamp: c.cfg.Clock.Now(),
 		screen:    screen,
 	}
 	c.snapshotBuffer.Add(snapshot)
@@ -320,10 +326,12 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 		Timeout:     15 * time.Second,
 		MinInterval: 50 * time.Millisecond,
 		InitialWait: true,
+		Clock:       c.cfg.Clock,
 	}, func() (bool, error) {
 		screen := c.cfg.AgentIO.ReadScreen()
 		if screen != screenBeforeMessage {
-			time.Sleep(1 * time.Second)
+			timer := c.cfg.Clock.NewTimer(1 * time.Second)
+			<-timer.C
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
 		}
@@ -338,17 +346,19 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 	if err := util.WaitFor(ctx, util.WaitTimeout{
 		Timeout:     15 * time.Second,
 		MinInterval: 25 * time.Millisecond,
+		Clock:       c.cfg.Clock,
 	}, func() (bool, error) {
 		// we don't want to spam additional carriage returns because the agent may process them
 		// (aider does this), but we do want to retry sending one if nothing's
 		// happening for a while
-		if time.Since(lastCarriageReturnTime) >= 3*time.Second {
-			lastCarriageReturnTime = time.Now()
+		if c.cfg.Clock.Since(lastCarriageReturnTime) >= 3*time.Second {
+			lastCarriageReturnTime = c.cfg.Clock.Now()
 			if _, err := c.cfg.AgentIO.Write([]byte("\r")); err != nil {
 				return false, xerrors.Errorf("failed to write carriage return: %w", err)
 			}
 		}
-		time.Sleep(25 * time.Millisecond)
+		timer := c.cfg.Clock.NewTimer(25 * time.Millisecond)
+		<-timer.C
 		screen := c.cfg.AgentIO.ReadScreen()
 
 		return screen != screenBeforeCarriageReturn, nil
@@ -359,9 +369,11 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 	return nil
 }
 
-var MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
-var MessageValidationErrorEmpty = xerrors.New("message must not be empty")
-var MessageValidationErrorChanging = xerrors.New("message can only be sent when the agent is waiting for user input")
+var (
+	MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
+	MessageValidationErrorEmpty      = xerrors.New("message must not be empty")
+	MessageValidationErrorChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
+)
 
 func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 	c.lock.Lock()
@@ -382,7 +394,7 @@ func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 	}
 
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
-	now := c.cfg.GetTime()
+	now := c.cfg.Clock.Now()
 	c.updateLastAgentMessage(screenBeforeMessage, now)
 
 	if err := c.writeMessageWithConfirmation(context.Background(), messageParts...); err != nil {
