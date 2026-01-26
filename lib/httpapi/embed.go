@@ -39,7 +39,7 @@ func createModifiedFS(baseFS fs.FS, oldBasePath string, newBasePath string) (*af
 			contents = strings.ReplaceAll(contents, oldBasePath+"/", newBasePath)
 		}
 		contents = strings.ReplaceAll(contents, oldBasePath, newBasePath)
-		if err := afero.WriteFile(overlay, path, []byte(contents), 0644); err != nil {
+		if err := afero.WriteFile(overlay, path, []byte(contents), 0o644); err != nil {
 			return xerrors.Errorf("failed to write file: %w", err)
 		}
 		return nil

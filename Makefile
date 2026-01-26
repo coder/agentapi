@@ -22,6 +22,13 @@ embed: $(CHAT_SOURCES_STAMP)
 build: embed
 	CGO_ENABLED=0 go build -o ${BINPATH} main.go
 
+.PHONY: fmt
+fmt: fmt/go
+
+.PHONY: fmt/go
+fmt/go:
+	go tool mvdan.cc/gofumpt -w -l .
+
 .PHONY: gen
 gen:
 	go generate ./...
@@ -30,8 +37,8 @@ lint: lint/shellcheck lint/go lint/ts lint/actions/actionlint
 .PHONY: lint
 
 lint/go:
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0 run
-	go run github.com/coder/paralleltestctx/cmd/paralleltestctx@v0.0.1 ./...
+	go tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint run
+	go tool github.com/coder/paralleltestctx/cmd/paralleltestctx ./...
 .PHONY: lint/go
 
 lint/shellcheck: $(SHELL_SRC_FILES)
@@ -44,5 +51,5 @@ lint/ts:
 .PHONY: lint/ts
 
 lint/actions/actionlint:
-	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 --config-file actionlint.yaml
+	go tool github.com/rhysd/actionlint/cmd/actionlint --config-file actionlint.yaml
 .PHONY: lint/actions/actionlint

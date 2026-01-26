@@ -467,7 +467,8 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 // uploadFiles handles POST /upload
 func (s *Server) uploadFiles(ctx context.Context, input *struct {
 	RawBody huma.MultipartFormFiles[UploadRequest]
-}) (*UploadResponse, error) {
+},
+) (*UploadResponse, error) {
 	formData := input.RawBody.Data()
 
 	file := formData.File.File
@@ -488,7 +489,7 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 
 	// Create checksum-based subdirectory in tempDir
 	uploadDir := filepath.Join(s.tempDir, checksum)
-	err = os.MkdirAll(uploadDir, 0755)
+	err = os.MkdirAll(uploadDir, 0o755)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create upload directory: %w", err)
 	}
@@ -497,7 +498,7 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 	filename := filepath.Base(formData.File.Filename)
 
 	outPath := filepath.Join(uploadDir, filename)
-	err = os.WriteFile(outPath, buf, 0644)
+	err = os.WriteFile(outPath, buf, 0o644)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to write file: %w", err)
 	}
