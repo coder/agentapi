@@ -129,6 +129,7 @@ func (p *Process) ReadScreen() string {
 		p.screenUpdateLock.RUnlock()
 		timer := p.clock.NewTimer(16 * time.Millisecond)
 		<-timer.C
+		timer.Stop()
 	}
 	return p.xp.State.String()
 }
@@ -155,6 +156,7 @@ func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 
 	var exitErr error
 	timer := p.clock.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case <-timer.C:
 		if err := p.execCmd.Process.Kill(); err != nil {
@@ -163,7 +165,6 @@ func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 		// don't wait for the process to exit to avoid hanging indefinitely
 		// if the process never exits
 	case err := <-exited:
-		timer.Stop()
 		var pathErr *os.SyscallError
 		// ECHILD is expected if the process has already exited
 		if err != nil && !(errors.As(err, &pathErr) && pathErr.Err == syscall.ECHILD) {

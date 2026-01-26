@@ -332,6 +332,7 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 		if screen != screenBeforeMessage {
 			timer := c.cfg.Clock.NewTimer(1 * time.Second)
 			<-timer.C
+			timer.Stop()
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
 		}
@@ -359,6 +360,7 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 		}
 		timer := c.cfg.Clock.NewTimer(25 * time.Millisecond)
 		<-timer.C
+		timer.Stop()
 		screen := c.cfg.AgentIO.ReadScreen()
 
 		return screen != screenBeforeCarriageReturn, nil
