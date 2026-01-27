@@ -330,9 +330,7 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 	}, func() (bool, error) {
 		screen := c.cfg.AgentIO.ReadScreen()
 		if screen != screenBeforeMessage {
-			timer := c.cfg.Clock.NewTimer(1 * time.Second)
-			defer timer.Stop()
-			<-timer.C
+			<-util.After(c.cfg.Clock, time.Second)
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
 		}
@@ -358,9 +356,7 @@ func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, message
 				return false, xerrors.Errorf("failed to write carriage return: %w", err)
 			}
 		}
-		timer := c.cfg.Clock.NewTimer(25 * time.Millisecond)
-		defer timer.Stop()
-		<-timer.C
+		<-util.After(c.cfg.Clock, 25*time.Millisecond)
 		screen := c.cfg.AgentIO.ReadScreen()
 
 		return screen != screenBeforeCarriageReturn, nil

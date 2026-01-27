@@ -127,9 +127,7 @@ func (p *Process) ReadScreen() string {
 			return state
 		}
 		p.screenUpdateLock.RUnlock()
-		timer := p.clock.NewTimer(16 * time.Millisecond)
-		defer timer.Stop()
-		<-timer.C
+		<-util.After(p.clock, 16*time.Millisecond)
 	}
 	return p.xp.State.String()
 }
@@ -155,10 +153,8 @@ func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 	}()
 
 	var exitErr error
-	timer := p.clock.NewTimer(timeout)
-	defer timer.Stop()
 	select {
-	case <-timer.C:
+	case <-util.After(p.clock, timeout):
 		if err := p.execCmd.Process.Kill(); err != nil {
 			exitErr = xerrors.Errorf("failed to forcefully kill the process: %w", err)
 		}

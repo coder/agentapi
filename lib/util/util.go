@@ -103,3 +103,22 @@ func OpenAPISchema[T ~string](r huma.Registry, enumName string, values []T) *hum
 	}
 	return &huma.Schema{Ref: fmt.Sprintf("#/components/schemas/%s", enumName)}
 }
+
+// After is a convenience function that returns a channel that will send the
+// time after the given duration has elapsed using the provided clock.
+// If clk is nil, a real clock will be used by default.
+// Note that this function spawns a goroutine that will remain alive until the
+// timer fires.
+func After(clk quartz.Clock, d time.Duration) <-chan time.Time {
+	if clk == nil {
+		clk = quartz.NewReal()
+	}
+	timer := clk.NewTimer(d)
+	ch := make(chan time.Time)
+	go func() {
+		defer timer.Stop()
+		defer close(ch)
+		ch <- <-timer.C
+	}()
+	return ch
+}
