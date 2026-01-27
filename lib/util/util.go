@@ -51,6 +51,7 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 	interval := minInterval
 	if timeout.InitialWait {
 		initialTimer := clock.NewTimer(interval)
+		defer initialTimer.Stop()
 		select {
 		case <-initialTimer.C:
 		case <-ctx.Done():
