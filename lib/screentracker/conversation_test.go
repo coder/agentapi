@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/agentapi/lib/msgfmt"
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
 
 	st "github.com/coder/agentapi/lib/screentracker"
@@ -39,8 +40,8 @@ func (a *testAgent) Write(data []byte) (int, error) {
 func statusTest(t *testing.T, params statusTestParams) {
 	ctx := context.Background()
 	t.Run(fmt.Sprintf("interval-%s,stability_length-%s", params.cfg.SnapshotInterval, params.cfg.ScreenStabilityLength), func(t *testing.T) {
-		if params.cfg.GetTime == nil {
-			params.cfg.GetTime = func() time.Time { return time.Now() }
+		if params.cfg.Clock == nil {
+			params.cfg.Clock = quartz.NewReal()
 		}
 		c := st.NewConversation(ctx, params.cfg, "")
 		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
@@ -137,8 +138,10 @@ func TestMessages(t *testing.T) {
 		return c.SendMessage(st.MessagePartText{Content: msg})
 	}
 	newConversation := func(opts ...func(*st.ConversationConfig)) *st.Conversation {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		cfg := st.ConversationConfig{
-			GetTime:                    func() time.Time { return now },
+			Clock:                      mClock,
 			SnapshotInterval:           1 * time.Second,
 			ScreenStabilityLength:      2 * time.Second,
 			SkipWritingMessage:         true,
@@ -173,13 +176,10 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("no-change-no-message-update", func(t *testing.T) {
-		nowWrapper := struct {
-			time.Time
-		}{
-			Time: now,
-		}
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.GetTime = func() time.Time { return nowWrapper.Time }
+			cfg.Clock = mClock
 		})
 
 		c.AddSnapshot("1")
@@ -187,7 +187,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, []st.ConversationMessage{
 			agentMsg(0, "1"),
 		}, msgs)
-		nowWrapper.Time = nowWrapper.Add(1 * time.Second)
+		mClock.Set(now.Add(1 * time.Second))
 		c.AddSnapshot("1")
 		assert.Equal(t, msgs, c.Messages())
 	})
@@ -411,8 +411,10 @@ func TestInitialPromptReadiness(t *testing.T) {
 	now := time.Now()
 
 	t.Run("agent not ready - status remains changing", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		cfg := st.ConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               &testAgent{screen: "loading..."},
@@ -432,8 +434,10 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("agent becomes ready - status changes to stable", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		cfg := st.ConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               &testAgent{screen: "loading..."},
@@ -455,9 +459,11 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("ready for initial prompt lifecycle: false -> true -> false", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		agent := &testAgent{screen: "loading..."}
 		cfg := st.ConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               agent,
@@ -496,8 +502,10 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		cfg := st.ConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               &testAgent{screen: "loading..."},
@@ -517,9 +525,11 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("initial prompt sent - normal status logic applies", func(t *testing.T) {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		agent := &testAgent{screen: "ready"}
 		cfg := st.ConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               agent,
