@@ -2,8 +2,11 @@ package screentracker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +100,12 @@ type PTYConversation struct {
 	ReadyForInitialPrompt bool
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
+	// dirty tracks whether the conversation state has changed since the last save
+	dirty bool
+	// firstStableSnapshot is the conversation history rolled out by the agent in case of a resume (given that the agent supports it)
+	firstStableSnapshot string
+	// userSentMessageAfterLoadState tracks if the user has sent their first message after we load the state
+	userSentMessageAfterLoadState bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -161,6 +170,7 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
 	}
+	agentMessage = c.skipInitialSnapshot(agentMessage)
 	if c.cfg.FormatToolCall != nil {
 		agentMessage, toolCalls = c.cfg.FormatToolCall(agentMessage)
 	}
@@ -190,6 +200,7 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 		c.messages[len(c.messages)-1] = conversationMessage
 	}
 	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
+	c.dirty = true
 }
 
 func (c *PTYConversation) Snapshot(screen string) {
@@ -246,6 +257,9 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 		Role:    ConversationRoleUser,
 		Time:    now,
 	})
+	c.dirty = true
+	c.userSentMessageAfterLoadState = true
+
 	return nil
 }
 
@@ -368,4 +382,106 @@ func (c *PTYConversation) String() string {
 		return ""
 	}
 	return snapshots[len(snapshots)-1].screen
+}
+
+func (c *PTYConversation) SaveState(conversation []ConversationMessage, stateFile string) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// Skip if state file is not configured
+	if stateFile == "" {
+		return nil
+	}
+
+	// Skip if not dirty
+	if !c.dirty {
+		return nil
+	}
+
+	// Use atomic write: write to temp file, then rename to target path
+	data, err := json.MarshalIndent(AgentState{
+		Version:           1,
+		Messages:          conversation,
+		InitialPrompt:     c.InitialPrompt,
+		InitialPromptSent: c.InitialPromptSent,
+	}, "", " ")
+	if err != nil {
+		return xerrors.Errorf("failed to marshal state: %w", err)
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(stateFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return xerrors.Errorf("failed to create state directory: %w", err)
+	}
+
+	// Write to temp file
+	tempFile := stateFile + ".tmp"
+	if err := os.WriteFile(tempFile, data, 0o644); err != nil {
+		return xerrors.Errorf("failed to write temp state file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempFile, stateFile); err != nil {
+		return xerrors.Errorf("failed to rename state file: %w", err)
+	}
+
+	// Clear dirty flag after successful save
+	c.dirty = false
+	return nil
+}
+
+func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// Skip if state file is not configured
+	if stateFile == "" {
+		return nil, nil
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	// Read state file
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read state file: %w", err)
+	}
+
+	if len(data) == 0 {
+		return nil, xerrors.Errorf("failed to read state file: empty state file")
+	}
+
+	var agentState AgentState
+	if err := json.Unmarshal(data, &agentState); err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal state: %w", err)
+	}
+
+	c.InitialPromptSent = agentState.InitialPromptSent
+	c.InitialPrompt = agentState.InitialPrompt
+	c.messages = agentState.Messages
+
+	// Store the first stable snapshot for filtering later
+	snapshots := c.snapshotBuffer.GetAll()
+	if len(snapshots) > 0 {
+		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
+	}
+
+	return c.messages, nil
+}
+
+func (c *PTYConversation) skipInitialSnapshot(screen string) string {
+	newScreen := strings.ReplaceAll(screen, c.firstStableSnapshot, "")
+
+	// Before the first user message after loading state, return the last message from the loaded state.
+	// This prevents computing incorrect diffs from the restored screen, as the agent's message should
+	// remain stable until the user continues the conversation.
+	if c.userSentMessageAfterLoadState == false {
+		newScreen = "\n" + c.messages[len(c.messages)-1].Message
+	}
+
+	return newScreen
 }

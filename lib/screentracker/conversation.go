@@ -52,6 +52,8 @@ type MessagePart interface {
 // Conversation allows tracking of a conversation between a user and an agent.
 type Conversation interface {
 	Messages() []ConversationMessage
+	SaveState([]ConversationMessage, string) error
+	LoadState(string) ([]ConversationMessage, error)
 	Snapshot(string)
 	Start(context.Context)
 	Status() ConversationStatus
@@ -63,4 +65,11 @@ type ConversationMessage struct {
 	Message string
 	Role    ConversationRole
 	Time    time.Time
+}
+
+type AgentState struct {
+	Version           int                   `json:"version"`
+	Messages          []ConversationMessage `json:"messages"`
+	InitialPrompt     string                `json:"initial_prompt"`
+	InitialPromptSent bool                  `json:"initial_prompt_sent"`
 }

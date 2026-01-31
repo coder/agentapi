@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -34,18 +36,20 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router       chi.Router
-	api          huma.API
-	port         int
-	srv          *http.Server
-	mu           sync.RWMutex
-	logger       *slog.Logger
-	conversation *st.PTYConversation
-	agentio      *termexec.Process
-	agentType    mf.AgentType
-	emitter      *EventEmitter
-	chatBasePath string
-	tempDir      string
+	router              chi.Router
+	api                 huma.API
+	port                int
+	srv                 *http.Server
+	mu                  sync.RWMutex
+	logger              *slog.Logger
+	conversation        *st.PTYConversation
+	agentio             *termexec.Process
+	agentType           mf.AgentType
+	emitter             *EventEmitter
+	chatBasePath        string
+	tempDir             string
+	statePersistenceCfg StatePersistenceCfg
+	stateLoadComplete   bool
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -94,14 +98,22 @@ func (s *Server) GetOpenAPI() string {
 // because the action of taking a snapshot takes time too.
 const snapshotInterval = 25 * time.Millisecond
 
+type StatePersistenceCfg struct {
+	StateFile string
+	LoadState bool
+	SaveState bool
+	PidFile   string
+}
+
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
-	InitialPrompt  string
+	AgentType           mf.AgentType
+	Process             *termexec.Process
+	Port                int
+	ChatBasePath        string
+	AllowedHosts        []string
+	AllowedOrigins      []string
+	InitialPrompt       string
+	StatePersistenceCfg StatePersistenceCfg
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -260,16 +272,18 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
 	s := &Server{
-		router:       router,
-		api:          api,
-		port:         config.Port,
-		conversation: conversation,
-		logger:       logger,
-		agentio:      config.Process,
-		agentType:    config.AgentType,
-		emitter:      emitter,
-		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
-		tempDir:      tempDir,
+		router:              router,
+		api:                 api,
+		port:                config.Port,
+		conversation:        conversation,
+		logger:              logger,
+		agentio:             config.Process,
+		agentType:           config.AgentType,
+		emitter:             emitter,
+		chatBasePath:        strings.TrimSuffix(config.ChatBasePath, "/"),
+		tempDir:             tempDir,
+		statePersistenceCfg: config.StatePersistenceCfg,
+		stateLoadComplete:   false,
 	}
 
 	// Register API routes
@@ -337,15 +351,26 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			currentStatus := s.conversation.Status()
 
 			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+			if convertStatus(currentStatus) == AgentStatusStable {
 
-				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
+				if !s.stateLoadComplete && s.statePersistenceCfg.LoadState {
+					_, err := s.conversation.LoadState(s.statePersistenceCfg.StateFile)
+					if err != nil {
+						s.logger.Warn("Failed to load state file", "path", s.statePersistenceCfg.StateFile, "err", err)
+					} else {
+						s.logger.Info("Successfully loaded state", "path", s.statePersistenceCfg.StateFile)
+					}
+					s.stateLoadComplete = true
+				}
+				if !s.conversation.InitialPromptSent {
+					if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+						s.logger.Error("Failed to send initial prompt", "error", err)
+					} else {
+						s.conversation.InitialPromptSent = true
+						s.conversation.ReadyForInitialPrompt = false
+						currentStatus = st.ConversationStatusChanging
+						s.logger.Info("Initial prompt sent successfully")
+					}
 				}
 			}
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
@@ -592,6 +617,15 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the HTTP server
 func (s *Server) Stop(ctx context.Context) error {
+	// Save conversation state if configured
+	if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
+		if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
+			s.logger.Error("Failed to save conversation state", "error", err)
+		} else {
+			s.logger.Info("Saved conversation state", "stateFile", s.statePersistenceCfg.StateFile)
+		}
+	}
+
 	// Clean up temporary directory
 	s.cleanupTempDir()
 
@@ -608,6 +642,58 @@ func (s *Server) cleanupTempDir() {
 	} else {
 		s.logger.Info("Cleaned up temporary directory", "tempDir", s.tempDir)
 	}
+}
+
+// HandleSignals sets up signal handlers for:
+// - SIGTERM, SIGINT, SIGHUP: save conversation state, then close the process
+// - SIGUSR1: save conversation state without exiting
+func (s *Server) HandleSignals(ctx context.Context, process *termexec.Process) {
+	// Handle shutdown signals (SIGTERM, SIGINT, SIGHUP)
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		sig := <-shutdownCh
+		s.logger.Info("Received shutdown signal, saving state before closing process", "signal", sig)
+
+		// Save conversation state if configured (synchronously before closing process)
+		if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
+			if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
+				s.logger.Error("Failed to save conversation state on signal", "signal", sig, "error", err)
+			} else {
+				s.logger.Info("Saved conversation state on signal", "signal", sig, "stateFile", s.statePersistenceCfg.StateFile)
+			}
+		}
+
+		// Now close the process
+		if err := process.Close(s.logger, 5*time.Second); err != nil {
+			s.logger.Error("Error closing process", "signal", sig, "error", err)
+		}
+	}()
+
+	// Handle SIGUSR1 for save without exit
+	saveOnlyCh := make(chan os.Signal, 1)
+	signal.Notify(saveOnlyCh, syscall.SIGUSR1)
+	go func() {
+		for {
+			select {
+			case <-saveOnlyCh:
+				s.logger.Info("Received SIGUSR1, saving state without exiting")
+
+				// Save conversation state if configured
+				if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
+					if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
+						s.logger.Error("Failed to save conversation state on SIGUSR1", "error", err)
+					} else {
+						s.logger.Info("Saved conversation state on SIGUSR1", "stateFile", s.statePersistenceCfg.StateFile)
+					}
+				} else {
+					s.logger.Warn("SIGUSR1 received but state saving is not configured")
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // registerStaticFileRoutes sets up routes for serving static files

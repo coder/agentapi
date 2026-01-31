@@ -103,6 +103,26 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		}
 	}
 
+	// Get the variables related to state management
+	stateFile := viper.GetString(StateFile)
+	loadState := true
+	saveState := true
+	if stateFile != "" {
+		if !viper.IsSet(LoadState) {
+			loadState = true
+		} else {
+			loadState = viper.GetBool(LoadState)
+		}
+
+		if !viper.IsSet(SaveState) {
+			saveState = true
+		} else {
+			saveState = viper.GetBool(SaveState)
+		}
+	}
+
+	pidFile := viper.GetString(PidFile)
+
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
 	var process *termexec.Process
 	if printOpenAPI {
@@ -128,7 +148,14 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
+		StatePersistenceCfg: httpapi.StatePersistenceCfg{
+			StateFile: stateFile,
+			LoadState: loadState,
+			SaveState: saveState,
+			PidFile:   pidFile,
+		},
 	})
+
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
 	}
@@ -137,6 +164,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		return nil
 	}
 	srv.StartSnapshotLoop(ctx)
+	srv.HandleSignals(ctx, process)
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)
 	go func() {
@@ -152,7 +180,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			logger.Error("Failed to stop server", "error", err)
 		}
 	}()
-	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {
+	if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
 		return xerrors.Errorf("failed to start server: %w", err)
 	}
 	select {
@@ -191,6 +219,10 @@ const (
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
 	FlagInitialPrompt  = "initial-prompt"
+	StateFile          = "state-file"
+	LoadState          = "load-state"
+	SaveState          = "save-state"
+	PidFile            = "pid-file"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -229,6 +261,10 @@ func CreateServerCmd() *cobra.Command {
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
+		{StateFile, "s", "", "Path to file for saving/loading server state", "string"},
+		{LoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
+		{SaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
+		{PidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
 	}
 
 	for _, spec := range flagSpecs {
