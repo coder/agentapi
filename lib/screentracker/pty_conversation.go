@@ -442,22 +442,26 @@ func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, er
 
 	// Check if file exists
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		c.cfg.Logger.Info("No previous state to load (file does not exist)", "path", stateFile)
 		return nil, nil
 	}
 
 	// Read state file
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
+		c.cfg.Logger.Warn("Failed to load state file", "path", stateFile, "err", err)
 		return nil, xerrors.Errorf("failed to read state file: %w", err)
 	}
 
 	if len(data) == 0 {
-		return nil, xerrors.Errorf("failed to read state file: empty state file")
+		c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
+		return nil, nil
 	}
 
 	var agentState AgentState
 	if err := json.Unmarshal(data, &agentState); err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal state: %w", err)
+		c.cfg.Logger.Warn("Failed to load state file (corrupted or invalid JSON)", "path", stateFile, "err", err)
+		return nil, xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 
 	c.InitialPromptSent = agentState.InitialPromptSent
@@ -470,6 +474,7 @@ func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, er
 		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
 	}
 
+	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
 	return c.messages, nil
 }
 

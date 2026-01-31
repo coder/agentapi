@@ -350,16 +350,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 		for {
 			currentStatus := s.conversation.Status()
 
-			// Send initial prompt when agent becomes stable for the first time
+			// Send initial prompt & load state when agent becomes stable for the first time
 			if convertStatus(currentStatus) == AgentStatusStable {
 
 				if !s.stateLoadComplete && s.statePersistenceCfg.LoadState {
-					_, err := s.conversation.LoadState(s.statePersistenceCfg.StateFile)
-					if err != nil {
-						s.logger.Warn("Failed to load state file", "path", s.statePersistenceCfg.StateFile, "err", err)
-					} else {
-						s.logger.Info("Successfully loaded state", "path", s.statePersistenceCfg.StateFile)
-					}
+					_, _ = s.conversation.LoadState(s.statePersistenceCfg.StateFile)
 					s.stateLoadComplete = true
 				}
 				if !s.conversation.InitialPromptSent {
@@ -612,6 +607,11 @@ func (s *Server) Start() error {
 		Handler: s.router,
 	}
 
+	// Write PID file if configured
+	if err := s.writePIDFile(); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
 	return s.srv.ListenAndServe()
 }
 
@@ -625,6 +625,9 @@ func (s *Server) Stop(ctx context.Context) error {
 			s.logger.Info("Saved conversation state", "stateFile", s.statePersistenceCfg.StateFile)
 		}
 	}
+
+	// Clean up PID file
+	s.cleanupPIDFile()
 
 	// Clean up temporary directory
 	s.cleanupTempDir()
@@ -641,6 +644,43 @@ func (s *Server) cleanupTempDir() {
 		s.logger.Error("Failed to clean up temporary directory", "tempDir", s.tempDir, "error", err)
 	} else {
 		s.logger.Info("Cleaned up temporary directory", "tempDir", s.tempDir)
+	}
+}
+
+// writePIDFile writes the current process ID to the configured PID file
+func (s *Server) writePIDFile() error {
+	if s.statePersistenceCfg.PidFile == "" {
+		return nil
+	}
+
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(s.statePersistenceCfg.PidFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return xerrors.Errorf("failed to create PID file directory: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(s.statePersistenceCfg.PidFile, []byte(pidContent), 0o644); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
+	s.logger.Info("Wrote PID file", "pidFile", s.statePersistenceCfg.PidFile, "pid", pid)
+	return nil
+}
+
+// cleanupPIDFile removes the PID file if it exists
+func (s *Server) cleanupPIDFile() {
+	if s.statePersistenceCfg.PidFile == "" {
+		return
+	}
+
+	if err := os.Remove(s.statePersistenceCfg.PidFile); err != nil && !os.IsNotExist(err) {
+		s.logger.Error("Failed to remove PID file", "pidFile", s.statePersistenceCfg.PidFile, "error", err)
+	} else if err == nil {
+		s.logger.Info("Removed PID file", "pidFile", s.statePersistenceCfg.PidFile)
 	}
 }
 
@@ -663,6 +703,9 @@ func (s *Server) HandleSignals(ctx context.Context, process *termexec.Process) {
 				s.logger.Info("Saved conversation state on signal", "signal", sig, "stateFile", s.statePersistenceCfg.StateFile)
 			}
 		}
+
+		// Clean up PID file
+		s.cleanupPIDFile()
 
 		// Now close the process
 		if err := process.Close(s.logger, 5*time.Second); err != nil {
