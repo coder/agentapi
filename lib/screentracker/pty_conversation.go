@@ -257,7 +257,6 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 		Role:    ConversationRoleUser,
 		Time:    now,
 	})
-	c.dirty = true
 	c.userSentMessageAfterLoadState = true
 
 	return nil

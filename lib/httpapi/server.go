@@ -617,18 +617,6 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the HTTP server
 func (s *Server) Stop(ctx context.Context) error {
-	// Save conversation state if configured
-	if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
-		if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
-			s.logger.Error("Failed to save conversation state", "error", err)
-		} else {
-			s.logger.Info("Saved conversation state", "stateFile", s.statePersistenceCfg.StateFile)
-		}
-	}
-
-	// Clean up PID file
-	s.cleanupPIDFile()
-
 	// Clean up temporary directory
 	s.cleanupTempDir()
 
