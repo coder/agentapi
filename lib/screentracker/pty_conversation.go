@@ -106,6 +106,8 @@ type PTYConversation struct {
 	firstStableSnapshot string
 	// userSentMessageAfterLoadState tracks if the user has sent their first message after we load the state
 	userSentMessageAfterLoadState bool
+	// loadStateSuccessful indicates whether conversation state was successfully restored from file.
+	loadStateSuccessful bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -123,9 +125,13 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string
 				Time:    cfg.GetTime(),
 			},
 		},
-		InitialPrompt:      initialPrompt,
-		InitialPromptSent:  len(initialPrompt) == 0,
-		toolCallMessageSet: make(map[string]bool),
+		InitialPrompt:                 initialPrompt,
+		InitialPromptSent:             len(initialPrompt) == 0,
+		toolCallMessageSet:            make(map[string]bool),
+		dirty:                         false,
+		firstStableSnapshot:           "",
+		userSentMessageAfterLoadState: false,
+		loadStateSuccessful:           false,
 	}
 	return c
 }
@@ -170,7 +176,9 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
 	}
-	agentMessage = c.skipInitialSnapshot(agentMessage)
+	if c.loadStateSuccessful {
+		agentMessage = c.adjustScreenAfterStateLoad(agentMessage)
+	}
 	if c.cfg.FormatToolCall != nil {
 		agentMessage, toolCalls = c.cfg.FormatToolCall(agentMessage)
 	}
@@ -473,12 +481,13 @@ func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, er
 		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
 	}
 
+	c.loadStateSuccessful = true
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
 	return c.messages, nil
 }
 
-func (c *PTYConversation) skipInitialSnapshot(screen string) string {
-	newScreen := strings.ReplaceAll(screen, c.firstStableSnapshot, "")
+func (c *PTYConversation) adjustScreenAfterStateLoad(screen string) string {
+	newScreen := strings.Replace(screen, c.firstStableSnapshot, "", 1)
 
 	// Before the first user message after loading state, return the last message from the loaded state.
 	// This prevents computing incorrect diffs from the restored screen, as the agent's message should
