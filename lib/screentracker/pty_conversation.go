@@ -103,6 +103,9 @@ type PTYConversation struct {
 var _ Conversation = &PTYConversation{}
 
 func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string) *PTYConversation {
+	if cfg.Clock == nil {
+		cfg.Clock = quartz.NewReal()
+	}
 	threshold := cfg.getStableSnapshotsThreshold()
 	c := &PTYConversation{
 		cfg:                      cfg,
@@ -124,18 +127,20 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string
 
 func (c *PTYConversation) Start(ctx context.Context) {
 	go func() {
+		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(c.cfg.SnapshotInterval):
+			case <-ticker.C:
 				// It's important that we hold the lock while reading the screen.
 				// There's a race condition that occurs without it:
 				// 1. The screen is read
-				// 2. Independently, SendMessage is called and takes the lock.
-				// 3. AddSnapshot is called and waits on the lock.
-				// 4. SendMessage modifies the terminal state, releases the lock
-				// 5. AddSnapshot adds a snapshot from a stale screen
+				// 2. Independently, Send is called and takes the lock.
+				// 3. snapshotLocked is called and waits on the lock.
+				// 4. Send modifies the terminal state, releases the lock
+				// 5. snapshotLocked adds a snapshot from a stale screen
 				c.lock.Lock()
 				screen := c.cfg.AgentIO.ReadScreen()
 				c.snapshotLocked(screen)
@@ -272,7 +277,11 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 	}, func() (bool, error) {
 		screen := c.cfg.AgentIO.ReadScreen()
 		if screen != screenBeforeMessage {
-			time.Sleep(1 * time.Second)
+			select {
+			case <-ctx.Done():
+				return false, ctx.Err()
+			case <-util.After(c.cfg.Clock, 1*time.Second):
+			}
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
 		}
@@ -291,13 +300,17 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 		// we don't want to spam additional carriage returns because the agent may process them
 		// (aider does this), but we do want to retry sending one if nothing's
 		// happening for a while
-		if time.Since(lastCarriageReturnTime) >= 3*time.Second {
-			lastCarriageReturnTime = time.Now()
+		if c.cfg.Clock.Since(lastCarriageReturnTime) >= 3*time.Second {
+			lastCarriageReturnTime = c.cfg.Clock.Now()
 			if _, err := c.cfg.AgentIO.Write([]byte("\r")); err != nil {
 				return false, xerrors.Errorf("failed to write carriage return: %w", err)
 			}
 		}
-		time.Sleep(25 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-util.After(c.cfg.Clock, 25*time.Millisecond):
+		}
 		screen := c.cfg.AgentIO.ReadScreen()
 
 		return screen != screenBeforeCarriageReturn, nil
