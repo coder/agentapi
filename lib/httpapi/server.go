@@ -34,18 +34,20 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router       chi.Router
-	api          huma.API
-	port         int
-	srv          *http.Server
-	mu           sync.RWMutex
-	logger       *slog.Logger
-	conversation *st.PTYConversation
-	agentio      *termexec.Process
-	agentType    mf.AgentType
-	emitter      *EventEmitter
-	chatBasePath string
-	tempDir      string
+	router              chi.Router
+	api                 huma.API
+	port                int
+	srv                 *http.Server
+	mu                  sync.RWMutex
+	logger              *slog.Logger
+	conversation        *st.PTYConversation
+	agentio             *termexec.Process
+	agentType           mf.AgentType
+	emitter             *EventEmitter
+	chatBasePath        string
+	tempDir             string
+	statePersistenceCfg StatePersistenceCfg
+	stateLoadComplete   bool
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -94,14 +96,22 @@ func (s *Server) GetOpenAPI() string {
 // because the action of taking a snapshot takes time too.
 const snapshotInterval = 25 * time.Millisecond
 
+type StatePersistenceCfg struct {
+	StateFile string
+	LoadState bool
+	SaveState bool
+	PidFile   string
+}
+
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
-	InitialPrompt  string
+	AgentType           mf.AgentType
+	Process             *termexec.Process
+	Port                int
+	ChatBasePath        string
+	AllowedHosts        []string
+	AllowedOrigins      []string
+	InitialPrompt       string
+	StatePersistenceCfg StatePersistenceCfg
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -260,16 +270,18 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
 	s := &Server{
-		router:       router,
-		api:          api,
-		port:         config.Port,
-		conversation: conversation,
-		logger:       logger,
-		agentio:      config.Process,
-		agentType:    config.AgentType,
-		emitter:      emitter,
-		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
-		tempDir:      tempDir,
+		router:              router,
+		api:                 api,
+		port:                config.Port,
+		conversation:        conversation,
+		logger:              logger,
+		agentio:             config.Process,
+		agentType:           config.AgentType,
+		emitter:             emitter,
+		chatBasePath:        strings.TrimSuffix(config.ChatBasePath, "/"),
+		tempDir:             tempDir,
+		statePersistenceCfg: config.StatePersistenceCfg,
+		stateLoadComplete:   false,
 	}
 
 	// Register API routes
@@ -336,16 +348,22 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 		for {
 			currentStatus := s.conversation.Status()
 
-			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+			// Send initial prompt & load state when agent becomes stable for the first time
+			if convertStatus(currentStatus) == AgentStatusStable {
 
-				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
+				if !s.stateLoadComplete && s.statePersistenceCfg.LoadState {
+					_, _ = s.conversation.LoadState(s.statePersistenceCfg.StateFile)
+					s.stateLoadComplete = true
+				}
+				if !s.conversation.InitialPromptSent {
+					if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+						s.logger.Error("Failed to send initial prompt", "error", err)
+					} else {
+						s.conversation.InitialPromptSent = true
+						s.conversation.ReadyForInitialPrompt = false
+						currentStatus = st.ConversationStatusChanging
+						s.logger.Info("Initial prompt sent successfully")
+					}
 				}
 			}
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
@@ -587,6 +605,11 @@ func (s *Server) Start() error {
 		Handler: s.router,
 	}
 
+	// Write PID file if configured
+	if err := s.writePIDFile(); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
 	return s.srv.ListenAndServe()
 }
 
@@ -607,6 +630,70 @@ func (s *Server) cleanupTempDir() {
 		s.logger.Error("Failed to clean up temporary directory", "tempDir", s.tempDir, "error", err)
 	} else {
 		s.logger.Info("Cleaned up temporary directory", "tempDir", s.tempDir)
+	}
+}
+
+// writePIDFile writes the current process ID to the configured PID file
+func (s *Server) writePIDFile() error {
+	if s.statePersistenceCfg.PidFile == "" {
+		return nil
+	}
+
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(s.statePersistenceCfg.PidFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return xerrors.Errorf("failed to create PID file directory: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(s.statePersistenceCfg.PidFile, []byte(pidContent), 0o644); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
+	s.logger.Info("Wrote PID file", "pidFile", s.statePersistenceCfg.PidFile, "pid", pid)
+	return nil
+}
+
+// cleanupPIDFile removes the PID file if it exists
+func (s *Server) cleanupPIDFile() {
+	if s.statePersistenceCfg.PidFile == "" {
+		return
+	}
+
+	if err := os.Remove(s.statePersistenceCfg.PidFile); err != nil && !os.IsNotExist(err) {
+		s.logger.Error("Failed to remove PID file", "pidFile", s.statePersistenceCfg.PidFile, "error", err)
+	} else if err == nil {
+		s.logger.Info("Removed PID file", "pidFile", s.statePersistenceCfg.PidFile)
+	}
+}
+
+// saveAndCleanup saves the conversation state and cleans up before shutdown
+func (s *Server) saveAndCleanup(sig os.Signal, process *termexec.Process) {
+	// Save conversation state if configured (synchronously before closing process)
+	s.saveStateIfConfigured(sig.String())
+
+	// Clean up PID file
+	s.cleanupPIDFile()
+
+	// Now close the process
+	if err := process.Close(s.logger, 5*time.Second); err != nil {
+		s.logger.Error("Error closing process", "signal", sig, "error", err)
+	}
+}
+
+// saveStateIfConfigured saves the conversation state if configured
+func (s *Server) saveStateIfConfigured(source string) {
+	if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
+		if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
+			s.logger.Error("Failed to save conversation state", "source", source, "error", err)
+		} else {
+			s.logger.Info("Saved conversation state", "source", source, "stateFile", s.statePersistenceCfg.StateFile)
+		}
+	} else {
+		s.logger.Warn("Save requested but state saving is not configured", "source", source)
 	}
 }
 

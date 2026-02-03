@@ -120,7 +120,7 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 	}
 }
 
-// Assumes that only the last message can change or new messages can be added.
+// UpdateMessagesAndEmitChanges assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
 func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.ConversationMessage) {
 	e.mu.Lock()
