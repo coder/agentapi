@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/util"
+	"github.com/coder/quartz"
 	"golang.org/x/xerrors"
 )
 
@@ -46,8 +47,8 @@ func (p MessagePartText) String() string {
 type PTYConversationConfig struct {
 	AgentType msgfmt.AgentType
 	AgentIO   AgentIO
-	// GetTime returns the current time
-	GetTime func() time.Time
+	// Clock provides time operations for the conversation
+	Clock quartz.Clock
 	// How often to take a snapshot for the stability check
 	SnapshotInterval time.Duration
 	// How long the screen should not change to be considered stable
@@ -111,7 +112,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string
 			{
 				Message: "",
 				Role:    ConversationRoleAgent,
-				Time:    cfg.GetTime(),
+				Time:    cfg.Clock.Now(),
 			},
 		},
 		InitialPrompt:      initialPrompt,
@@ -205,7 +206,7 @@ func (c *PTYConversation) Snapshot(screen string) {
 // caller MUST hold c.lock
 func (c *PTYConversation) snapshotLocked(screen string) {
 	snapshot := screenSnapshot{
-		timestamp: c.cfg.GetTime(),
+		timestamp: c.cfg.Clock.Now(),
 		screen:    screen,
 	}
 	c.snapshotBuffer.Add(snapshot)
@@ -235,7 +236,7 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	}
 
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
-	now := c.cfg.GetTime()
+	now := c.cfg.Clock.Now()
 	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
 
 	if err := c.writeStabilize(context.Background(), messageParts...); err != nil {

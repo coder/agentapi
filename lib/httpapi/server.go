@@ -24,6 +24,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -46,6 +47,7 @@ type Server struct {
 	emitter      *EventEmitter
 	chatBasePath string
 	tempDir      string
+	clock        quartz.Clock
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -102,6 +104,7 @@ type ServerConfig struct {
 	AllowedHosts   []string
 	AllowedOrigins []string
 	InitialPrompt  string
+	Clock          quartz.Clock
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -194,6 +197,10 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	logger := logctx.From(ctx)
 
+	if config.Clock == nil {
+		config.Clock = quartz.NewReal()
+	}
+
 	allowedHosts, err := parseAllowedHosts(config.AllowedHosts)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to parse allowed hosts: %w", err)
@@ -238,11 +245,9 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 
 	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType: config.AgentType,
-		AgentIO:   config.Process,
-		GetTime: func() time.Time {
-			return time.Now()
-		},
+		AgentType:             config.AgentType,
+		AgentIO:               config.Process,
+		Clock:                 config.Clock,
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
@@ -270,6 +275,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
+		clock:        config.Clock,
 	}
 
 	// Register API routes
@@ -333,12 +339,13 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.Start(ctx)
 	go func() {
+		ticker := s.clock.NewTicker(snapshotInterval)
+		defer ticker.Stop()
 		for {
 			currentStatus := s.conversation.Status()
 
 			// Send initial prompt when agent becomes stable for the first time
 			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-
 				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
@@ -351,7 +358,12 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Text())
-			time.Sleep(snapshotInterval)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	}()
 }
