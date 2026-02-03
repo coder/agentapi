@@ -11,13 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -672,59 +670,31 @@ func (s *Server) cleanupPIDFile() {
 	}
 }
 
-// HandleSignals sets up signal handlers for:
-// - SIGTERM, SIGINT, SIGHUP: save conversation state, then close the process
-// - SIGUSR1: save conversation state without exiting
-func (s *Server) HandleSignals(ctx context.Context, process *termexec.Process) {
-	// Handle shutdown signals (SIGTERM, SIGINT, SIGHUP)
-	shutdownCh := make(chan os.Signal, 1)
-	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		sig := <-shutdownCh
-		s.logger.Info("Received shutdown signal, saving state before closing process", "signal", sig)
+// saveAndCleanup saves the conversation state and cleans up before shutdown
+func (s *Server) saveAndCleanup(sig os.Signal, process *termexec.Process) {
+	// Save conversation state if configured (synchronously before closing process)
+	s.saveStateIfConfigured(sig.String())
 
-		// Save conversation state if configured (synchronously before closing process)
-		if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
-			if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
-				s.logger.Error("Failed to save conversation state on signal", "signal", sig, "error", err)
-			} else {
-				s.logger.Info("Saved conversation state on signal", "signal", sig, "stateFile", s.statePersistenceCfg.StateFile)
-			}
+	// Clean up PID file
+	s.cleanupPIDFile()
+
+	// Now close the process
+	if err := process.Close(s.logger, 5*time.Second); err != nil {
+		s.logger.Error("Error closing process", "signal", sig, "error", err)
+	}
+}
+
+// saveStateIfConfigured saves the conversation state if configured
+func (s *Server) saveStateIfConfigured(source string) {
+	if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
+		if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
+			s.logger.Error("Failed to save conversation state", "source", source, "error", err)
+		} else {
+			s.logger.Info("Saved conversation state", "source", source, "stateFile", s.statePersistenceCfg.StateFile)
 		}
-
-		// Clean up PID file
-		s.cleanupPIDFile()
-
-		// Now close the process
-		if err := process.Close(s.logger, 5*time.Second); err != nil {
-			s.logger.Error("Error closing process", "signal", sig, "error", err)
-		}
-	}()
-
-	// Handle SIGUSR1 for save without exit
-	saveOnlyCh := make(chan os.Signal, 1)
-	signal.Notify(saveOnlyCh, syscall.SIGUSR1)
-	go func() {
-		for {
-			select {
-			case <-saveOnlyCh:
-				s.logger.Info("Received SIGUSR1, saving state without exiting")
-
-				// Save conversation state if configured
-				if s.statePersistenceCfg.SaveState && s.statePersistenceCfg.StateFile != "" {
-					if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceCfg.StateFile); err != nil {
-						s.logger.Error("Failed to save conversation state on SIGUSR1", "error", err)
-					} else {
-						s.logger.Info("Saved conversation state on SIGUSR1", "stateFile", s.statePersistenceCfg.StateFile)
-					}
-				} else {
-					s.logger.Warn("SIGUSR1 received but state saving is not configured")
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	} else {
+		s.logger.Warn("Save requested but state saving is not configured", "source", source)
+	}
 }
 
 // registerStaticFileRoutes sets up routes for serving static files
