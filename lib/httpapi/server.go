@@ -350,7 +350,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			}
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.String())
+			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Text())
 			time.Sleep(snapshotInterval)
 		}
 	}()

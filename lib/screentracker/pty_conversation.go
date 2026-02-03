@@ -359,7 +359,7 @@ func (c *PTYConversation) Messages() []ConversationMessage {
 	return result
 }
 
-func (c *PTYConversation) String() string {
+func (c *PTYConversation) Text() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 

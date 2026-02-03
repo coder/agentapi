@@ -55,7 +55,7 @@ type Conversation interface {
 	Snapshot(string)
 	Start(context.Context)
 	Status() ConversationStatus
-	String() string
+	Text() string
 }
 
 type ConversationMessage struct {
