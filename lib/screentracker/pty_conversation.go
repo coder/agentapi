@@ -192,6 +192,9 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
 }
 
+// Snapshot writes the current screen snapshot to the snapshot buffer.
+// ONLY TO BE USED FOR TESTING PURPOSES.
+// TODO(Cian): This method can be removed by mocking AgentIO.
 func (c *PTYConversation) Snapshot(screen string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
