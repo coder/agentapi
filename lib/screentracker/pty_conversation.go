@@ -214,7 +214,7 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	defer c.lock.Unlock()
 
 	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
-		return MessageValidationErrorChanging
+		return ErrMessageValidationChanging
 	}
 
 	var sb strings.Builder
@@ -224,11 +224,11 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	message := sb.String()
 	if message != msgfmt.TrimWhitespace(message) {
 		// msgfmt formatting functions assume this
-		return MessageValidationErrorWhitespace
+		return ErrMessageValidationWhitespace
 	}
 	if message == "" {
 		// writeMessageWithConfirmation requires a non-empty message
-		return MessageValidationErrorEmpty
+		return ErrMessageValidationEmpty
 	}
 
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()

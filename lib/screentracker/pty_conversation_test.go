@@ -165,7 +165,7 @@ func TestMessages(t *testing.T) {
 		c := newConversation()
 		for _, msg := range []string{"123 ", " 123", "123\t\t", "\n123", "123\n\t", " \t123\n\t"} {
 			err := c.Send(st.MessagePartText{Content: msg})
-			assert.Error(t, err, st.MessageValidationErrorWhitespace)
+			assert.ErrorIs(t, err, st.ErrMessageValidationWhitespace)
 		}
 	})
 
@@ -332,18 +332,18 @@ func TestMessages(t *testing.T) {
 			cfg.ScreenStabilityLength = 2 * time.Second
 			cfg.AgentIO = &testAgent{}
 		})
-		assert.Error(t, sendMsg(c, "1"), st.MessageValidationErrorChanging)
+		assert.ErrorIs(t, sendMsg(c, "1"), st.ErrMessageValidationChanging)
 		for range 3 {
 			c.Snapshot("1")
 		}
 		assert.NoError(t, sendMsg(c, "4"))
 		c.Snapshot("2")
-		assert.Error(t, sendMsg(c, "5"), st.MessageValidationErrorChanging)
+		assert.ErrorIs(t, sendMsg(c, "5"), st.ErrMessageValidationChanging)
 	})
 
 	t.Run("send-message-empty-message", func(t *testing.T) {
 		c := newConversation()
-		assert.Error(t, sendMsg(c, ""), st.MessageValidationErrorEmpty)
+		assert.ErrorIs(t, sendMsg(c, ""), st.ErrMessageValidationEmpty)
 	})
 }
 

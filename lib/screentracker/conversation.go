@@ -34,9 +34,9 @@ var ConversationRoleValues = []ConversationRole{
 }
 
 var (
-	MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
-	MessageValidationErrorEmpty      = xerrors.New("message must not be empty")
-	MessageValidationErrorChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
+	ErrMessageValidationWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
+	ErrMessageValidationEmpty      = xerrors.New("message must not be empty")
+	ErrMessageValidationChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
 )
 
 type AgentIO interface {
