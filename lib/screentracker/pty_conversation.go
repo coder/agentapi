@@ -66,7 +66,11 @@ type PTYConversationConfig struct {
 	ReadyForInitialPrompt func(message string) bool
 	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
 	FormatToolCall func(message string) (string, []string)
-	Logger         *slog.Logger
+	// InitialPrompt is the initial prompt to send to the agent once ready
+	InitialPrompt []MessagePart
+	// OnSnapshot is called after each snapshot with current status, messages, and screen content
+	OnSnapshot func(status ConversationStatus, messages []ConversationMessage, screen string)
+	Logger     *slog.Logger
 }
 
 func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
@@ -96,13 +100,15 @@ type PTYConversation struct {
 	InitialPromptSent bool
 	// ReadyForInitialPrompt keeps track if the agent is ready to accept the initial prompt
 	ReadyForInitialPrompt bool
+	// initialPromptReady is closed when the agent is ready to receive the initial prompt
+	initialPromptReady chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
 }
 
 var _ Conversation = &PTYConversation{}
 
-func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string) *PTYConversation {
+func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 	if cfg.Clock == nil {
 		cfg.Clock = quartz.NewReal()
 	}
@@ -118,9 +124,12 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, initialPrompt string
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		InitialPrompt:      initialPrompt,
-		InitialPromptSent:  len(initialPrompt) == 0,
+		InitialPromptSent:  len(cfg.InitialPrompt) == 0,
 		toolCallMessageSet: make(map[string]bool),
+	}
+	// Initialize the channel only if we have an initial prompt to send
+	if len(cfg.InitialPrompt) > 0 {
+		c.initialPromptReady = make(chan struct{})
 	}
 	return c
 }
@@ -129,6 +138,14 @@ func (c *PTYConversation) Start(ctx context.Context) {
 	go func() {
 		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
 		defer ticker.Stop()
+
+		// Create a nil channel if no initial prompt - select will never receive from it
+		initialPromptReady := c.initialPromptReady
+		if initialPromptReady == nil {
+			initialPromptReady = make(chan struct{})
+			// Don't close it - we want it to block forever
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -144,7 +161,27 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				c.lock.Lock()
 				screen := c.cfg.AgentIO.ReadScreen()
 				c.snapshotLocked(screen)
+				status := c.statusLocked()
+				messages := c.messagesLocked()
 				c.lock.Unlock()
+
+				// Call snapshot callback if configured
+				if c.cfg.OnSnapshot != nil {
+					c.cfg.OnSnapshot(status, messages, screen)
+				}
+			case <-initialPromptReady:
+				// Agent is ready for initial prompt - send it
+				c.lock.Lock()
+				if !c.InitialPromptSent && len(c.cfg.InitialPrompt) > 0 {
+					if err := c.sendLocked(c.cfg.InitialPrompt...); err != nil {
+						c.cfg.Logger.Error("failed to send initial prompt", "error", err)
+					} else {
+						c.InitialPromptSent = true
+					}
+				}
+				c.lock.Unlock()
+				// Nil out to prevent this case from triggering again
+				initialPromptReady = nil
 			}
 		}
 	}()
@@ -222,6 +259,11 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	return c.sendLocked(messageParts...)
+}
+
+// sendLocked sends a message to the agent. Caller MUST hold c.lock.
+func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
 	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
 		return ErrMessageValidationChanging
 	}
@@ -356,11 +398,19 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 		}
 	}
 
-	if !c.InitialPromptSent && !c.ReadyForInitialPrompt {
-		if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
-			c.ReadyForInitialPrompt = true
-			return ConversationStatusStable
+	// Handle initial prompt readiness: report "changing" until the prompt is sent
+	// to avoid the status flipping "changing" → "stable" → "changing"
+	if !c.InitialPromptSent {
+		if !c.ReadyForInitialPrompt {
+			if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
+				c.ReadyForInitialPrompt = true
+				// Signal that we're ready - close the channel if it exists
+				if c.initialPromptReady != nil {
+					close(c.initialPromptReady)
+				}
+			}
 		}
+		// Keep returning "changing" until initial prompt is actually sent
 		return ConversationStatusChanging
 	}
 
@@ -371,6 +421,11 @@ func (c *PTYConversation) Messages() []ConversationMessage {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	return c.messagesLocked()
+}
+
+// messagesLocked returns a copy of messages. Caller MUST hold c.lock.
+func (c *PTYConversation) messagesLocked() []ConversationMessage {
 	result := make([]ConversationMessage, len(c.messages))
 	copy(result, c.messages)
 	return result
