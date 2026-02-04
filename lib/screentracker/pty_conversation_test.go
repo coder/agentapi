@@ -40,7 +40,7 @@ func statusTest(t *testing.T, params statusTestParams) {
 		if params.cfg.Clock == nil {
 			params.cfg.Clock = quartz.NewReal()
 		}
-		c := st.NewPTY(ctx, params.cfg, "")
+		c := st.NewPTY(ctx, params.cfg)
 		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
 
 		for i, step := range params.steps {
@@ -147,7 +147,7 @@ func TestMessages(t *testing.T) {
 		for _, opt := range opts {
 			opt(&cfg)
 		}
-		return st.NewPTY(context.Background(), cfg, "")
+		return st.NewPTY(context.Background(), cfg)
 	}
 
 	t.Run("messages are copied", func(t *testing.T) {
@@ -361,19 +361,18 @@ func TestInitialPromptReadiness(t *testing.T) {
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
+		c := st.NewPTY(context.Background(), cfg)
 
 		// Fill buffer with stable snapshots, but agent is not ready
 		c.Snapshot("loading...")
 
 		// Even though screen is stable, status should be changing because agent is not ready
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
 	})
 
-	t.Run("agent becomes ready - status changes to stable", func(t *testing.T) {
+	t.Run("agent becomes ready - status stays changing until initial prompt sent", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		mClock.Set(now)
 		cfg := st.PTYConversationConfig{
@@ -384,21 +383,21 @@ func TestInitialPromptReadiness(t *testing.T) {
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
+		c := st.NewPTY(context.Background(), cfg)
 
 		// Agent not ready initially
 		c.Snapshot("loading...")
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 
-		// Agent becomes ready
+		// Agent becomes ready, but status stays "changing" until initial prompt is sent
+		// This is the new behavior - we don't flip to "stable" then back to "changing"
 		c.Snapshot("ready")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 	})
 
-	t.Run("ready for initial prompt lifecycle: false -> true -> false", func(t *testing.T) {
+	t.Run("initial prompt lifecycle - status stays changing until sent", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		mClock.Set(now)
 		agent := &testAgent{screen: "loading..."}
@@ -410,35 +409,21 @@ func TestInitialPromptReadiness(t *testing.T) {
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
+			InitialPrompt:              []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
 			SkipWritingMessage:         true,
 			SkipSendMessageStatusCheck: true,
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
+		c := st.NewPTY(context.Background(), cfg)
 
-		// Initial state: ReadyForInitialPrompt should be false
+		// Initial state: status should be changing while waiting for readiness
 		c.Snapshot("loading...")
-		assert.False(t, c.ReadyForInitialPrompt, "should start as false")
-		assert.False(t, c.InitialPromptSent)
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 
-		// Agent becomes ready: ReadyForInitialPrompt should become true
+		// Agent becomes ready: status still "changing" until initial prompt is actually sent
+		// This prevents the status from flipping "changing" → "stable" → "changing"
 		agent.screen = "ready"
 		c.Snapshot("ready")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt, "should become true when ready")
-		assert.False(t, c.InitialPromptSent)
-
-		// Send the initial prompt
-		assert.NoError(t, c.Send(st.MessagePartText{Content: "initial prompt here"}))
-
-		// After sending initial prompt: ReadyForInitialPrompt should be set back to false
-		// (simulating what happens in the actual server code)
-		c.InitialPromptSent = true
-		c.ReadyForInitialPrompt = false
-
-		// Verify final state
-		assert.False(t, c.ReadyForInitialPrompt, "should be false after initial prompt sent")
-		assert.True(t, c.InitialPromptSent)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 	})
 
 	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
@@ -452,56 +437,55 @@ func TestInitialPromptReadiness(t *testing.T) {
 			ReadyForInitialPrompt: func(message string) bool {
 				return false // Agent never ready
 			},
+			// No InitialPrompt set - means no need to wait for readiness
 		}
-		// Empty initial prompt means no need to wait for readiness
-		c := st.NewPTY(context.Background(), cfg, "")
+		c := st.NewPTY(context.Background(), cfg)
 
 		c.Snapshot("loading...")
 
 		// Status should be stable because no initial prompt to wait for
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.True(t, c.InitialPromptSent) // Set to true when initial prompt is empty
 	})
 
-	t.Run("initial prompt sent - normal status logic applies", func(t *testing.T) {
+	t.Run("status after initial prompt sent - normal status logic applies", func(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		mClock.Set(now)
 		agent := &testAgent{screen: "ready"}
 		cfg := st.PTYConversationConfig{
 			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
-			ScreenStabilityLength: 0,
+			ScreenStabilityLength: 2 * time.Second, // threshold = 3
 			AgentIO:               agent,
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
+			InitialPrompt:              []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
 			SkipWritingMessage:         true,
 			SkipSendMessageStatusCheck: true,
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
+		c := st.NewPTY(context.Background(), cfg)
 
-		// First, agent becomes ready
+		// Fill buffer to reach stability with "ready" screen
+		// But since initial prompt not sent, status stays "changing"
 		c.Snapshot("ready")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
+		c.Snapshot("ready")
+		c.Snapshot("ready")
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 
-		// Send the initial prompt
-		agent.screen = "processing..."
-		assert.NoError(t, c.Send(st.MessagePartText{Content: "initial prompt here"}))
-
-		// Mark initial prompt as sent (simulating what the server does)
+		// Simulate initial prompt being sent (this is normally done by Start() goroutine)
 		c.InitialPromptSent = true
-		c.ReadyForInitialPrompt = false
 
-		// Now test that status logic works normally after initial prompt is sent
-		c.Snapshot("processing...")
-
-		// Status should be stable because initial prompt was already sent
-		// and the readiness check is bypassed
+		// Now that initial prompt is marked as sent, and screen is stable, status becomes stable
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.True(t, c.InitialPromptSent)
+
+		// After screen changes, status becomes changing
+		agent.screen = "processing..."
+		c.Snapshot("processing...")
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+
+		// After screen is stable again (3 identical snapshots), status becomes stable
+		c.Snapshot("processing...")
+		c.Snapshot("processing...")
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 }
