@@ -295,6 +295,11 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	// Register API routes
 	s.registerRoutes()
 
+	// Start the conversation polling loop if we have a process
+	if config.Process != nil {
+		s.conversation.Start(ctx)
+	}
+
 	return s, nil
 }
 
@@ -348,11 +353,6 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	ctx.SetHeader("Connection", "keep-alive")
 
 	next(ctx)
-}
-
-// Conversation returns the underlying PTYConversation for direct access.
-func (s *Server) Conversation() *st.PTYConversation {
-	return s.conversation
 }
 
 // registerRoutes sets up all API endpoints
