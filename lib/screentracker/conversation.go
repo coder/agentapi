@@ -2,55 +2,26 @@ package screentracker
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/util"
-	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/xerrors"
 )
 
-type screenSnapshot struct {
-	timestamp time.Time
-	screen    string
-}
+type ConversationStatus string
 
-type AgentIO interface {
-	Write(data []byte) (int, error)
-	ReadScreen() string
-}
-
-type ConversationConfig struct {
-	AgentType msgfmt.AgentType
-	AgentIO   AgentIO
-	// Clock provides time operations for the conversation
-	Clock quartz.Clock
-	// How often to take a snapshot for the stability check
-	SnapshotInterval time.Duration
-	// How long the screen should not change to be considered stable
-	ScreenStabilityLength time.Duration
-	// Function to format the messages received from the agent
-	// userInput is the last user message
-	FormatMessage func(message string, userInput string) string
-	// SkipWritingMessage skips the writing of a message to the agent.
-	// This is used in tests
-	SkipWritingMessage bool
-	// SkipSendMessageStatusCheck skips the check for whether the message can be sent.
-	// This is used in tests
-	SkipSendMessageStatusCheck bool
-	// ReadyForInitialPrompt detects whether the agent has initialized and is ready to accept the initial prompt
-	ReadyForInitialPrompt func(message string) bool
-	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
-	FormatToolCall func(message string) (string, []string)
-	Logger         *slog.Logger
-}
+const (
+	ConversationStatusChanging     ConversationStatus = "changing"
+	ConversationStatusStable       ConversationStatus = "stable"
+	ConversationStatusInitializing ConversationStatus = "initializing"
+)
 
 type ConversationRole string
+
+func (c ConversationRole) Schema(r huma.Registry) *huma.Schema {
+	return util.OpenAPISchema(r, "ConversationRole", ConversationRoleValues)
+}
 
 const (
 	ConversationRoleUser  ConversationRole = "user"
@@ -62,212 +33,15 @@ var ConversationRoleValues = []ConversationRole{
 	ConversationRoleAgent,
 }
 
-func (c ConversationRole) Schema(r huma.Registry) *huma.Schema {
-	return util.OpenAPISchema(r, "ConversationRole", ConversationRoleValues)
-}
-
-type ConversationMessage struct {
-	Id      int
-	Message string
-	Role    ConversationRole
-	Time    time.Time
-}
-
-type Conversation struct {
-	cfg ConversationConfig
-	// How many stable snapshots are required to consider the screen stable
-	stableSnapshotsThreshold    int
-	snapshotBuffer              *RingBuffer[screenSnapshot]
-	messages                    []ConversationMessage
-	screenBeforeLastUserMessage string
-	lock                        sync.Mutex
-	// InitialPrompt is the initial prompt passed to the agent
-	InitialPrompt string
-	// InitialPromptSent keeps track if the InitialPrompt has been successfully sent to the agents
-	InitialPromptSent bool
-	// ReadyForInitialPrompt keeps track if the agent is ready to accept the initial prompt
-	ReadyForInitialPrompt bool
-	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
-	toolCallMessageSet map[string]bool
-}
-
-type ConversationStatus string
-
-const (
-	ConversationStatusChanging     ConversationStatus = "changing"
-	ConversationStatusStable       ConversationStatus = "stable"
-	ConversationStatusInitializing ConversationStatus = "initializing"
+var (
+	ErrMessageValidationWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
+	ErrMessageValidationEmpty      = xerrors.New("message must not be empty")
+	ErrMessageValidationChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
 )
 
-func getStableSnapshotsThreshold(cfg ConversationConfig) int {
-	length := cfg.ScreenStabilityLength.Milliseconds()
-	interval := cfg.SnapshotInterval.Milliseconds()
-	threshold := int(length / interval)
-	if length%interval != 0 {
-		threshold++
-	}
-	return threshold + 1
-}
-
-func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt string) *Conversation {
-	if cfg.Clock == nil {
-		cfg.Clock = quartz.NewReal()
-	}
-	threshold := getStableSnapshotsThreshold(cfg)
-	c := &Conversation{
-		cfg:                      cfg,
-		stableSnapshotsThreshold: threshold,
-		snapshotBuffer:           NewRingBuffer[screenSnapshot](threshold),
-		messages: []ConversationMessage{
-			{
-				Message: "",
-				Role:    ConversationRoleAgent,
-				Time:    cfg.Clock.Now(),
-			},
-		},
-		InitialPrompt:      initialPrompt,
-		InitialPromptSent:  len(initialPrompt) == 0,
-		toolCallMessageSet: make(map[string]bool),
-	}
-	return c
-}
-
-func (c *Conversation) StartSnapshotLoop(ctx context.Context) {
-	go func() {
-		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				// It's important that we hold the lock while reading the screen.
-				// There's a race condition that occurs without it:
-				// 1. The screen is read
-				// 2. Independently, SendMessage is called and takes the lock.
-				// 3. AddSnapshot is called and waits on the lock.
-				// 4. SendMessage modifies the terminal state, releases the lock
-				// 5. AddSnapshot adds a snapshot from a stale screen
-				c.lock.Lock()
-				screen := c.cfg.AgentIO.ReadScreen()
-				c.addSnapshotInner(screen)
-				c.lock.Unlock()
-			}
-		}
-	}()
-}
-
-func FindNewMessage(oldScreen, newScreen string, agentType msgfmt.AgentType) string {
-	oldLines := strings.Split(oldScreen, "\n")
-	newLines := strings.Split(newScreen, "\n")
-	oldLinesMap := make(map[string]bool)
-
-	// -1 indicates no header
-	dynamicHeaderEnd := -1
-
-	// Skip header lines for Opencode agent type to avoid false positives
-	// The header contains dynamic content (token count, context percentage, cost)
-	// that changes between screens, causing line comparison mismatches:
-	//
-	// ┃  # Getting Started with Claude CLI                                   ┃
-	// ┃  /share to create a shareable link                 12.6K/6% ($0.05)  ┃
-	if len(newLines) >= 2 && agentType == msgfmt.AgentTypeOpencode {
-		dynamicHeaderEnd = 2
-	}
-
-	for _, line := range oldLines {
-		oldLinesMap[line] = true
-	}
-	firstNonMatchingLine := len(newLines)
-	for i, line := range newLines[dynamicHeaderEnd+1:] {
-		if !oldLinesMap[line] {
-			firstNonMatchingLine = i
-			break
-		}
-	}
-	newSectionLines := newLines[firstNonMatchingLine:]
-
-	// remove leading and trailing lines which are empty or have only whitespace
-	startLine := 0
-	endLine := len(newSectionLines) - 1
-	for i := 0; i < len(newSectionLines); i++ {
-		if strings.TrimSpace(newSectionLines[i]) != "" {
-			startLine = i
-			break
-		}
-	}
-	for i := len(newSectionLines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(newSectionLines[i]) != "" {
-			endLine = i
-			break
-		}
-	}
-	return strings.Join(newSectionLines[startLine:endLine+1], "\n")
-}
-
-func (c *Conversation) lastMessage(role ConversationRole) ConversationMessage {
-	for i := len(c.messages) - 1; i >= 0; i-- {
-		if c.messages[i].Role == role {
-			return c.messages[i]
-		}
-	}
-	return ConversationMessage{}
-}
-
-// This function assumes that the caller holds the lock
-func (c *Conversation) updateLastAgentMessage(screen string, timestamp time.Time) {
-	agentMessage := FindNewMessage(c.screenBeforeLastUserMessage, screen, c.cfg.AgentType)
-	lastUserMessage := c.lastMessage(ConversationRoleUser)
-	var toolCalls []string
-	if c.cfg.FormatMessage != nil {
-		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
-	}
-	if c.cfg.FormatToolCall != nil {
-		agentMessage, toolCalls = c.cfg.FormatToolCall(agentMessage)
-	}
-	for _, toolCall := range toolCalls {
-		if c.toolCallMessageSet[toolCall] == false {
-			c.toolCallMessageSet[toolCall] = true
-			c.cfg.Logger.Info("Tool call detected", "toolCall", toolCall)
-		}
-	}
-	shouldCreateNewMessage := len(c.messages) == 0 || c.messages[len(c.messages)-1].Role == ConversationRoleUser
-	lastAgentMessage := c.lastMessage(ConversationRoleAgent)
-	if lastAgentMessage.Message == agentMessage {
-		return
-	}
-	conversationMessage := ConversationMessage{
-		Message: agentMessage,
-		Role:    ConversationRoleAgent,
-		Time:    timestamp,
-	}
-	if shouldCreateNewMessage {
-		c.messages = append(c.messages, conversationMessage)
-
-		// Cleanup
-		c.toolCallMessageSet = make(map[string]bool)
-
-	} else {
-		c.messages[len(c.messages)-1] = conversationMessage
-	}
-	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
-}
-
-// assumes the caller holds the lock
-func (c *Conversation) addSnapshotInner(screen string) {
-	snapshot := screenSnapshot{
-		timestamp: c.cfg.Clock.Now(),
-		screen:    screen,
-	}
-	c.snapshotBuffer.Add(snapshot)
-	c.updateLastAgentMessage(screen, snapshot.timestamp)
-}
-
-func (c *Conversation) AddSnapshot(screen string) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.addSnapshotInner(screen)
+type AgentIO interface {
+	Write(data []byte) (int, error)
+	ReadScreen() string
 }
 
 type MessagePart interface {
@@ -275,202 +49,25 @@ type MessagePart interface {
 	String() string
 }
 
-type MessagePartText struct {
-	Content string
-	Alias   string
-	Hidden  bool
+// Conversation represents a conversation between a user and an agent.
+// It is intended as the primary interface for interacting with a session.
+// Implementations must support the following capabilities:
+//   - Fetching all messages between the user and agent,
+//   - Sending a message to the agent,
+//   - Starting a background loop to update the conversation state, if required,
+//   - Fetching the status of the conversation,
+//   - Returning a textual representation of the conversation "screen" (used for notifying subscribers of updates to the conversation).
+type Conversation interface {
+	Messages() []ConversationMessage
+	Send(...MessagePart) error
+	Start(context.Context)
+	Status() ConversationStatus
+	Text() string
 }
 
-func (p MessagePartText) Do(writer AgentIO) error {
-	_, err := writer.Write([]byte(p.Content))
-	return err
-}
-
-func (p MessagePartText) String() string {
-	if p.Hidden {
-		return ""
-	}
-	if p.Alias != "" {
-		return p.Alias
-	}
-	return p.Content
-}
-
-func PartsToString(parts ...MessagePart) string {
-	var sb strings.Builder
-	for _, part := range parts {
-		sb.WriteString(part.String())
-	}
-	return sb.String()
-}
-
-func ExecuteParts(writer AgentIO, parts ...MessagePart) error {
-	for _, part := range parts {
-		if err := part.Do(writer); err != nil {
-			return xerrors.Errorf("failed to write message part: %w", err)
-		}
-	}
-	return nil
-}
-
-func (c *Conversation) writeMessageWithConfirmation(ctx context.Context, messageParts ...MessagePart) error {
-	if c.cfg.SkipWritingMessage {
-		return nil
-	}
-	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
-	if err := ExecuteParts(c.cfg.AgentIO, messageParts...); err != nil {
-		return xerrors.Errorf("failed to write message: %w", err)
-	}
-	// wait for the screen to stabilize after the message is written
-	if err := util.WaitFor(ctx, util.WaitTimeout{
-		Timeout:     15 * time.Second,
-		MinInterval: 50 * time.Millisecond,
-		InitialWait: true,
-		Clock:       c.cfg.Clock,
-	}, func() (bool, error) {
-		screen := c.cfg.AgentIO.ReadScreen()
-		if screen != screenBeforeMessage {
-			<-util.After(c.cfg.Clock, time.Second)
-			newScreen := c.cfg.AgentIO.ReadScreen()
-			return newScreen == screen, nil
-		}
-		return false, nil
-	}); err != nil {
-		return xerrors.Errorf("failed to wait for screen to stabilize: %w", err)
-	}
-
-	// wait for the screen to change after the carriage return is written
-	screenBeforeCarriageReturn := c.cfg.AgentIO.ReadScreen()
-	lastCarriageReturnTime := time.Time{}
-	if err := util.WaitFor(ctx, util.WaitTimeout{
-		Timeout:     15 * time.Second,
-		MinInterval: 25 * time.Millisecond,
-		Clock:       c.cfg.Clock,
-	}, func() (bool, error) {
-		// we don't want to spam additional carriage returns because the agent may process them
-		// (aider does this), but we do want to retry sending one if nothing's
-		// happening for a while
-		if c.cfg.Clock.Since(lastCarriageReturnTime) >= 3*time.Second {
-			lastCarriageReturnTime = c.cfg.Clock.Now()
-			if _, err := c.cfg.AgentIO.Write([]byte("\r")); err != nil {
-				return false, xerrors.Errorf("failed to write carriage return: %w", err)
-			}
-		}
-		<-util.After(c.cfg.Clock, 25*time.Millisecond)
-		screen := c.cfg.AgentIO.ReadScreen()
-
-		return screen != screenBeforeCarriageReturn, nil
-	}); err != nil {
-		return xerrors.Errorf("failed to wait for processing to start: %w", err)
-	}
-
-	return nil
-}
-
-var (
-	MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
-	MessageValidationErrorEmpty      = xerrors.New("message must not be empty")
-	MessageValidationErrorChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
-)
-
-func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusInner() != ConversationStatusStable {
-		return MessageValidationErrorChanging
-	}
-
-	message := PartsToString(messageParts...)
-	if message != msgfmt.TrimWhitespace(message) {
-		// msgfmt formatting functions assume this
-		return MessageValidationErrorWhitespace
-	}
-	if message == "" {
-		// writeMessageWithConfirmation requires a non-empty message
-		return MessageValidationErrorEmpty
-	}
-
-	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
-	now := c.cfg.Clock.Now()
-	c.updateLastAgentMessage(screenBeforeMessage, now)
-
-	if err := c.writeMessageWithConfirmation(context.Background(), messageParts...); err != nil {
-		return xerrors.Errorf("failed to send message: %w", err)
-	}
-
-	c.screenBeforeLastUserMessage = screenBeforeMessage
-	c.messages = append(c.messages, ConversationMessage{
-		Id:      len(c.messages),
-		Message: message,
-		Role:    ConversationRoleUser,
-		Time:    now,
-	})
-	return nil
-}
-
-// Assumes that the caller holds the lock
-func (c *Conversation) statusInner() ConversationStatus {
-	// sanity checks
-	if c.snapshotBuffer.Capacity() != c.stableSnapshotsThreshold {
-		panic(fmt.Sprintf("snapshot buffer capacity %d is not equal to snapshot threshold %d. can't check stability", c.snapshotBuffer.Capacity(), c.stableSnapshotsThreshold))
-	}
-	if c.stableSnapshotsThreshold == 0 {
-		panic("stable snapshots threshold is 0. can't check stability")
-	}
-
-	snapshots := c.snapshotBuffer.GetAll()
-	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == ConversationRoleUser {
-		// if the last message is a user message then the snapshot loop hasn't
-		// been triggered since the last user message, and we should assume
-		// the screen is changing
-		return ConversationStatusChanging
-	}
-
-	if len(snapshots) != c.stableSnapshotsThreshold {
-		return ConversationStatusInitializing
-	}
-
-	for i := 1; i < len(snapshots); i++ {
-		if snapshots[0].screen != snapshots[i].screen {
-			return ConversationStatusChanging
-		}
-	}
-
-	if !c.InitialPromptSent && !c.ReadyForInitialPrompt {
-		if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
-			c.ReadyForInitialPrompt = true
-			return ConversationStatusStable
-		}
-		return ConversationStatusChanging
-	}
-
-	return ConversationStatusStable
-}
-
-func (c *Conversation) Status() ConversationStatus {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	return c.statusInner()
-}
-
-func (c *Conversation) Messages() []ConversationMessage {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	result := make([]ConversationMessage, len(c.messages))
-	copy(result, c.messages)
-	return result
-}
-
-func (c *Conversation) Screen() string {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	snapshots := c.snapshotBuffer.GetAll()
-	if len(snapshots) == 0 {
-		return ""
-	}
-	return snapshots[len(snapshots)-1].screen
+type ConversationMessage struct {
+	Id      int
+	Message string
+	Role    ConversationRole
+	Time    time.Time
 }

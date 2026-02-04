@@ -41,7 +41,7 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.Conversation
+	conversation *st.PTYConversation
 	agentio      *termexec.Process
 	agentType    mf.AgentType
 	emitter      *EventEmitter
@@ -244,7 +244,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
-	conversation := st.NewConversation(ctx, st.ConversationConfig{
+	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
 		AgentType:             config.AgentType,
 		AgentIO:               config.Process,
 		Clock:                 config.Clock,
@@ -337,7 +337,7 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 }
 
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.StartSnapshotLoop(ctx)
+	s.conversation.Start(ctx)
 	go func() {
 		ticker := s.clock.NewTicker(snapshotInterval)
 		defer ticker.Stop()
@@ -346,7 +346,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 			// Send initial prompt when agent becomes stable for the first time
 			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
 					s.conversation.InitialPromptSent = true
@@ -357,7 +357,7 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			}
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
+			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Text())
 
 			select {
 			case <-ctx.Done():
@@ -461,7 +461,7 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 
 	switch input.Body.Type {
 	case MessageTypeUser:
-		if err := s.conversation.SendMessage(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
+		if err := s.conversation.Send(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
 			return nil, xerrors.Errorf("failed to send message: %w", err)
 		}
 	case MessageTypeRaw:
