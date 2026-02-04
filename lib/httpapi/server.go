@@ -244,6 +244,15 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
+	emitter := NewEventEmitter(1024)
+	agentType := config.AgentType
+
+	// Format initial prompt into message parts if provided
+	var initialPrompt []st.MessagePart
+	if config.InitialPrompt != "" {
+		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
+	}
+
 	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
 		AgentType:             config.AgentType,
 		AgentIO:               config.Process,
@@ -253,9 +262,14 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		FormatMessage:         formatMessage,
 		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 		FormatToolCall:        formatToolCall,
-		Logger:                logger,
-	}, config.InitialPrompt)
-	emitter := NewEventEmitter(1024)
+		InitialPrompt:         initialPrompt,
+		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
+			emitter.UpdateStatusAndEmitChanges(status, agentType)
+			emitter.UpdateMessagesAndEmitChanges(messages)
+			emitter.UpdateScreenAndEmitChanges(screen)
+		},
+		Logger: logger,
+	})
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -338,34 +352,6 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
 	s.conversation.Start(ctx)
-	go func() {
-		ticker := s.clock.NewTicker(snapshotInterval)
-		defer ticker.Stop()
-		for {
-			currentStatus := s.conversation.Status()
-
-			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
-				}
-			}
-			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Text())
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
 }
 
 // registerRoutes sets up all API endpoints
