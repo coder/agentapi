@@ -96,10 +96,8 @@ type PTYConversation struct {
 
 	// InitialPrompt is the initial prompt passed to the agent
 	InitialPrompt string
-	// InitialPromptSent keeps track if the InitialPrompt has been successfully sent to the agents
-	InitialPromptSent bool
-	// ReadyForInitialPrompt keeps track if the agent is ready to accept the initial prompt
-	ReadyForInitialPrompt bool
+	// initialPromptSent keeps track if the InitialPrompt has been successfully sent to the agent
+	initialPromptSent bool
 	// initialPromptReady is closed when the agent is ready to receive the initial prompt
 	initialPromptReady chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
@@ -124,7 +122,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		InitialPromptSent:  len(cfg.InitialPrompt) == 0,
+		initialPromptSent:  len(cfg.InitialPrompt) == 0,
 		toolCallMessageSet: make(map[string]bool),
 	}
 	// Initialize the channel only if we have an initial prompt to send
@@ -172,11 +170,11 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			case <-initialPromptReady:
 				// Agent is ready for initial prompt - send it
 				c.lock.Lock()
-				if !c.InitialPromptSent && len(c.cfg.InitialPrompt) > 0 {
+				if !c.initialPromptSent && len(c.cfg.InitialPrompt) > 0 {
 					if err := c.sendLocked(true, c.cfg.InitialPrompt...); err != nil {
 						c.cfg.Logger.Error("failed to send initial prompt", "error", err)
 					} else {
-						c.InitialPromptSent = true
+						c.initialPromptSent = true
 					}
 				}
 				c.lock.Unlock()
@@ -402,15 +400,11 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 
 	// Handle initial prompt readiness: report "changing" until the prompt is sent
 	// to avoid the status flipping "changing" → "stable" → "changing"
-	if !c.InitialPromptSent {
-		if !c.ReadyForInitialPrompt {
-			if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
-				c.ReadyForInitialPrompt = true
-				// Signal that we're ready - close the channel if it exists
-				if c.initialPromptReady != nil {
-					close(c.initialPromptReady)
-				}
-			}
+	if !c.initialPromptSent {
+		// Check if agent is ready for initial prompt and signal if so
+		if c.initialPromptReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
+			close(c.initialPromptReady)
+			c.initialPromptReady = nil // Prevent double-close
 		}
 		// Keep returning "changing" until initial prompt is actually sent
 		return ConversationStatusChanging
