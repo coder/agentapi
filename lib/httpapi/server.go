@@ -350,8 +350,9 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	next(ctx)
 }
 
-func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.Start(ctx)
+// Conversation returns the underlying PTYConversation for direct access.
+func (s *Server) Conversation() *st.PTYConversation {
+	return s.conversation
 }
 
 // registerRoutes sets up all API endpoints
