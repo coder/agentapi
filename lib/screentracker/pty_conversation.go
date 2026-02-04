@@ -171,7 +171,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				// Agent is ready for initial prompt - send it
 				c.lock.Lock()
 				if !c.initialPromptSent && len(c.cfg.InitialPrompt) > 0 {
-					if err := c.sendLocked(true, c.cfg.InitialPrompt...); err != nil {
+					if err := c.sendLocked(c.cfg.InitialPrompt...); err != nil {
 						c.cfg.Logger.Error("failed to send initial prompt", "error", err)
 					} else {
 						c.initialPromptSent = true
@@ -257,17 +257,15 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	return c.sendLocked(false, messageParts...)
-}
-
-// sendLocked sends a message to the agent. Caller MUST hold c.lock.
-// skipStatusCheck bypasses the status check - used for initial prompt sending
-// where status is "changing" until the prompt is sent.
-func (c *PTYConversation) sendLocked(skipStatusCheck bool, messageParts ...MessagePart) error {
-	if !skipStatusCheck && !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
+	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
 		return ErrMessageValidationChanging
 	}
 
+	return c.sendLocked(messageParts...)
+}
+
+// sendLocked sends a message to the agent. Caller MUST hold c.lock.
+func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
 	var sb strings.Builder
 	for _, part := range messageParts {
 		sb.WriteString(part.String())
