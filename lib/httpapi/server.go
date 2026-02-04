@@ -263,6 +263,9 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 		FormatToolCall:        formatToolCall,
 		InitialPrompt:         initialPrompt,
+		// OnSnapshot uses a callback rather than passing the emitter directly
+		// to keep the screentracker package decoupled from httpapi concerns.
+		// This preserves clean package boundaries and avoids import cycles.
 		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
 			emitter.UpdateStatusAndEmitChanges(status, agentType)
 			emitter.UpdateMessagesAndEmitChanges(messages)
@@ -295,7 +298,12 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	// Register API routes
 	s.registerRoutes()
 
-	// Start the conversation polling loop if we have a process
+	// Start the conversation polling loop if we have a process.
+	// Process is nil only when --print-openapi is used (no agent runs).
+	// The process is already running at this point - termexec.StartProcess()
+	// blocks until the PTY is created and the process is active. Agent
+	// readiness (waiting for the prompt) is handled asynchronously inside
+	// conversation.Start() via ReadyForInitialPrompt.
 	if config.Process != nil {
 		s.conversation.Start(ctx)
 	}
