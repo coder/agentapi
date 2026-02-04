@@ -137,12 +137,8 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
 		defer ticker.Stop()
 
-		// Create a nil channel if no initial prompt - select will never receive from it
+		// If nil, the select case below is simply never chosen (nil channels are skipped in select)
 		initialPromptReady := c.initialPromptReady
-		if initialPromptReady == nil {
-			initialPromptReady = make(chan struct{})
-			// Don't close it - we want it to block forever
-		}
 
 		for {
 			select {
