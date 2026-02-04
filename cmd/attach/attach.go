@@ -129,7 +129,46 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 	return nil
 }
 
+
+// statusResponse is used to parse the /status endpoint response.
+// The ACPMode field may not be present on older servers.
+type statusResponse struct {
+	Status    string `json:"status"`
+	AgentType string `json:"agent_type"`
+	ACPMode   bool   `json:"acp_mode"`
+}
+
+func checkACPMode(remoteUrl string) error {
+	resp, err := http.Get(remoteUrl + "/status")
+	if err != nil {
+		return xerrors.Errorf("failed to check server status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Server doesn't support /status or had an error, continue anyway
+		return nil
+	}
+
+	var status statusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		// Can't parse response, continue anyway
+		return nil
+	}
+
+	if status.ACPMode {
+		return xerrors.New("attach is not supported in ACP mode. The server is running with --experimental-acp which uses JSON-RPC instead of terminal emulation.")
+	}
+
+	return nil
+}
+
 func runAttach(remoteUrl string) error {
+	// Check if server is running in ACP mode (attach not supported)
+	if err := checkACPMode(remoteUrl); err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stdin := int(os.Stdin.Fd())

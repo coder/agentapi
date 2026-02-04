@@ -304,9 +304,6 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
     } finally {
       if (type === "user") {
-        setMessages((prevMessages) =>
-          prevMessages.filter((m) => !isDraftMessage(m))
-        );
         setLoading(false);
       }
     }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/agentapi/x/acpio"
 )
 
 type SetupProcessConfig struct {
@@ -58,3 +60,56 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 
 	return process, nil
 }
+
+type SetupACPConfig struct {
+	Program     string
+	ProgramArgs []string
+}
+
+// SetupACPResult contains the result of setting up an ACP process.
+type SetupACPResult struct {
+	AgentIO *acpio.ACPAgentIO
+	Wait    func() error // Calls cmd.Wait() and returns exit error
+}
+
+func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, error) {
+	logger := logctx.From(ctx)
+
+	args := config.ProgramArgs
+	logger.Info(fmt.Sprintf("Running (ACP): %s %s", config.Program, strings.Join(args, " ")))
+
+	cmd := exec.CommandContext(ctx, config.Program, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start process: %w", err)
+	}
+
+	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout, logger)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		return nil, fmt.Errorf("failed to initialize ACP connection: %w", err)
+	}
+
+	go func() {
+		<-ctx.Done()
+		logger.Info("Context done, closing ACP agent")
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = cmd.Process.Kill()
+	}()
+
+	return &SetupACPResult{
+		AgentIO: agentIO,
+		Wait:    cmd.Wait,
+	}, nil
+}
+

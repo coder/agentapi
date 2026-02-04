@@ -24,6 +24,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/agentapi/x/acpio"
 	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -42,12 +43,13 @@ type Server struct {
 	mu           sync.RWMutex
 	logger       *slog.Logger
 	conversation st.Conversation
-	agentio      *termexec.Process
+	agentio      st.AgentIO
 	agentType    mf.AgentType
 	emitter      *EventEmitter
 	chatBasePath string
 	tempDir      string
 	clock        quartz.Clock
+	transport    string
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -98,7 +100,8 @@ const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
 	AgentType      mf.AgentType
-	Process        *termexec.Process
+	AgentIO        st.AgentIO
+	Transport      string
 	Port           int
 	ChatBasePath   string
 	AllowedHosts   []string
@@ -252,18 +255,34 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
 	}
 
-	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType:             config.AgentType,
-		AgentIO:               config.Process,
-		Clock:                 config.Clock,
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
-		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
-		FormatToolCall:        formatToolCall,
-		InitialPrompt:         initialPrompt,
-		Logger:                logger,
-	}, emitter)
+	// Create appropriate conversation based on transport type
+	var conversation st.Conversation
+	if config.Transport == "acp" {
+		// For ACP, cast AgentIO to *acpio.ACPAgentIO
+		acpIO, ok := config.AgentIO.(*acpio.ACPAgentIO)
+		if !ok {
+			return nil, fmt.Errorf("ACP transport requires ACPAgentIO")
+		}
+		conversation = acpio.NewACPConversation(acpIO, logger, initialPrompt, emitter, config.Clock)
+	} else {
+		// Default to PTY transport
+		proc, ok := config.AgentIO.(*termexec.Process)
+		if !ok && config.AgentIO != nil {
+			return nil, fmt.Errorf("PTY transport requires termexec.Process")
+		}
+		conversation = st.NewPTY(ctx, st.PTYConversationConfig{
+			AgentType:             config.AgentType,
+			AgentIO:               proc,
+			Clock:                 config.Clock,
+			SnapshotInterval:      snapshotInterval,
+			ScreenStabilityLength: 2 * time.Second,
+			FormatMessage:         formatMessage,
+			ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
+			FormatToolCall:        formatToolCall,
+			InitialPrompt:         initialPrompt,
+			Logger:                logger,
+		}, emitter)
+	}
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -278,24 +297,25 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		port:         config.Port,
 		conversation: conversation,
 		logger:       logger,
-		agentio:      config.Process,
+		agentio:      config.AgentIO,
 		agentType:    config.AgentType,
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
 		clock:        config.Clock,
+		transport:    config.Transport,
 	}
 
 	// Register API routes
 	s.registerRoutes()
 
-	// Start the conversation polling loop if we have a process.
-	// Process is nil only when --print-openapi is used (no agent runs).
-	// The process is already running at this point - termexec.StartProcess()
-	// blocks until the PTY is created and the process is active. Agent
-	// readiness (waiting for the prompt) is handled asynchronously inside
-	// conversation.Start() via ReadyForInitialPrompt.
-	if config.Process != nil {
+	// Start the conversation polling loop if we have an agent IO.
+	// AgentIO is nil only when --print-openapi is used (no agent runs).
+	// For PTY transport, the process is already running at this point -
+	// termexec.StartProcess() blocks until the PTY is created and the process
+	// is active. Agent readiness (waiting for the prompt) is handled
+	// asynchronously inside conversation.Start() via ReadyForInitialPrompt.
+	if config.AgentIO != nil {
 		s.conversation.Start(ctx)
 	}
 

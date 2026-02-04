@@ -6,6 +6,7 @@ require (
 	github.com/ActiveState/termtest/xpty v0.6.0
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/charmbracelet/bubbletea v1.3.4
+	github.com/coder/acp-go-sdk v0.6.3
 	github.com/coder/agentapi-sdk-go v0.0.0-20250505131810-560d1d88d225
 	github.com/coder/quartz v0.1.2
 	github.com/danielgtaylor/huma/v2 v2.32.0
