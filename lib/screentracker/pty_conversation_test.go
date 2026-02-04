@@ -447,7 +447,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
-	t.Run("status after initial prompt sent - normal status logic applies", func(t *testing.T) {
+	t.Run("no initial prompt configured - normal status logic applies", func(t *testing.T) {
+		// When no InitialPrompt is configured, the conversation behaves as if
+		// the initial prompt has already been sent, so normal status logic applies.
 		mClock := quartz.NewMock(t)
 		mClock.Set(now)
 		agent := &testAgent{screen: "ready"}
@@ -456,26 +458,17 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 2 * time.Second, // threshold = 3
 			AgentIO:               agent,
-			ReadyForInitialPrompt: func(message string) bool {
-				return message == "ready"
-			},
-			InitialPrompt:              []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
+			// No InitialPrompt configured - normal status logic applies immediately
 			SkipWritingMessage:         true,
 			SkipSendMessageStatusCheck: true,
 		}
 		c := st.NewPTY(context.Background(), cfg)
 
 		// Fill buffer to reach stability with "ready" screen
-		// But since initial prompt not sent, status stays "changing"
 		c.Snapshot("ready")
 		c.Snapshot("ready")
 		c.Snapshot("ready")
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
-
-		// Simulate initial prompt being sent (this is normally done by Start() goroutine)
-		c.InitialPromptSent = true
-
-		// Now that initial prompt is marked as sent, and screen is stable, status becomes stable
+		// Since no initial prompt is configured, screen stability determines status
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// After screen changes, status becomes changing
