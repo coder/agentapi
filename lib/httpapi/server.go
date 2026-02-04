@@ -245,7 +245,6 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 
 	emitter := NewEventEmitter(1024)
-	agentType := config.AgentType
 
 	// Format initial prompt into message parts if provided
 	var initialPrompt []st.MessagePart
@@ -267,7 +266,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		// to keep the screentracker package decoupled from httpapi concerns.
 		// This preserves clean package boundaries and avoids import cycles.
 		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
-			emitter.UpdateStatusAndEmitChanges(status, agentType)
+			emitter.UpdateStatusAndEmitChanges(status, config.AgentType)
 			emitter.UpdateMessagesAndEmitChanges(messages)
 			emitter.UpdateScreenAndEmitChanges(screen)
 		},
