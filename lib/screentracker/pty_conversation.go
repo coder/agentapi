@@ -94,9 +94,7 @@ type PTYConversation struct {
 	screenBeforeLastUserMessage string
 	lock                        sync.Mutex
 
-	// InitialPrompt is the initial prompt passed to the agent
-	InitialPrompt string
-	// initialPromptSent keeps track if the InitialPrompt has been successfully sent to the agent
+	// initialPromptSent keeps track if the initial prompt has been successfully sent to the agent
 	initialPromptSent bool
 	// initialPromptReady is closed when the agent is ready to receive the initial prompt
 	initialPromptReady chan struct{}
