@@ -41,7 +41,7 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.PTYConversation
+	conversation st.Conversation
 	agentio      *termexec.Process
 	agentType    mf.AgentType
 	emitter      *EventEmitter
