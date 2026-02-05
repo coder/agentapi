@@ -129,6 +129,13 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 		c.agentReady = make(chan struct{})
 		c.outboundQueue <- cfg.InitialPrompt
 	}
+	// Set no-op defaults for optional callbacks
+	if c.cfg.OnSnapshot == nil {
+		c.cfg.OnSnapshot = func(ConversationStatus, []ConversationMessage, string) {}
+	}
+	if c.cfg.ReadyForInitialPrompt == nil {
+		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
+	}
 	return c
 }
 
@@ -152,9 +159,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 					messages := c.messagesLocked()
 					c.lock.Unlock()
 
-					if c.cfg.OnSnapshot != nil {
-						c.cfg.OnSnapshot(status, messages, screen)
-					}
+					c.cfg.OnSnapshot(status, messages, screen)
 				case <-agentReady:
 					// Agent is ready, proceed to phase 2
 					agentReady = nil
@@ -177,9 +182,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				messages := c.messagesLocked()
 				c.lock.Unlock()
 
-				if c.cfg.OnSnapshot != nil {
-					c.cfg.OnSnapshot(status, messages, screen)
-				}
+				c.cfg.OnSnapshot(status, messages, screen)
 			case parts := <-c.outboundQueue:
 				c.lock.Lock()
 				if err := c.sendLocked(parts...); err != nil {
@@ -406,7 +409,7 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 	// to avoid the status flipping "changing" → "stable" → "changing"
 	if c.agentReady != nil || len(c.outboundQueue) > 0 {
 		// Check if agent is ready for initial prompt and signal if so
-		if c.agentReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
+		if c.agentReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
 			close(c.agentReady)
 			c.agentReady = nil // Prevent double-close
 		}
