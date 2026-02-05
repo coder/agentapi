@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/agentapi/lib/msgfmt"
@@ -101,6 +102,9 @@ type PTYConversation struct {
 	stableSignal chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
+	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
+	// This is checked by a separate goroutine to avoid calling ReadyForInitialPrompt on every tick.
+	initialPromptReady atomic.Bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -139,6 +143,27 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 }
 
 func (c *PTYConversation) Start(ctx context.Context) {
+	// Initial prompt readiness loop - polls ReadyForInitialPrompt until it returns true,
+	// then sets initialPromptReady and exits. This avoids calling ReadyForInitialPrompt
+	// on every snapshot tick.
+	go func() {
+		ticker := c.cfg.Clock.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				screen := c.cfg.AgentIO.ReadScreen()
+				if c.cfg.ReadyForInitialPrompt(screen) {
+					c.initialPromptReady.Store(true)
+					return
+				}
+			}
+		}
+	}()
+
 	// Snapshot loop
 	go func() {
 		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
@@ -158,7 +183,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				// Signal send loop if agent is ready and queue has items.
 				// We check readiness independently of statusLocked() because
 				// statusLocked() returns "changing" when queue has items.
-				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && c.cfg.ReadyForInitialPrompt(screen) {
+				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && c.initialPromptReady.Load() {
 					select {
 					case c.stableSignal <- struct{}{}:
 					default:
@@ -381,7 +406,7 @@ func (c *PTYConversation) Status() ConversationStatus {
 // for the required number of snapshots. Caller MUST hold c.lock.
 func (c *PTYConversation) isScreenStableLocked() bool {
 	snapshots := c.snapshotBuffer.GetAll()
-	if len(snapshots) != c.stableSnapshotsThreshold {
+	if len(snapshots) < c.stableSnapshotsThreshold {
 		return false
 	}
 	for i := 1; i < len(snapshots); i++ {
