@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/coder/agentapi/lib/msgfmt"
@@ -102,9 +101,9 @@ type PTYConversation struct {
 	stableSignal chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
-	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
+	// initialPromptReady is closed when ReadyForInitialPrompt returns true.
 	// This is checked by a separate goroutine to avoid calling ReadyForInitialPrompt on every tick.
-	initialPromptReady atomic.Bool
+	initialPromptReady chan struct{}
 }
 
 var _ Conversation = &PTYConversation{}
@@ -128,6 +127,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 		outboundQueue:      make(chan []MessagePart, 1),
 		stableSignal:       make(chan struct{}, 1),
 		toolCallMessageSet: make(map[string]bool),
+		initialPromptReady: make(chan struct{}),
 	}
 	// If we have an initial prompt, enqueue it
 	if len(cfg.InitialPrompt) > 0 {
@@ -157,7 +157,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			case <-ticker.C:
 				screen := c.cfg.AgentIO.ReadScreen()
 				if c.cfg.ReadyForInitialPrompt(screen) {
-					c.initialPromptReady.Store(true)
+					close(c.initialPromptReady)
 					return
 				}
 			}
@@ -183,7 +183,13 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				// Signal send loop if agent is ready and queue has items.
 				// We check readiness independently of statusLocked() because
 				// statusLocked() returns "changing" when queue has items.
-				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && c.initialPromptReady.Load() {
+				isReady := false
+				select {
+				case <-c.initialPromptReady:
+					isReady = true
+				default:
+				}
+				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && isReady {
 					select {
 					case c.stableSignal <- struct{}{}:
 					default:
