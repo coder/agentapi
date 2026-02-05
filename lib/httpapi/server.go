@@ -41,7 +41,7 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.PTYConversation
+	conversation st.Conversation
 	agentio      *termexec.Process
 	agentType    mf.AgentType
 	emitter      *EventEmitter
@@ -244,6 +244,14 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
+	emitter := NewEventEmitter(1024)
+
+	// Format initial prompt into message parts if provided
+	var initialPrompt []st.MessagePart
+	if config.InitialPrompt != "" {
+		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
+	}
+
 	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
 		AgentType:             config.AgentType,
 		AgentIO:               config.Process,
@@ -253,9 +261,17 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		FormatMessage:         formatMessage,
 		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 		FormatToolCall:        formatToolCall,
-		Logger:                logger,
-	}, config.InitialPrompt)
-	emitter := NewEventEmitter(1024)
+		InitialPrompt:         initialPrompt,
+		// OnSnapshot uses a callback rather than passing the emitter directly
+		// to keep the screentracker package decoupled from httpapi concerns.
+		// This preserves clean package boundaries and avoids import cycles.
+		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
+			emitter.UpdateStatusAndEmitChanges(status, config.AgentType)
+			emitter.UpdateMessagesAndEmitChanges(messages)
+			emitter.UpdateScreenAndEmitChanges(screen)
+		},
+		Logger: logger,
+	})
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -280,6 +296,16 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	// Register API routes
 	s.registerRoutes()
+
+	// Start the conversation polling loop if we have a process.
+	// Process is nil only when --print-openapi is used (no agent runs).
+	// The process is already running at this point - termexec.StartProcess()
+	// blocks until the PTY is created and the process is active. Agent
+	// readiness (waiting for the prompt) is handled asynchronously inside
+	// conversation.Start() via ReadyForInitialPrompt.
+	if config.Process != nil {
+		s.conversation.Start(ctx)
+	}
 
 	return s, nil
 }
@@ -334,38 +360,6 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	ctx.SetHeader("Connection", "keep-alive")
 
 	next(ctx)
-}
-
-func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.Start(ctx)
-	go func() {
-		ticker := s.clock.NewTicker(snapshotInterval)
-		defer ticker.Stop()
-		for {
-			currentStatus := s.conversation.Status()
-
-			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-				if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
-				}
-			}
-			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Text())
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
 }
 
 // registerRoutes sets up all API endpoints
