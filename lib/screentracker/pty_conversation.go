@@ -122,7 +122,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 			},
 		},
 		outboundQueue:      make(chan []MessagePart, 1),
-		stableSignal:       make(chan struct{}),
+		stableSignal:       make(chan struct{}, 1),
 		toolCallMessageSet: make(map[string]bool),
 	}
 	// If we have an initial prompt, enqueue it
@@ -154,14 +154,20 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				c.snapshotLocked(screen)
 				status := c.statusLocked()
 				messages := c.messagesLocked()
+
+				// Signal send loop if agent is ready and queue has items.
+				// We check readiness independently of statusLocked() because
+				// statusLocked() returns "changing" when queue has items.
+				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && c.cfg.ReadyForInitialPrompt(screen) {
+					select {
+					case c.stableSignal <- struct{}{}:
+					default:
+						// Signal already pending
+					}
+				}
 				c.lock.Unlock()
 
 				c.cfg.OnSnapshot(status, messages, screen)
-
-				// Signal send loop if stable and queue has items
-				if status == ConversationStatusStable && len(c.outboundQueue) > 0 {
-					c.stableSignal <- struct{}{}
-				}
 			}
 		}
 	}()
@@ -371,6 +377,21 @@ func (c *PTYConversation) Status() ConversationStatus {
 	return c.statusLocked()
 }
 
+// isScreenStableLocked returns true if the screen content has been stable
+// for the required number of snapshots. Caller MUST hold c.lock.
+func (c *PTYConversation) isScreenStableLocked() bool {
+	snapshots := c.snapshotBuffer.GetAll()
+	if len(snapshots) != c.stableSnapshotsThreshold {
+		return false
+	}
+	for i := 1; i < len(snapshots); i++ {
+		if snapshots[0].screen != snapshots[i].screen {
+			return false
+		}
+	}
+	return true
+}
+
 // caller MUST hold c.lock
 func (c *PTYConversation) statusLocked() ConversationStatus {
 	// sanity checks
@@ -393,14 +414,12 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 		return ConversationStatusInitializing
 	}
 
-	for i := 1; i < len(snapshots); i++ {
-		if snapshots[0].screen != snapshots[i].screen {
-			return ConversationStatusChanging
-		}
+	if !c.isScreenStableLocked() {
+		return ConversationStatusChanging
 	}
 
 	// Handle initial prompt readiness: report "changing" until the queue is drained
-	// to avoid the status flipping "changing" → "stable" → "changing"
+	// to avoid the status flipping "changing" -> "stable" -> "changing"
 	if len(c.outboundQueue) > 0 {
 		return ConversationStatusChanging
 	}
