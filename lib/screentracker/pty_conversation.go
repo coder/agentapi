@@ -129,7 +129,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 		c.agentReady = make(chan struct{})
 		c.outboundQueue <- cfg.InitialPrompt
 	}
-	// Set no-op defaults for optional callbacks
 	if c.cfg.OnSnapshot == nil {
 		c.cfg.OnSnapshot = func(ConversationStatus, []ConversationMessage, string) {}
 	}
@@ -146,29 +145,25 @@ func (c *PTYConversation) Start(ctx context.Context) {
 
 		// Phase 1: Wait for agent to be ready (only if we have an initial prompt)
 		agentReady := c.agentReady
-		if agentReady != nil {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					c.lock.Lock()
-					screen := c.cfg.AgentIO.ReadScreen()
-					c.snapshotLocked(screen)
-					status := c.statusLocked()
-					messages := c.messagesLocked()
-					c.lock.Unlock()
+	phase1:
+		for agentReady != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.lock.Lock()
+				screen := c.cfg.AgentIO.ReadScreen()
+				c.snapshotLocked(screen)
+				status := c.statusLocked()
+				messages := c.messagesLocked()
+				c.lock.Unlock()
 
-					c.cfg.OnSnapshot(status, messages, screen)
-				case <-agentReady:
-					// Agent is ready, proceed to phase 2
-					agentReady = nil
-					goto phase2
-				}
+				c.cfg.OnSnapshot(status, messages, screen)
+			case <-agentReady:
+				break phase1
 			}
 		}
 
-	phase2:
 		// Phase 2: Normal loop with ticker snapshots and outbound queue processing
 		for {
 			select {
