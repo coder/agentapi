@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -123,6 +124,15 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 
 	pidFile := viper.GetString(PidFile)
 
+	// Write PID file if configured
+	if pidFile != "" {
+		if err := writePIDFile(pidFile, logger); err != nil {
+			return xerrors.Errorf("failed to write PID file: %w", err)
+		}
+		// Ensure PID file is cleaned up on exit
+		defer cleanupPIDFile(pidFile, logger)
+	}
+
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
 	var process *termexec.Process
 	if printOpenAPI {
@@ -148,11 +158,10 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
-		StatePersistenceCfg: httpapi.StatePersistenceCfg{
+		StatePersistenceConfig: httpapi.StatePersistenceConfig{
 			StateFile: stateFile,
 			LoadState: loadState,
 			SaveState: saveState,
-			PidFile:   pidFile,
 		},
 	})
 
@@ -199,6 +208,35 @@ var agentNames = (func() []string {
 	sort.Strings(names)
 	return names
 })()
+
+// writePIDFile writes the current process ID to the specified file
+func writePIDFile(pidFile string, logger *slog.Logger) error {
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(pidFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return xerrors.Errorf("failed to create PID file directory: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(pidFile, []byte(pidContent), 0o644); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
+	logger.Info("Wrote PID file", "pidFile", pidFile, "pid", pid)
+	return nil
+}
+
+// cleanupPIDFile removes the PID file if it exists
+func cleanupPIDFile(pidFile string, logger *slog.Logger) {
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		logger.Error("Failed to remove PID file", "pidFile", pidFile, "error", err)
+	} else if err == nil {
+		logger.Info("Removed PID file", "pidFile", pidFile)
+	}
+}
 
 type flagSpec struct {
 	name         string
