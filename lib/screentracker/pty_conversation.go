@@ -407,13 +407,15 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 
 	// Handle initial prompt readiness: report "changing" until the queue is drained
 	// to avoid the status flipping "changing" → "stable" → "changing"
-	if c.agentReady != nil || len(c.outboundQueue) > 0 {
+	if c.agentReady != nil {
 		// Check if agent is ready for initial prompt and signal if so
-		if c.agentReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
+		if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
 			close(c.agentReady)
 			c.agentReady = nil // Prevent double-close
 		}
-		// Keep returning "changing" until outbound queue is drained
+		return ConversationStatusChanging
+	}
+	if len(c.outboundQueue) > 0 {
 		return ConversationStatusChanging
 	}
 
