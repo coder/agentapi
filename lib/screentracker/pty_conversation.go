@@ -92,12 +92,13 @@ type PTYConversation struct {
 	snapshotBuffer              *RingBuffer[screenSnapshot]
 	messages                    []ConversationMessage
 	screenBeforeLastUserMessage string
-	lock                        sync.Mutex
+	lock sync.Mutex
 
-	// initialPromptSent keeps track if the initial prompt has been successfully sent to the agent
-	initialPromptSent bool
-	// initialPromptReady is closed when the agent is ready to receive the initial prompt
-	initialPromptReady chan struct{}
+	// outboundQueue holds messages waiting to be sent to the agent
+	outboundQueue chan []MessagePart
+	// agentReady is closed when the agent is ready to receive the initial prompt.
+	// It is nil if no initial prompt was configured.
+	agentReady chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
 }
@@ -120,12 +121,13 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		initialPromptSent:  len(cfg.InitialPrompt) == 0,
+		outboundQueue:      make(chan []MessagePart, 1),
 		toolCallMessageSet: make(map[string]bool),
 	}
-	// Initialize the channel only if we have an initial prompt to send
+	// If we have an initial prompt, enqueue it and create the ready signal
 	if len(cfg.InitialPrompt) > 0 {
-		c.initialPromptReady = make(chan struct{})
+		c.agentReady = make(chan struct{})
+		c.outboundQueue <- cfg.InitialPrompt
 	}
 	return c
 }
@@ -135,21 +137,39 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
 		defer ticker.Stop()
 
-		// If nil, the select case below is simply never chosen (nil channels are skipped in select)
-		initialPromptReady := c.initialPromptReady
+		// Phase 1: Wait for agent to be ready (only if we have an initial prompt)
+		agentReady := c.agentReady
+		if agentReady != nil {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					c.lock.Lock()
+					screen := c.cfg.AgentIO.ReadScreen()
+					c.snapshotLocked(screen)
+					status := c.statusLocked()
+					messages := c.messagesLocked()
+					c.lock.Unlock()
 
+					if c.cfg.OnSnapshot != nil {
+						c.cfg.OnSnapshot(status, messages, screen)
+					}
+				case <-agentReady:
+					// Agent is ready, proceed to phase 2
+					agentReady = nil
+					goto phase2
+				}
+			}
+		}
+
+	phase2:
+		// Phase 2: Normal loop with ticker snapshots and outbound queue processing
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// It's important that we hold the lock while reading the screen.
-				// There's a race condition that occurs without it:
-				// 1. The screen is read
-				// 2. Independently, Send is called and takes the lock.
-				// 3. snapshotLocked is called and waits on the lock.
-				// 4. Send modifies the terminal state, releases the lock
-				// 5. snapshotLocked adds a snapshot from a stale screen
 				c.lock.Lock()
 				screen := c.cfg.AgentIO.ReadScreen()
 				c.snapshotLocked(screen)
@@ -157,23 +177,15 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				messages := c.messagesLocked()
 				c.lock.Unlock()
 
-				// Call snapshot callback if configured
 				if c.cfg.OnSnapshot != nil {
 					c.cfg.OnSnapshot(status, messages, screen)
 				}
-			case <-initialPromptReady:
-				// Agent is ready for initial prompt - send it
+			case parts := <-c.outboundQueue:
 				c.lock.Lock()
-				if !c.initialPromptSent && len(c.cfg.InitialPrompt) > 0 {
-					if err := c.sendLocked(c.cfg.InitialPrompt...); err != nil {
-						c.cfg.Logger.Error("failed to send initial prompt", "error", err)
-					} else {
-						c.initialPromptSent = true
-					}
+				if err := c.sendLocked(parts...); err != nil {
+					c.cfg.Logger.Error("failed to send queued message", "error", err)
 				}
 				c.lock.Unlock()
-				// Nil out to prevent this case from triggering again
-				initialPromptReady = nil
 			}
 		}
 	}()
@@ -390,15 +402,15 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 		}
 	}
 
-	// Handle initial prompt readiness: report "changing" until the prompt is sent
+	// Handle initial prompt readiness: report "changing" until the queue is drained
 	// to avoid the status flipping "changing" → "stable" → "changing"
-	if !c.initialPromptSent {
+	if c.agentReady != nil || len(c.outboundQueue) > 0 {
 		// Check if agent is ready for initial prompt and signal if so
-		if c.initialPromptReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
-			close(c.initialPromptReady)
-			c.initialPromptReady = nil // Prevent double-close
+		if c.agentReady != nil && len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt != nil && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
+			close(c.agentReady)
+			c.agentReady = nil // Prevent double-close
 		}
-		// Keep returning "changing" until initial prompt is actually sent
+		// Keep returning "changing" until outbound queue is drained
 		return ConversationStatusChanging
 	}
 
