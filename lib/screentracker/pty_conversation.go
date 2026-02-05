@@ -96,9 +96,9 @@ type PTYConversation struct {
 
 	// outboundQueue holds messages waiting to be sent to the agent
 	outboundQueue chan []MessagePart
-	// agentReady is closed when the agent is ready to receive the initial prompt.
-	// It is nil if no initial prompt was configured.
-	agentReady chan struct{}
+	// stableSignal is used by the snapshot loop to signal the send loop
+	// when the agent is stable and there are items in the outbound queue.
+	stableSignal chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
 }
@@ -122,11 +122,11 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 			},
 		},
 		outboundQueue:      make(chan []MessagePart, 1),
+		stableSignal:       make(chan struct{}),
 		toolCallMessageSet: make(map[string]bool),
 	}
-	// If we have an initial prompt, enqueue it and create the ready signal
+	// If we have an initial prompt, enqueue it
 	if len(cfg.InitialPrompt) > 0 {
-		c.agentReady = make(chan struct{})
 		c.outboundQueue <- cfg.InitialPrompt
 	}
 	if c.cfg.OnSnapshot == nil {
@@ -139,32 +139,11 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 }
 
 func (c *PTYConversation) Start(ctx context.Context) {
+	// Snapshot loop
 	go func() {
 		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
 		defer ticker.Stop()
 
-		// Phase 1: Wait for agent to be ready (only if we have an initial prompt)
-		agentReady := c.agentReady
-	phase1:
-		for agentReady != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				c.lock.Lock()
-				screen := c.cfg.AgentIO.ReadScreen()
-				c.snapshotLocked(screen)
-				status := c.statusLocked()
-				messages := c.messagesLocked()
-				c.lock.Unlock()
-
-				c.cfg.OnSnapshot(status, messages, screen)
-			case <-agentReady:
-				break phase1
-			}
-		}
-
-		// Phase 2: Normal loop with ticker snapshots and outbound queue processing
 		for {
 			select {
 			case <-ctx.Done():
@@ -178,12 +157,32 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				c.lock.Unlock()
 
 				c.cfg.OnSnapshot(status, messages, screen)
-			case parts := <-c.outboundQueue:
-				c.lock.Lock()
-				if err := c.sendLocked(parts...); err != nil {
-					c.cfg.Logger.Error("failed to send queued message", "error", err)
+
+				// Signal send loop if stable and queue has items
+				if status == ConversationStatusStable && len(c.outboundQueue) > 0 {
+					c.stableSignal <- struct{}{}
 				}
-				c.lock.Unlock()
+			}
+		}
+	}()
+
+	// Send loop
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-c.stableSignal:
+				select {
+				case parts := <-c.outboundQueue:
+					c.lock.Lock()
+					if err := c.sendLocked(parts...); err != nil {
+						c.cfg.Logger.Error("failed to send queued message", "error", err)
+					}
+					c.lock.Unlock()
+				default:
+					c.cfg.Logger.Error("received stable signal but outbound queue is empty")
+				}
 			}
 		}
 	}()
@@ -402,14 +401,6 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 
 	// Handle initial prompt readiness: report "changing" until the queue is drained
 	// to avoid the status flipping "changing" → "stable" → "changing"
-	if c.agentReady != nil {
-		// Check if agent is ready for initial prompt and signal if so
-		if len(snapshots) > 0 && c.cfg.ReadyForInitialPrompt(snapshots[len(snapshots)-1].screen) {
-			close(c.agentReady)
-			c.agentReady = nil // Prevent double-close
-		}
-		return ConversationStatusChanging
-	}
 	if len(c.outboundQueue) > 0 {
 		return ConversationStatusChanging
 	}
