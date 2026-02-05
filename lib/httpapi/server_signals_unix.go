@@ -19,6 +19,7 @@ func (s *Server) HandleSignals(ctx context.Context, process *termexec.Process) {
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
+		defer signal.Stop(shutdownCh)
 		sig := <-shutdownCh
 		s.logger.Info("Received shutdown signal, saving state before closing process", "signal", sig)
 
@@ -29,6 +30,7 @@ func (s *Server) HandleSignals(ctx context.Context, process *termexec.Process) {
 	saveOnlyCh := make(chan os.Signal, 1)
 	signal.Notify(saveOnlyCh, syscall.SIGUSR1)
 	go func() {
+		defer signal.Stop(saveOnlyCh)
 		for {
 			select {
 			case <-saveOnlyCh:
