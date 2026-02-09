@@ -43,6 +43,12 @@ func (p MessagePartText) String() string {
 	return p.Content
 }
 
+// outboundMessage wraps a message to be sent with its error channel
+type outboundMessage struct {
+	parts []MessagePart
+	errCh chan error
+}
+
 // PTYConversationConfig is the configuration for a PTYConversation.
 type PTYConversationConfig struct {
 	AgentType msgfmt.AgentType
@@ -95,7 +101,7 @@ type PTYConversation struct {
 	lock                        sync.Mutex
 
 	// outboundQueue holds messages waiting to be sent to the agent
-	outboundQueue chan []MessagePart
+	outboundQueue chan outboundMessage
 	// stableSignal is used by the snapshot loop to signal the send loop
 	// when the agent is stable and there are items in the outbound queue.
 	stableSignal chan struct{}
@@ -104,6 +110,8 @@ type PTYConversation struct {
 	// initialPromptReady is closed when ReadyForInitialPrompt returns true.
 	// This is checked by a separate goroutine to avoid calling ReadyForInitialPrompt on every tick.
 	initialPromptReady chan struct{}
+	// started is set when Start() is called, enabling the send loop
+	started bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -124,14 +132,14 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		outboundQueue:      make(chan []MessagePart, 1),
+		outboundQueue:      make(chan outboundMessage, 1),
 		stableSignal:       make(chan struct{}, 1),
 		toolCallMessageSet: make(map[string]bool),
 		initialPromptReady: make(chan struct{}),
 	}
 	// If we have an initial prompt, enqueue it
 	if len(cfg.InitialPrompt) > 0 {
-		c.outboundQueue <- cfg.InitialPrompt
+		c.outboundQueue <- outboundMessage{parts: cfg.InitialPrompt, errCh: nil}
 	}
 	if c.cfg.OnSnapshot == nil {
 		c.cfg.OnSnapshot = func(ConversationStatus, []ConversationMessage, string) {}
@@ -143,6 +151,10 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 }
 
 func (c *PTYConversation) Start(ctx context.Context) {
+	c.lock.Lock()
+	c.started = true
+	c.lock.Unlock()
+
 	// Initial prompt readiness loop - polls ReadyForInitialPrompt until it returns true,
 	// then sets initialPromptReady and exits. This avoids calling ReadyForInitialPrompt
 	// on every snapshot tick.
@@ -203,7 +215,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 	}()
 
-	// Send loop
+	// Send loop - primary call site for sendLocked() in production
 	go func() {
 		for {
 			select {
@@ -213,12 +225,13 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				select {
 				case <-ctx.Done():
 					return
-				case parts := <-c.outboundQueue:
+				case msg := <-c.outboundQueue:
 					c.lock.Lock()
-					if err := c.sendLocked(parts...); err != nil {
-						c.cfg.Logger.Error("failed to send queued message", "error", err)
-					}
+					err := c.sendLocked(msg.parts...)
 					c.lock.Unlock()
+					if msg.errCh != nil {
+						msg.errCh <- err
+					}
 				default:
 					c.cfg.Logger.Error("received stable signal but outbound queue is empty")
 				}
@@ -296,31 +309,45 @@ func (c *PTYConversation) snapshotLocked(screen string) {
 }
 
 func (c *PTYConversation) Send(messageParts ...MessagePart) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
-		return ErrMessageValidationChanging
-	}
-
-	return c.sendLocked(messageParts...)
-}
-
-// sendLocked sends a message to the agent. Caller MUST hold c.lock.
-func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
+	// Validate message content before enqueueing
 	var sb strings.Builder
 	for _, part := range messageParts {
 		sb.WriteString(part.String())
 	}
 	message := sb.String()
 	if message != msgfmt.TrimWhitespace(message) {
-		// msgfmt formatting functions assume this
 		return ErrMessageValidationWhitespace
 	}
 	if message == "" {
-		// writeMessageWithConfirmation requires a non-empty message
 		return ErrMessageValidationEmpty
 	}
+
+	c.lock.Lock()
+	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
+		c.lock.Unlock()
+		return ErrMessageValidationChanging
+	}
+	// If Start() hasn't been called, send directly (for tests)
+	if !c.started {
+		err := c.sendLocked(messageParts...)
+		c.lock.Unlock()
+		return err
+	}
+	c.lock.Unlock()
+
+	errCh := make(chan error, 1)
+	c.outboundQueue <- outboundMessage{parts: messageParts, errCh: errCh}
+	return <-errCh
+}
+
+// sendLocked sends a message to the agent. Caller MUST hold c.lock.
+// Validation is done by the caller (Send() validates, initial prompt is trusted).
+func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
+	var sb strings.Builder
+	for _, part := range messageParts {
+		sb.WriteString(part.String())
+	}
+	message := sb.String()
 
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	now := c.cfg.Clock.Now()
