@@ -92,7 +92,7 @@ type PTYConversation struct {
 	snapshotBuffer              *RingBuffer[screenSnapshot]
 	messages                    []ConversationMessage
 	screenBeforeLastUserMessage string
-	lock sync.Mutex
+	lock                        sync.Mutex
 
 	// outboundQueue holds messages waiting to be sent to the agent
 	outboundQueue chan []MessagePart
@@ -211,6 +211,8 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				return
 			case <-c.stableSignal:
 				select {
+				case <-ctx.Done():
+					return
 				case parts := <-c.outboundQueue:
 					c.lock.Lock()
 					if err := c.sendLocked(parts...); err != nil {
