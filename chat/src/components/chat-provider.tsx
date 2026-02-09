@@ -4,7 +4,6 @@ import { useSearchParams } from "next/navigation";
 import {
   useState,
   useEffect,
-  useRef,
   createContext,
   PropsWithChildren,
   useContext,
@@ -138,116 +137,80 @@ export function ChatProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState<boolean>(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [agentType, setAgentType] = useState<AgentType>("custom");
-  const eventSourceRef = useRef<EventSource | null>(null);
   const agentAPIUrl = useAgentAPIUrl();
 
-  // Set up SSE connection to the events endpoint
+  // Set up SSE connection to the events endpoint. EventSource handles
+  // reconnection automatically, so we only create it once per URL and
+  // let the browser manage transient failures. Messages are NOT cleared
+  // on reconnect to avoid blanking the conversation on network blips.
   useEffect(() => {
-    // Function to create and set up EventSource
-    const setupEventSource = () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
+    if (!agentAPIUrl) {
+      console.warn(
+        "agentAPIUrl is not set, SSE connection cannot be established."
+      );
+      setServerStatus("offline");
+      return;
+    }
 
-      // Reset messages when establishing a new connection
-      setMessages([]);
+    const eventSource = new EventSource(`${agentAPIUrl}/events`);
 
-      if (!agentAPIUrl) {
-        console.warn(
-          "agentAPIUrl is not set, SSE connection cannot be established."
+    // Handle message updates
+    eventSource.addEventListener("message_update", (event) => {
+      const data: MessageUpdateEvent = JSON.parse(event.data);
+      const confirmed: Message = {
+        role: data.role,
+        content: data.message,
+        id: data.id,
+      };
+
+      setMessages((prevMessages) => {
+        // Check if message with this ID already exists
+        const existingIndex = prevMessages.findIndex(
+          (m) => m.id === data.id
         );
-        setServerStatus("offline"); // Or some other appropriate status
-        return null; // Don't try to connect if URL is empty
-      }
 
-      const eventSource = new EventSource(`${agentAPIUrl}/events`);
-      eventSourceRef.current = eventSource;
-
-      // Handle message updates
-      eventSource.addEventListener("message_update", (event) => {
-        const data: MessageUpdateEvent = JSON.parse(event.data);
-
-        setMessages((prevMessages) => {
-          // Clean up draft messages
-          const updatedMessages = [...prevMessages].filter(
-            (m) => !isDraftMessage(m)
-          );
-
-          // Check if message with this ID already exists
-          const existingIndex = updatedMessages.findIndex(
-            (m) => m.id === data.id
-          );
-
-          if (existingIndex !== -1) {
-            // Update existing message
-            updatedMessages[existingIndex] = {
-              role: data.role,
-              content: data.message,
-              id: data.id,
-            };
-            return updatedMessages;
-          } else {
-            // Add new message
-            return [
-              ...updatedMessages,
-              {
-                role: data.role,
-                content: data.message,
-                id: data.id,
-              },
-            ];
-          }
-        });
-      });
-
-      // Handle status changes
-      eventSource.addEventListener("status_change", (event) => {
-        const data: StatusChangeEvent = JSON.parse(event.data);
-        if (data.status === "stable") {
-          setServerStatus("stable");
-        } else if (data.status === "running") {
-          setServerStatus("running");
-        } else {
-          setServerStatus("unknown");
+        if (existingIndex !== -1) {
+          // Update existing message
+          const updated = [...prevMessages];
+          updated[existingIndex] = confirmed;
+          return updated;
         }
 
-        // Set agent type
-        setAgentType(data.agent_type === "" ? "unknown" : data.agent_type as AgentType);
+        // New confirmed message: replace any trailing draft that matches
+        // the same role (the optimistic message we inserted on send).
+        const last = prevMessages[prevMessages.length - 1];
+        if (last && isDraftMessage(last) && last.role === confirmed.role) {
+          return [...prevMessages.slice(0, -1), confirmed];
+        }
+
+        return [...prevMessages, confirmed];
       });
+    });
 
-      // Handle connection open (server is online)
-      eventSource.onopen = () => {
-        // Connection is established, but we'll wait for status_change event
-        // for the actual server status
-        console.log("EventSource connection established - messages reset");
-      };
-
-      // Handle connection errors
-      eventSource.onerror = (error) => {
-        console.error("EventSource error:", error);
-        setServerStatus("offline");
-
-        // Try to reconnect after delay
-        setTimeout(() => {
-          if (eventSourceRef.current) {
-            setupEventSource();
-          }
-        }, 3000);
-      };
-
-      return eventSource;
-    };
-
-    // Initial setup
-    const eventSource = setupEventSource();
-
-    // Clean up on component unmount
-    return () => {
-      if (eventSource) {
-        // Check if eventSource was successfully created
-        eventSource.close();
+    // Handle status changes
+    eventSource.addEventListener("status_change", (event) => {
+      const data: StatusChangeEvent = JSON.parse(event.data);
+      if (data.status === "stable") {
+        setServerStatus("stable");
+      } else if (data.status === "running") {
+        setServerStatus("running");
+      } else {
+        setServerStatus("unknown");
       }
+      // Set agent type
+      setAgentType(data.agent_type === "" ? "unknown" : data.agent_type as AgentType);
+    });
+
+    eventSource.onopen = () => {
+      console.log("EventSource connection established");
     };
+
+    // Mark offline on error. The browser will retry automatically.
+    eventSource.onerror = () => {
+      setServerStatus("offline");
+    };
+
+    return () => eventSource.close();
   }, [agentAPIUrl]);
 
   // Send a new message
@@ -293,6 +256,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
         toast.error(`Failed to send message`, {
           description: fullDetail,
         });
+        // Remove the optimistic draft since the server rejected it.
+        setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
       }
 
     } catch (error) {
@@ -302,11 +267,10 @@ export function ChatProvider({ children }: PropsWithChildren) {
       toast.error(`Error sending message`, {
         description: message,
       });
+      // Remove the optimistic draft since the request failed.
+      setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
     } finally {
       if (type === "user") {
-        setMessages((prevMessages) =>
-          prevMessages.filter((m) => !isDraftMessage(m))
-        );
         setLoading(false);
       }
     }
