@@ -95,17 +95,11 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 func assertMessages(t *testing.T, c *st.PTYConversation, expected []st.ConversationMessage) {
 	t.Helper()
 	actual := c.Messages()
-	require.Len(t, actual, len(expected))
-	for i := range expected {
-		assert.Equal(t, expected[i].Id, actual[i].Id, "message %d Id", i)
-		assert.Equal(t, expected[i].Message, actual[i].Message, "message %d Message", i)
-		assert.Equal(t, expected[i].Role, actual[i].Role, "message %d Role", i)
-		if expected[i].Time.IsZero() {
-			assert.False(t, actual[i].Time.IsZero(), "message %d Time should be non-zero", i)
-		} else {
-			assert.Equal(t, expected[i].Time, actual[i].Time, "message %d Time", i)
-		}
+	for i := range actual {
+		require.False(t, actual[i].Time.IsZero(), "message %d Time should be non-zero", i)
+		actual[i].Time = time.Time{}
 	}
+	require.Equal(t, expected, actual)
 }
 
 type statusTestStep struct {
