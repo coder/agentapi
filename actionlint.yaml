@@ -3,3 +3,4 @@ self-hosted-runner:
     # Labels of self-hosted runner in array of strings.
     labels:
         - depot-ubuntu-22.04-4
+        - depot-ubuntu-22.04-8
