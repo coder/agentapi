@@ -92,24 +92,20 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 	}
 }
 
-// msgNoTime is a ConversationMessage without the Time field for easy comparison.
-type msgNoTime struct {
-	Id      int
-	Message string
-	Role    st.ConversationRole
-}
-
-func stripTimes(msgs []st.ConversationMessage) []msgNoTime {
-	result := make([]msgNoTime, len(msgs))
-	for i, m := range msgs {
-		result[i] = msgNoTime{Id: m.Id, Message: m.Message, Role: m.Role}
-	}
-	return result
-}
-
-func assertMessages(t *testing.T, c *st.PTYConversation, expected []msgNoTime) {
+func assertMessages(t *testing.T, c *st.PTYConversation, expected []st.ConversationMessage) {
 	t.Helper()
-	assert.Equal(t, expected, stripTimes(c.Messages()))
+	actual := c.Messages()
+	require.Len(t, actual, len(expected))
+	for i := range expected {
+		assert.Equal(t, expected[i].Id, actual[i].Id, "message %d Id", i)
+		assert.Equal(t, expected[i].Message, actual[i].Message, "message %d Message", i)
+		assert.Equal(t, expected[i].Role, actual[i].Role, "message %d Role", i)
+		if expected[i].Time.IsZero() {
+			assert.False(t, actual[i].Time.IsZero(), "message %d Time should be non-zero", i)
+		} else {
+			assert.Equal(t, expected[i].Time, actual[i].Time, "message %d Time", i)
+		}
+	}
 }
 
 type statusTestStep struct {
@@ -213,7 +209,7 @@ func TestConversation(t *testing.T) {
 }
 
 func TestMessages(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// newConversation creates a started conversation with a mock clock and
 	// testAgent. Tests that Send() messages must use sendWithClockDrive.
@@ -257,11 +253,15 @@ func TestMessages(t *testing.T) {
 	t.Run("messages are copied", func(t *testing.T) {
 		c, _, _ := newConversation(context.Background(), t)
 		messages := c.Messages()
-		assertMessages(t, c, []msgNoTime{{0, "", st.ConversationRoleAgent}})
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
+		})
 
 		messages[0].Message = "modification"
 
-		assertMessages(t, c, []msgNoTime{{0, "", st.ConversationRoleAgent}})
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
+		})
 	})
 
 	t.Run("whitespace-padding", func(t *testing.T) {
@@ -279,11 +279,13 @@ func TestMessages(t *testing.T) {
 
 		agent.setScreen("1")
 		advancePast(ctx, t, mClock, interval)
-		msgs := stripTimes(c.Messages())
-		assert.Equal(t, []msgNoTime{{0, "1", st.ConversationRoleAgent}}, msgs)
+		msgs := c.Messages()
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
+		})
 
 		advancePast(ctx, t, mClock, interval)
-		assert.Equal(t, msgs, stripTimes(c.Messages()))
+		assert.Equal(t, msgs, c.Messages())
 	})
 
 	t.Run("tracking messages", func(t *testing.T) {
@@ -293,15 +295,15 @@ func TestMessages(t *testing.T) {
 
 		// Agent message is recorded when the first snapshot is taken.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "1", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 		})
 
 		// Agent message is updated when the screen changes.
 		agent.setScreen("2")
 		advancePast(ctx, t, mClock, interval)
-		assertMessages(t, c, []msgNoTime{
-			{0, "2", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
 		})
 
 		// Fill to stable so Send can proceed (screen is "2").
@@ -312,10 +314,10 @@ func TestMessages(t *testing.T) {
 
 		// After send, screen is dirty from writeStabilize. Set to "4" and stabilize.
 		fillToStable(ctx, t, agent, mClock, "4", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "2", st.ConversationRoleAgent},
-			{1, "3", st.ConversationRoleUser},
-			{2, "4", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "4", Role: st.ConversationRoleAgent},
 		})
 
 		// Agent message is updated when the screen changes before a user message.
@@ -323,12 +325,12 @@ func TestMessages(t *testing.T) {
 		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "6"}))
 
 		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "2", st.ConversationRoleAgent},
-			{1, "3", st.ConversationRoleUser},
-			{2, "5", st.ConversationRoleAgent},
-			{3, "6", st.ConversationRoleUser},
-			{4, "7", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "5", Role: st.ConversationRoleAgent},
+			{Id: 3, Message: "6", Role: st.ConversationRoleUser},
+			{Id: 4, Message: "7", Role: st.ConversationRoleAgent},
 		})
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
@@ -349,21 +351,21 @@ func TestMessages(t *testing.T) {
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
 		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"}))
 		fillToStable(ctx, t, agent, mClock, "1\n3", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "1", st.ConversationRoleAgent},
-			{1, "2", st.ConversationRoleUser},
-			{2, "3", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "3", Role: st.ConversationRoleAgent},
 		})
 
 		fillToStable(ctx, t, agent, mClock, "1\n3x", interval, threshold)
 		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"}))
 		fillToStable(ctx, t, agent, mClock, "1\n3x\n5", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "1", st.ConversationRoleAgent},
-			{1, "2", st.ConversationRoleUser},
-			{2, "3x", st.ConversationRoleAgent},
-			{3, "4", st.ConversationRoleUser},
-			{4, "5", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "3x", Role: st.ConversationRoleAgent},
+			{Id: 3, Message: "4", Role: st.ConversationRoleUser},
+			{Id: 4, Message: "5", Role: st.ConversationRoleAgent},
 		})
 	})
 
@@ -382,10 +384,10 @@ func TestMessages(t *testing.T) {
 
 		// After send, set screen to "x" and take snapshots for new agent message.
 		fillToStable(ctx, t, agent, mClock, "x", interval, threshold)
-		assertMessages(t, c, []msgNoTime{
-			{0, "1 ", st.ConversationRoleAgent},
-			{1, "2", st.ConversationRoleUser},
-			{2, "x 2", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1 ", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "x 2", Role: st.ConversationRoleAgent},
 		})
 	})
 
@@ -395,8 +397,8 @@ func TestMessages(t *testing.T) {
 				return "formatted"
 			}
 		})
-		assertMessages(t, c, []msgNoTime{
-			{0, "", st.ConversationRoleAgent},
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
 		})
 	})
 
