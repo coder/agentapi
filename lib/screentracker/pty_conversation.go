@@ -203,9 +203,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case msg := <-c.outboundQueue:
-					c.lock.Lock()
-					err := c.sendLocked(msg.parts...)
-					c.lock.Unlock()
+					err := c.sendMessage(ctx, msg.parts...)
 					if msg.errCh != nil {
 						msg.errCh <- err
 					}
@@ -301,23 +299,31 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	return <-errCh
 }
 
-// sendLocked sends a message to the agent. Caller MUST hold c.lock.
-// Validation is done by the caller (Send() validates, initial prompt is trusted).
-func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
+// sendMessage sends a message to the agent. It acquires and releases c.lock
+// around the parts that access shared state, but releases it during
+// writeStabilize to avoid blocking the snapshot loop.
+func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...MessagePart) error {
 	var sb strings.Builder
 	for _, part := range messageParts {
 		sb.WriteString(part.String())
 	}
 	message := sb.String()
 
+	c.lock.Lock()
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	now := c.cfg.Clock.Now()
 	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
+	c.lock.Unlock()
 
-	if err := c.writeStabilize(context.Background(), messageParts...); err != nil {
+	if err := c.writeStabilize(ctx, messageParts...); err != nil {
 		return xerrors.Errorf("failed to send message: %w", err)
 	}
 
+	c.lock.Lock()
+	// Re-apply the pre-send screen to the agent message. While the lock
+	// was released during writeStabilize, the snapshot loop may have
+	// overwritten the agent message with intermediate screen content.
+	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
 	c.screenBeforeLastUserMessage = screenBeforeMessage
 	c.messages = append(c.messages, ConversationMessage{
 		Id:      len(c.messages),
@@ -325,6 +331,7 @@ func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
 		Role:    ConversationRoleUser,
 		Time:    now,
 	})
+	c.lock.Unlock()
 	return nil
 }
 
