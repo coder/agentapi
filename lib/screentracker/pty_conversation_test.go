@@ -75,44 +75,31 @@ func fillToStable(ctx context.Context, t *testing.T, agent *testAgent, mClock *q
 	}
 }
 
-// driveClockUntil advances the mock clock one event at a time until done
-// returns true or the context is cancelled.
-func driveClockUntil(ctx context.Context, t *testing.T, mClock *quartz.Mock, done func() bool) {
+// advanceUntil advances the mock clock one event at a time until done returns
+// true. Because the snapshot TickerFunc is always pending and WaitFor reuses a
+// single timer via Reset, there is always at least one event to advance.
+func advanceUntil(ctx context.Context, t *testing.T, mClock *quartz.Mock, done func() bool) {
 	t.Helper()
-	for i := 0; ; i++ {
-		if done() {
-			return
-		}
+	for !done() {
 		select {
 		case <-ctx.Done():
 			t.Fatal("context cancelled waiting for condition")
 		default:
 		}
-		_, ok := mClock.Peek()
-		if !ok {
-			time.Sleep(time.Millisecond)
-			continue
-		}
 		_, w := mClock.AdvanceNext()
 		w.MustWait(ctx)
-		// Periodically yield so conversation goroutines can process
-		// clock events between advances.
-		if i%10 == 0 {
-			time.Sleep(time.Millisecond)
-		}
 	}
 }
 
-// sendWithClockDrive calls Send() in a goroutine and advances the mock clock
-// until Send completes. This drives the snapshot loop (which signals
-// stableSignal) and writeStabilize (which creates mock timers).
-func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation, mClock *quartz.Mock, parts ...st.MessagePart) {
+// sendAndAdvance calls Send() in a goroutine and advances the mock clock until
+// Send completes.
+func sendAndAdvance(ctx context.Context, t *testing.T, c *st.PTYConversation, mClock *quartz.Mock, parts ...st.MessagePart) {
 	t.Helper()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- c.Send(parts...)
 	}()
-	driveClockUntil(ctx, t, mClock, func() bool {
+	advanceUntil(ctx, t, mClock, func() bool {
 		select {
 		case err := <-errCh:
 			require.NoError(t, err)
@@ -237,7 +224,7 @@ func TestMessages(t *testing.T) {
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// newConversation creates a started conversation with a mock clock and
-	// testAgent. Tests that Send() messages must use sendWithClockDrive.
+	// testAgent. Tests that Send() messages must use sendAndAdvance.
 	newConversation := func(ctx context.Context, t *testing.T, opts ...func(*st.PTYConversationConfig)) (*st.PTYConversation, *testAgent, *quartz.Mock) {
 		t.Helper()
 
@@ -335,7 +322,7 @@ func TestMessages(t *testing.T) {
 		fillToStable(ctx, t, agent, mClock, "2", interval, threshold)
 
 		// User message is recorded.
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "3"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "3"})
 
 		// After send, screen is dirty from writeStabilize. Set to "4" and stabilize.
 		fillToStable(ctx, t, agent, mClock, "4", interval, threshold)
@@ -347,7 +334,7 @@ func TestMessages(t *testing.T) {
 
 		// Agent message is updated when the screen changes before a user message.
 		fillToStable(ctx, t, agent, mClock, "5", interval, threshold)
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "6"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "6"})
 
 		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
@@ -360,7 +347,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// Send another message.
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "8"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "8"})
 
 		// After filling to stable, messages and status are correct.
 		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
@@ -374,7 +361,7 @@ func TestMessages(t *testing.T) {
 
 		// Common overlap between screens is removed after a user message.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
 		fillToStable(ctx, t, agent, mClock, "1\n3", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
@@ -383,7 +370,7 @@ func TestMessages(t *testing.T) {
 		})
 
 		fillToStable(ctx, t, agent, mClock, "1\n3x", interval, threshold)
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
 		fillToStable(ctx, t, agent, mClock, "1\n3x\n5", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
@@ -405,7 +392,7 @@ func TestMessages(t *testing.T) {
 
 		// Fill to stable with screen "1", then send.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
 
 		// After send, set screen to "x" and take snapshots for new agent message.
 		fillToStable(ctx, t, agent, mClock, "x", interval, threshold)
@@ -444,7 +431,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// Now send should succeed.
-		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
 
 		// After send, screen is dirty. Set to "2" (different from "1") so status is changing.
 		agent.setScreen("2")
@@ -555,7 +542,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 		// writeStabilize runs with onWrite changing the screen, so it completes.
 		agent.setScreen("ready")
 		// Drive clock until the initial prompt is sent (queue drains).
-		driveClockUntil(ctx, t, mClock, func() bool {
+		advanceUntil(ctx, t, mClock, func() bool {
 			return len(c.Messages()) >= 2
 		})
 
