@@ -65,16 +65,6 @@ func advancePast(ctx context.Context, t *testing.T, mClock *quartz.Mock, total t
 	}
 }
 
-// fillToStable sets the screen and advances the clock enough times to fill the
-// snapshot buffer, making status reach "stable".
-func fillToStable(ctx context.Context, t *testing.T, agent *testAgent, mClock *quartz.Mock, screen string, interval time.Duration, threshold int) {
-	t.Helper()
-	agent.setScreen(screen)
-	for i := 0; i < threshold; i++ {
-		advancePast(ctx, t, mClock, interval)
-	}
-}
-
 // advanceUntil advances the mock clock one event at a time until done returns
 // true. Because the snapshot TickerFunc is always pending and WaitFor reuses a
 // single timer via Reset, there is always at least one event to advance.
@@ -306,7 +296,8 @@ func TestMessages(t *testing.T) {
 		c, agent, mClock := newConversation(ctx, t)
 
 		// Agent message is recorded when the first snapshot is taken.
-		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
+		agent.setScreen("1")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 		})
@@ -319,13 +310,15 @@ func TestMessages(t *testing.T) {
 		})
 
 		// Fill to stable so Send can proceed (screen is "2").
-		fillToStable(ctx, t, agent, mClock, "2", interval, threshold)
+		agent.setScreen("2")
+		advancePast(ctx, t, mClock, interval*threshold)
 
 		// User message is recorded.
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "3"})
 
 		// After send, screen is dirty from writeStabilize. Set to "4" and stabilize.
-		fillToStable(ctx, t, agent, mClock, "4", interval, threshold)
+		agent.setScreen("4")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
 			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
@@ -333,10 +326,12 @@ func TestMessages(t *testing.T) {
 		})
 
 		// Agent message is updated when the screen changes before a user message.
-		fillToStable(ctx, t, agent, mClock, "5", interval, threshold)
+		agent.setScreen("5")
+		advancePast(ctx, t, mClock, interval*threshold)
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "6"})
 
-		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
+		agent.setScreen("7")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
 			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
@@ -350,7 +345,8 @@ func TestMessages(t *testing.T) {
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "8"})
 
 		// After filling to stable, messages and status are correct.
-		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
+		agent.setScreen("7")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
@@ -360,18 +356,22 @@ func TestMessages(t *testing.T) {
 		c, agent, mClock := newConversation(ctx, t)
 
 		// Common overlap between screens is removed after a user message.
-		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
+		agent.setScreen("1")
+		advancePast(ctx, t, mClock, interval*threshold)
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
-		fillToStable(ctx, t, agent, mClock, "1\n3", interval, threshold)
+		agent.setScreen("1\n3")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
 			{Id: 2, Message: "3", Role: st.ConversationRoleAgent},
 		})
 
-		fillToStable(ctx, t, agent, mClock, "1\n3x", interval, threshold)
+		agent.setScreen("1\n3x")
+		advancePast(ctx, t, mClock, interval*threshold)
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
-		fillToStable(ctx, t, agent, mClock, "1\n3x\n5", interval, threshold)
+		agent.setScreen("1\n3x\n5")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
@@ -391,11 +391,13 @@ func TestMessages(t *testing.T) {
 		})
 
 		// Fill to stable with screen "1", then send.
-		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
+		agent.setScreen("1")
+		advancePast(ctx, t, mClock, interval*threshold)
 		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
 
 		// After send, set screen to "x" and take snapshots for new agent message.
-		fillToStable(ctx, t, agent, mClock, "x", interval, threshold)
+		agent.setScreen("x")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1 ", Role: st.ConversationRoleAgent},
 			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
@@ -427,7 +429,8 @@ func TestMessages(t *testing.T) {
 		assert.ErrorIs(t, sendMsg("1"), st.ErrMessageValidationChanging)
 
 		// Fill to stable.
-		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
+		agent.setScreen("1")
+		advancePast(ctx, t, mClock, interval*threshold)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// Now send should succeed.
@@ -596,7 +599,8 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c.Start(ctx)
 
 		// Fill buffer to reach stability with "ready" screen.
-		fillToStable(ctx, t, agent, mClock, "ready", 1*time.Second, 3)
+		agent.setScreen("ready")
+		advancePast(ctx, t, mClock, 3*time.Second)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// After screen changes, status becomes changing.
