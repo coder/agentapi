@@ -75,26 +75,52 @@ func fillToStable(ctx context.Context, t *testing.T, agent *testAgent, mClock *q
 	}
 }
 
+// driveClockUntil advances the mock clock one event at a time until done
+// returns true or the context is cancelled.
+func driveClockUntil(ctx context.Context, t *testing.T, mClock *quartz.Mock, done func() bool) {
+	t.Helper()
+	for i := 0; ; i++ {
+		if done() {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("context cancelled waiting for condition")
+		default:
+		}
+		_, ok := mClock.Peek()
+		if !ok {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		_, w := mClock.AdvanceNext()
+		w.MustWait(ctx)
+		// Periodically yield so conversation goroutines can process
+		// clock events between advances.
+		if i%10 == 0 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
 // sendWithClockDrive calls Send() in a goroutine and advances the mock clock
 // until Send completes. This drives the snapshot loop (which signals
 // stableSignal) and writeStabilize (which creates mock timers).
-func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation, mClock *quartz.Mock, parts ...st.MessagePart) error {
+func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation, mClock *quartz.Mock, parts ...st.MessagePart) {
 	t.Helper()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- c.Send(parts...)
 	}()
-	for {
+	driveClockUntil(ctx, t, mClock, func() bool {
 		select {
 		case err := <-errCh:
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
+			require.NoError(t, err)
+			return true
 		default:
+			return false
 		}
-		_, w := mClock.AdvanceNext()
-		w.MustWait(ctx)
-	}
+	})
 }
 
 func assertMessages(t *testing.T, c *st.PTYConversation, expected []st.ConversationMessage) {
@@ -309,7 +335,7 @@ func TestMessages(t *testing.T) {
 		fillToStable(ctx, t, agent, mClock, "2", interval, threshold)
 
 		// User message is recorded.
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "3"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "3"})
 
 		// After send, screen is dirty from writeStabilize. Set to "4" and stabilize.
 		fillToStable(ctx, t, agent, mClock, "4", interval, threshold)
@@ -321,7 +347,7 @@ func TestMessages(t *testing.T) {
 
 		// Agent message is updated when the screen changes before a user message.
 		fillToStable(ctx, t, agent, mClock, "5", interval, threshold)
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "6"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "6"})
 
 		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
@@ -334,7 +360,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// Send another message.
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "8"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "8"})
 
 		// After filling to stable, messages and status are correct.
 		fillToStable(ctx, t, agent, mClock, "7", interval, threshold)
@@ -348,7 +374,7 @@ func TestMessages(t *testing.T) {
 
 		// Common overlap between screens is removed after a user message.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
 		fillToStable(ctx, t, agent, mClock, "1\n3", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
@@ -357,7 +383,7 @@ func TestMessages(t *testing.T) {
 		})
 
 		fillToStable(ctx, t, agent, mClock, "1\n3x", interval, threshold)
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
 		fillToStable(ctx, t, agent, mClock, "1\n3x\n5", interval, threshold)
 		assertMessages(t, c, []st.ConversationMessage{
 			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
@@ -379,7 +405,7 @@ func TestMessages(t *testing.T) {
 
 		// Fill to stable with screen "1", then send.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
 
 		// After send, set screen to "x" and take snapshots for new agent message.
 		fillToStable(ctx, t, agent, mClock, "x", interval, threshold)
@@ -418,7 +444,7 @@ func TestMessages(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
 		// Now send should succeed.
-		require.NoError(t, sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"}))
+		sendWithClockDrive(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
 
 		// After send, screen is dirty. Set to "2" (different from "1") so status is changing.
 		agent.setScreen("2")
@@ -529,24 +555,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		// writeStabilize runs with onWrite changing the screen, so it completes.
 		agent.setScreen("ready")
 		// Drive clock until the initial prompt is sent (queue drains).
-		for i := 0; i < 500; i++ {
-			_, ok := mClock.Peek()
-			if !ok {
-				time.Sleep(1 * time.Millisecond)
-				continue
-			}
-			_, w := mClock.AdvanceNext()
-			w.MustWait(ctx)
-			// Check if the queue has been drained by checking status.
-			// After the initial prompt is sent, last message is user, so status
-			// is "changing". Then after more snapshots, it becomes stable.
-			// We just need to advance until the send loop has processed the message.
-			// A simple heuristic: check if Messages() shows a user message.
-			msgs := c.Messages()
-			if len(msgs) >= 2 {
-				break
-			}
-		}
+		driveClockUntil(ctx, t, mClock, func() bool {
+			return len(c.Messages()) >= 2
+		})
 
 		// The initial prompt should have been sent. Set a clean screen and
 		// advance enough ticks for the snapshot loop to record it as an
