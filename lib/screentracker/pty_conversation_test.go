@@ -22,6 +22,9 @@ const testTimeout = 10 * time.Second
 type testAgent struct {
 	mu      sync.Mutex
 	screen  string
+	// onWrite is called during Write to simulate the agent reacting to
+	// terminal input (e.g., changing the screen), which unblocks
+	// writeStabilize's polling loops.
 	onWrite func(data []byte)
 }
 
@@ -85,6 +88,8 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 		select {
 		case err := <-errCh:
 			return err
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 		_, w := mClock.AdvanceNext()
