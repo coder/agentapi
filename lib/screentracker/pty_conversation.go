@@ -62,9 +62,6 @@ type PTYConversationConfig struct {
 	// Function to format the messages received from the agent
 	// userInput is the last user message
 	FormatMessage func(message string, userInput string) string
-	// SkipWritingMessage skips the writing of a message to the agent.
-	// This is used in tests
-	SkipWritingMessage bool
 	// SkipSendMessageStatusCheck skips the check for whether the message can be sent.
 	// This is used in tests
 	SkipSendMessageStatusCheck bool
@@ -110,11 +107,13 @@ type PTYConversation struct {
 	// initialPromptReady is closed when ReadyForInitialPrompt returns true.
 	// This is checked by a separate goroutine to avoid calling ReadyForInitialPrompt on every tick.
 	initialPromptReady chan struct{}
-	// started is set when Start() is called, enabling the send loop
-	started bool
 }
 
 var _ Conversation = &PTYConversation{}
+
+// errInitialPromptReady is a sentinel used to stop the readiness TickerFunc
+// after ReadyForInitialPrompt returns true.
+var errInitialPromptReady = xerrors.New("initial prompt ready")
 
 func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 	if cfg.Clock == nil {
@@ -151,69 +150,47 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 }
 
 func (c *PTYConversation) Start(ctx context.Context) {
-	c.lock.Lock()
-	c.started = true
-	c.lock.Unlock()
-
 	// Initial prompt readiness loop - polls ReadyForInitialPrompt until it returns true,
-	// then sets initialPromptReady and exits. This avoids calling ReadyForInitialPrompt
+	// then closes initialPromptReady and exits. This avoids calling ReadyForInitialPrompt
 	// on every snapshot tick.
-	go func() {
-		ticker := c.cfg.Clock.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				screen := c.cfg.AgentIO.ReadScreen()
-				if c.cfg.ReadyForInitialPrompt(screen) {
-					close(c.initialPromptReady)
-					return
-				}
-			}
+	c.cfg.Clock.TickerFunc(ctx, 100*time.Millisecond, func() error {
+		screen := c.cfg.AgentIO.ReadScreen()
+		if c.cfg.ReadyForInitialPrompt(screen) {
+			close(c.initialPromptReady)
+			return errInitialPromptReady
 		}
-	}()
+		return nil
+	}, "readiness")
 
 	// Snapshot loop
-	go func() {
-		ticker := c.cfg.Clock.NewTicker(c.cfg.SnapshotInterval)
-		defer ticker.Stop()
+	c.cfg.Clock.TickerFunc(ctx, c.cfg.SnapshotInterval, func() error {
+		c.lock.Lock()
+		screen := c.cfg.AgentIO.ReadScreen()
+		c.snapshotLocked(screen)
+		status := c.statusLocked()
+		messages := c.messagesLocked()
 
-		for {
+		// Signal send loop if agent is ready and queue has items.
+		// We check readiness independently of statusLocked() because
+		// statusLocked() returns "changing" when queue has items.
+		isReady := false
+		select {
+		case <-c.initialPromptReady:
+			isReady = true
+		default:
+		}
+		if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && isReady {
 			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				c.lock.Lock()
-				screen := c.cfg.AgentIO.ReadScreen()
-				c.snapshotLocked(screen)
-				status := c.statusLocked()
-				messages := c.messagesLocked()
-
-				// Signal send loop if agent is ready and queue has items.
-				// We check readiness independently of statusLocked() because
-				// statusLocked() returns "changing" when queue has items.
-				isReady := false
-				select {
-				case <-c.initialPromptReady:
-					isReady = true
-				default:
-				}
-				if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && isReady {
-					select {
-					case c.stableSignal <- struct{}{}:
-					default:
-						// Signal already pending
-					}
-				}
-				c.lock.Unlock()
-
-				c.cfg.OnSnapshot(status, messages, screen)
+			case c.stableSignal <- struct{}{}:
+			default:
+				// Signal already pending
 			}
 		}
-	}()
+		c.lock.Unlock()
+
+		c.cfg.OnSnapshot(status, messages, screen)
+		return nil
+	}, "snapshot")
 
 	// Send loop - primary call site for sendLocked() in production
 	go func() {
@@ -288,16 +265,6 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
 }
 
-// Snapshot writes the current screen snapshot to the snapshot buffer.
-// ONLY TO BE USED FOR TESTING PURPOSES.
-// TODO(Cian): This method can be removed by mocking AgentIO.
-func (c *PTYConversation) Snapshot(screen string) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.snapshotLocked(screen)
-}
-
 // caller MUST hold c.lock
 func (c *PTYConversation) snapshotLocked(screen string) {
 	snapshot := screenSnapshot{
@@ -326,12 +293,6 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
 		c.lock.Unlock()
 		return ErrMessageValidationChanging
-	}
-	// If Start() hasn't been called, send directly (for tests)
-	if !c.started {
-		err := c.sendLocked(messageParts...)
-		c.lock.Unlock()
-		return err
 	}
 	c.lock.Unlock()
 
@@ -369,9 +330,6 @@ func (c *PTYConversation) sendLocked(messageParts ...MessagePart) error {
 
 // writeStabilize writes messageParts to the screen and waits for the screen to stabilize after the message is written.
 func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...MessagePart) error {
-	if c.cfg.SkipWritingMessage {
-		return nil
-	}
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	for _, part := range messageParts {
 		if err := part.Do(c.cfg.AgentIO); err != nil {
@@ -383,6 +341,7 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 		Timeout:     15 * time.Second,
 		MinInterval: 50 * time.Millisecond,
 		InitialWait: true,
+		Clock:       c.cfg.Clock,
 	}, func() (bool, error) {
 		screen := c.cfg.AgentIO.ReadScreen()
 		if screen != screenBeforeMessage {
@@ -405,6 +364,7 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 	if err := util.WaitFor(ctx, util.WaitTimeout{
 		Timeout:     15 * time.Second,
 		MinInterval: 25 * time.Millisecond,
+		Clock:       c.cfg.Clock,
 	}, func() (bool, error) {
 		// we don't want to spam additional carriage returns because the agent may process them
 		// (aider does this), but we do want to retry sending one if nothing's
