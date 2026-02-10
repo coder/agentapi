@@ -16,6 +16,8 @@ import (
 	st "github.com/coder/agentapi/lib/screentracker"
 )
 
+const testTimeout = 10 * time.Second
+
 // testAgent is a goroutine-safe mock implementation of AgentIO.
 type testAgent struct {
 	mu      sync.Mutex
@@ -79,8 +81,7 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 	go func() {
 		errCh <- c.Send(parts...)
 	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	for {
 		select {
 		case err := <-errCh:
 			return err
@@ -89,8 +90,6 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 		_, w := mClock.AdvanceNext()
 		w.MustWait(ctx)
 	}
-	t.Fatal("sendWithClockDrive timed out")
-	return nil
 }
 
 // msgNoTime is a ConversationMessage without the Time field for easy comparison.
@@ -123,7 +122,7 @@ type statusTestParams struct {
 }
 
 func statusTest(t *testing.T, params statusTestParams) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	t.Cleanup(cancel)
 	t.Run(fmt.Sprintf("interval-%s,stability_length-%s", params.cfg.SnapshotInterval, params.cfg.ScreenStabilityLength), func(t *testing.T) {
 		mClock := quartz.NewMock(t)
@@ -274,7 +273,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("no-change-no-message-update", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		c, agent, mClock := newConversation(ctx, t)
 
@@ -288,7 +287,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("tracking messages", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		c, agent, mClock := newConversation(ctx, t)
 
@@ -342,7 +341,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("tracking messages overlap", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		c, agent, mClock := newConversation(ctx, t)
 
@@ -369,7 +368,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("format-message", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		c, agent, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
 			cfg.FormatMessage = func(message string, userInput string) string {
@@ -402,7 +401,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("send-message-status-check", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		c, agent, mClock := newConversation(ctx, t)
 
@@ -437,7 +436,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("agent not ready - status remains changing", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "loading..."}
@@ -465,7 +464,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("agent becomes ready - status stays changing until initial prompt sent", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "loading..."}
@@ -496,7 +495,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("initial prompt lifecycle - status stays changing until sent", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "loading..."}
@@ -557,7 +556,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "loading..."}
@@ -582,7 +581,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 	})
 
 	t.Run("no initial prompt configured - normal status logic applies", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "ready"}
