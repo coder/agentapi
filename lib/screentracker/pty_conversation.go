@@ -176,7 +176,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			isReady = true
 		default:
 		}
-		if len(c.outboundQueue) > 0 && c.isScreenStableLocked() && isReady {
+		if isReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
 			case c.stableSignal <- struct{}{}:
 			default:
@@ -317,9 +317,15 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 	}
 
 	c.lock.Lock()
-	// Re-apply the pre-send screen to the agent message. While the lock
-	// was released during writeStabilize, the snapshot loop may have
-	// overwritten the agent message with intermediate screen content.
+	// Re-apply the pre-send agent message from the screen captured before
+	// the write. While the lock was released during writeStabilize, the
+	// snapshot loop continued taking snapshots and calling
+	// updateLastAgentMessageLocked with whatever was on screen at each
+	// tick (typically echoed user input or intermediate terminal state).
+	// Those updates corrupt the agent message for this turn. Restoring it
+	// here ensures the conversation history is correct. The next line sets
+	// screenBeforeLastUserMessage so the *next* agent message will be
+	// diffed relative to the pre-send screen.
 	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
 	c.screenBeforeLastUserMessage = screenBeforeMessage
 	c.messages = append(c.messages, ConversationMessage{
