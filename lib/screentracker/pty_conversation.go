@@ -62,9 +62,6 @@ type PTYConversationConfig struct {
 	// Function to format the messages received from the agent
 	// userInput is the last user message
 	FormatMessage func(message string, userInput string) string
-	// SkipSendMessageStatusCheck skips the check for whether the message can be sent.
-	// This is used in tests
-	SkipSendMessageStatusCheck bool
 	// ReadyForInitialPrompt detects whether the agent has initialized and is ready to accept the initial prompt
 	ReadyForInitialPrompt func(message string) bool
 	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
@@ -288,7 +285,7 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	}
 
 	c.lock.Lock()
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
+	if c.statusLocked() != ConversationStatusStable {
 		c.lock.Unlock()
 		return ErrMessageValidationChanging
 	}

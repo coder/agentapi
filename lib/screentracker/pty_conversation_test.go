@@ -267,7 +267,6 @@ func TestMessages(t *testing.T) {
 			AgentIO:                    agent,
 			SnapshotInterval:           100 * time.Millisecond,
 			ScreenStabilityLength:      200 * time.Millisecond,
-			SkipSendMessageStatusCheck: true,
 			Logger:                     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		}
 		for _, opt := range opts {
@@ -426,9 +425,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("send-message-status-check", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t, func(cfg *st.PTYConversationConfig) {
-			cfg.SkipSendMessageStatusCheck = false
-		})
+		c, agent, mClock, ctx := newConversation(t)
 
 		sendMsg := func(msg string) error {
 			return c.Send(st.MessagePartText{Content: msg})
@@ -538,7 +535,6 @@ func TestInitialPromptReadiness(t *testing.T) {
 				return message == "ready"
 			},
 			InitialPrompt:             []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
-			SkipSendMessageStatusCheck: true,
 			Logger:                     discardLogger,
 		}
 
@@ -616,7 +612,6 @@ func TestInitialPromptReadiness(t *testing.T) {
 			SnapshotInterval:           1 * time.Second,
 			ScreenStabilityLength:      2 * time.Second, // threshold = 3
 			AgentIO:                    agent,
-			SkipSendMessageStatusCheck: true,
 			Logger:                     discardLogger,
 		}
 
