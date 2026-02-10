@@ -49,30 +49,14 @@ func (a *testAgent) setScreen(s string) {
 func advancePast(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {
 	t.Helper()
 	target := mClock.Now().Add(total)
-	noEventRetries := 0
 	for mClock.Now().Before(target) {
 		remaining := target.Sub(mClock.Now())
 		d, ok := mClock.Peek()
-		if !ok {
-			// No events pending. A background goroutine may be about to
-			// register a timer, so retry a few times before jumping.
-			noEventRetries++
-			if noEventRetries > 50 {
-				mClock.Advance(remaining).MustWait(ctx)
-				return
-			}
-			time.Sleep(1 * time.Millisecond)
-			continue
-		}
-		noEventRetries = 0
-		if d > remaining {
-			// Next event is past our target; safe to jump.
+		if !ok || d > remaining {
 			mClock.Advance(remaining).MustWait(ctx)
 			return
 		}
-		// Step to the next event.
-		_, w := mClock.AdvanceNext()
-		w.MustWait(ctx)
+		mClock.Advance(d).MustWait(ctx)
 	}
 }
 
@@ -95,8 +79,6 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 	go func() {
 		errCh <- c.Send(parts...)
 	}()
-	// Give the goroutine a moment to start and enqueue.
-	time.Sleep(1 * time.Millisecond)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
@@ -104,17 +86,6 @@ func sendWithClockDrive(ctx context.Context, t *testing.T, c *st.PTYConversation
 			return err
 		default:
 		}
-		_, ok := mClock.Peek()
-		if !ok {
-			// No mock events yet; the send loop goroutine may still be
-			// setting up timers. Wait briefly for it to schedule.
-			time.Sleep(5 * time.Millisecond)
-			continue
-		}
-		// Use AdvanceNext instead of Advance(d) to avoid a race: between
-		// Peek() and Advance(d), a goroutine may create a closer timer,
-		// making Advance(d) illegal. AdvanceNext always advances to the
-		// nearest event regardless.
 		_, w := mClock.AdvanceNext()
 		w.MustWait(ctx)
 	}
@@ -247,10 +218,8 @@ func TestMessages(t *testing.T) {
 
 	// newConversation creates a started conversation with a mock clock and
 	// testAgent. Tests that Send() messages must use sendWithClockDrive.
-	newConversation := func(t *testing.T, opts ...func(*st.PTYConversationConfig)) (*st.PTYConversation, *testAgent, *quartz.Mock, context.Context) {
+	newConversation := func(ctx context.Context, t *testing.T, opts ...func(*st.PTYConversationConfig)) (*st.PTYConversation, *testAgent, *quartz.Mock) {
 		t.Helper()
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 
 		writeCounter := 0
 		agent := &testAgent{}
@@ -279,7 +248,7 @@ func TestMessages(t *testing.T) {
 		c := st.NewPTY(ctx, cfg)
 		c.Start(ctx)
 
-		return c, agent, mClock, ctx
+		return c, agent, mClock
 	}
 
 	// threshold = 3 (200ms / 100ms = 2, + 1 = 3)
@@ -287,7 +256,7 @@ func TestMessages(t *testing.T) {
 	const interval = 100 * time.Millisecond
 
 	t.Run("messages are copied", func(t *testing.T) {
-		c, _, _, _ := newConversation(t)
+		c, _, _ := newConversation(context.Background(), t)
 		messages := c.Messages()
 		assertMessages(t, c, []msgNoTime{{0, "", st.ConversationRoleAgent}})
 
@@ -297,7 +266,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("whitespace-padding", func(t *testing.T) {
-		c, _, _, _ := newConversation(t)
+		c, _, _ := newConversation(context.Background(), t)
 		for _, msg := range []string{"123 ", " 123", "123\t\t", "\n123", "123\n\t", " \t123\n\t"} {
 			err := c.Send(st.MessagePartText{Content: msg})
 			assert.ErrorIs(t, err, st.ErrMessageValidationWhitespace)
@@ -305,7 +274,9 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("no-change-no-message-update", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
 
 		agent.setScreen("1")
 		advancePast(ctx, t, mClock, interval)
@@ -317,7 +288,9 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("tracking messages", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
 
 		// Agent message is recorded when the first snapshot is taken.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
@@ -369,7 +342,9 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("tracking messages overlap", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
 
 		// Common overlap between screens is removed after a user message.
 		fillToStable(ctx, t, agent, mClock, "1", interval, threshold)
@@ -394,7 +369,9 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("format-message", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t, func(cfg *st.PTYConversationConfig) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
 			cfg.FormatMessage = func(message string, userInput string) string {
 				return message + " " + userInput
 			}
@@ -414,7 +391,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("format-message-initial", func(t *testing.T) {
-		c, _, _, _ := newConversation(t, func(cfg *st.PTYConversationConfig) {
+		c, _, _ := newConversation(context.Background(), t, func(cfg *st.PTYConversationConfig) {
 			cfg.FormatMessage = func(message string, userInput string) string {
 				return "formatted"
 			}
@@ -425,7 +402,9 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("send-message-status-check", func(t *testing.T) {
-		c, agent, mClock, ctx := newConversation(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
 
 		sendMsg := func(msg string) error {
 			return c.Send(st.MessagePartText{Content: msg})
@@ -449,7 +428,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("send-message-empty-message", func(t *testing.T) {
-		c, _, _, _ := newConversation(t)
+		c, _, _ := newConversation(context.Background(), t)
 		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
 	})
 }
