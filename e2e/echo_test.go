@@ -251,7 +251,11 @@ func waitAgentAPIStable(ctx context.Context, t testing.TB, apiClient *agentapisd
 					return nil
 				}
 			} else {
-				t.Logf("Got %T event", evt)
+				var sb strings.Builder
+				if err := json.NewEncoder(&sb).Encode(evt); err != nil {
+					t.Logf("Failed to encode event: %v", err)
+				}
+				t.Logf("Got event: %s", sb.String())
 			}
 		case err := <-errs:
 			return fmt.Errorf("read events: %w", err)
