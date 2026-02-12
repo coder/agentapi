@@ -76,6 +76,12 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 		}
 
 		interval = min(interval*2, maxInterval)
+		if !sleepTimer.Stop() {
+			select {
+			case <-sleepTimer.C:
+			default:
+			}
+		}
 		sleepTimer.Reset(interval)
 	}
 }
