@@ -94,7 +94,10 @@ type PTYConversation struct {
 	screenBeforeLastUserMessage string
 	lock                        sync.Mutex
 
-	// outboundQueue holds messages waiting to be sent to the agent
+	// outboundQueue holds messages waiting to be sent to the agent.
+	// Buffer size is 1. Callers are expected to be serialized (the HTTP
+	// layer holds s.mu, and Send blocks until the message is processed),
+	// so ordering is preserved.
 	outboundQueue chan outboundMessage
 	// stableSignal is used by the snapshot loop to signal the send loop
 	// when the agent is stable and there are items in the outbound queue.
@@ -102,15 +105,11 @@ type PTYConversation struct {
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
 	// initialPromptReady is closed when ReadyForInitialPrompt returns true.
-	// This is checked by a separate goroutine to avoid calling ReadyForInitialPrompt on every tick.
+	// Checked inline in the snapshot loop on each tick.
 	initialPromptReady chan struct{}
 }
 
 var _ Conversation = &PTYConversation{}
-
-// errInitialPromptReady is a sentinel used to stop the readiness TickerFunc
-// after ReadyForInitialPrompt returns true.
-var errInitialPromptReady = xerrors.New("initial prompt ready")
 
 func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 	if cfg.Clock == nil {
@@ -147,18 +146,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 }
 
 func (c *PTYConversation) Start(ctx context.Context) {
-	// Initial prompt readiness loop - polls ReadyForInitialPrompt until it returns true,
-	// then closes initialPromptReady and exits. This avoids calling ReadyForInitialPrompt
-	// on every snapshot tick.
-	c.cfg.Clock.TickerFunc(ctx, 100*time.Millisecond, func() error {
-		screen := c.cfg.AgentIO.ReadScreen()
-		if c.cfg.ReadyForInitialPrompt(screen) {
-			close(c.initialPromptReady)
-			return errInitialPromptReady
-		}
-		return nil
-	}, "readiness")
-
 	// Snapshot loop
 	c.cfg.Clock.TickerFunc(ctx, c.cfg.SnapshotInterval, func() error {
 		c.lock.Lock()
@@ -175,6 +162,10 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		case <-c.initialPromptReady:
 			isReady = true
 		default:
+			if c.cfg.ReadyForInitialPrompt(screen) {
+				close(c.initialPromptReady)
+				isReady = true
+			}
 		}
 		if isReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
@@ -191,6 +182,20 @@ func (c *PTYConversation) Start(ctx context.Context) {
 
 	// Send loop - primary call site for sendLocked() in production
 	go func() {
+		defer func() {
+			// Drain outbound queue so Send() callers don't block forever.
+			for {
+				select {
+				case msg := <-c.outboundQueue:
+					if msg.errCh != nil {
+						msg.errCh <- ctx.Err()
+						close(msg.errCh)
+					}
+				default:
+					return
+				}
+			}
+		}()
 		for {
 			select {
 			case <-ctx.Done():
@@ -203,6 +208,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 					err := c.sendMessage(ctx, msg.parts...)
 					if msg.errCh != nil {
 						msg.errCh <- err
+						close(msg.errCh)
 					}
 				default:
 					c.cfg.Logger.Error("received stable signal but outbound queue is empty")
