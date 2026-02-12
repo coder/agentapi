@@ -64,7 +64,7 @@ type EventEmitter struct {
 	agentType           mf.AgentType
 	chans               map[int]chan Event
 	chanIdx             int
-	subscriptionBufSize int
+	subscriptionBufSize uint
 	screen              string
 }
 
@@ -81,13 +81,17 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 	}
 }
 
-const defaultSubscriptionBufSize = 1024
+const defaultSubscriptionBufSize uint = 1024
 
 type EventEmitterOption func(*EventEmitter)
 
-func WithSubscriptionBufSize(size int) EventEmitterOption {
+func WithSubscriptionBufSize(size uint) EventEmitterOption {
 	return func(e *EventEmitter) {
-		e.subscriptionBufSize = size
+		if size == 0 {
+			e.subscriptionBufSize = defaultSubscriptionBufSize
+		} else {
+			e.subscriptionBufSize = size
+		}
 	}
 }
 
@@ -150,6 +154,9 @@ func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
+			if i >= len(newMessages) {
+				continue
+			}
 			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,
