@@ -81,21 +81,33 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 	}
 }
 
-// subscriptionBufSize is the size of the buffer for each subscription.
-// Once the buffer is full, the channel will be closed.
-// Listeners must actively drain the channel, so it's important to
-// set this to a value that is large enough to handle the expected
-// number of events.
-func NewEventEmitter(subscriptionBufSize int, agentType mf.AgentType) *EventEmitter {
-	return &EventEmitter{
-		mu:                  sync.Mutex{},
+const defaultSubscriptionBufSize = 1024
+
+type EventEmitterOption func(*EventEmitter)
+
+func WithSubscriptionBufSize(size int) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.subscriptionBufSize = size
+	}
+}
+
+func WithAgentType(agentType mf.AgentType) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.agentType = agentType
+	}
+}
+
+func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
+	e := &EventEmitter{
 		messages:            make([]st.ConversationMessage, 0),
 		status:              AgentStatusRunning,
-		agentType:           agentType,
 		chans:               make(map[int]chan Event),
-		chanIdx:             0,
-		subscriptionBufSize: subscriptionBufSize,
+		subscriptionBufSize: defaultSubscriptionBufSize,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // Assumes the caller holds the lock.

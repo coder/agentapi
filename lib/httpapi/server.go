@@ -244,7 +244,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
-	emitter := NewEventEmitter(1024, config.AgentType)
+	emitter := NewEventEmitter(WithAgentType(config.AgentType))
 
 	// Format initial prompt into message parts if provided
 	var initialPrompt []st.MessagePart

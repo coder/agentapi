@@ -11,7 +11,7 @@ import (
 
 func TestEventEmitter(t *testing.T) {
 	t.Run("single-subscription", func(t *testing.T) {
-		emitter := NewEventEmitter(10, "")
+		emitter := NewEventEmitter(WithSubscriptionBufSize(10))
 		_, ch, stateEvents := emitter.Subscribe()
 		assert.Empty(t, ch)
 		assert.Equal(t, []Event{
@@ -60,7 +60,7 @@ func TestEventEmitter(t *testing.T) {
 	})
 
 	t.Run("multiple-subscriptions", func(t *testing.T) {
-		emitter := NewEventEmitter(10, "")
+		emitter := NewEventEmitter(WithSubscriptionBufSize(10))
 		channels := make([]<-chan Event, 0, 10)
 		for i := 0; i < 10; i++ {
 			_, ch, _ := emitter.Subscribe()
@@ -81,7 +81,7 @@ func TestEventEmitter(t *testing.T) {
 	})
 
 	t.Run("close-channel", func(t *testing.T) {
-		emitter := NewEventEmitter(1, "")
+		emitter := NewEventEmitter(WithSubscriptionBufSize(1))
 		_, ch, _ := emitter.Subscribe()
 		for i := range 5 {
 			emitter.EmitMessages([]st.ConversationMessage{
