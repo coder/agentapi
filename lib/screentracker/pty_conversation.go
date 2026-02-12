@@ -104,9 +104,9 @@ type PTYConversation struct {
 	stableSignal chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
-	// initialPromptReady is closed when ReadyForInitialPrompt returns true.
+	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
 	// Checked inline in the snapshot loop on each tick.
-	initialPromptReady chan struct{}
+	initialPromptReady bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -130,7 +130,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 		outboundQueue:      make(chan outboundMessage, 1),
 		stableSignal:       make(chan struct{}, 1),
 		toolCallMessageSet: make(map[string]bool),
-		initialPromptReady: make(chan struct{}),
 	}
 	// If we have an initial prompt, enqueue it
 	if len(cfg.InitialPrompt) > 0 {
@@ -157,17 +156,10 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		// Signal send loop if agent is ready and queue has items.
 		// We check readiness independently of statusLocked() because
 		// statusLocked() returns "changing" when queue has items.
-		isReady := false
-		select {
-		case <-c.initialPromptReady:
-			isReady = true
-		default:
-			if c.cfg.ReadyForInitialPrompt(screen) {
-				close(c.initialPromptReady)
-				isReady = true
-			}
+		if !c.initialPromptReady && c.cfg.ReadyForInitialPrompt(screen) {
+			c.initialPromptReady = true
 		}
-		if isReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
+		if c.initialPromptReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
 			case c.stableSignal <- struct{}{}:
 			default:
