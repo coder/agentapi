@@ -99,6 +99,10 @@ type PTYConversation struct {
 	// layer holds s.mu, and Send blocks until the message is processed),
 	// so ordering is preserved.
 	outboundQueue chan outboundMessage
+	// sendingMessage is true while the send loop is processing a message.
+	// Set under lock in the snapshot loop when signaling, cleared under
+	// lock in the send loop after sendMessage returns.
+	sendingMessage bool
 	// stableSignal is used by the snapshot loop to signal the send loop
 	// when the agent is stable and there are items in the outbound queue.
 	stableSignal chan struct{}
@@ -162,6 +166,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		if c.initialPromptReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
 			case c.stableSignal <- struct{}{}:
+				c.sendingMessage = true
 			default:
 				// Signal already pending
 			}
@@ -181,7 +186,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				case msg := <-c.outboundQueue:
 					if msg.errCh != nil {
 						msg.errCh <- ctx.Err()
-						close(msg.errCh) // help GC
+						close(msg.errCh)
 					}
 				default:
 					return
@@ -198,9 +203,14 @@ func (c *PTYConversation) Start(ctx context.Context) {
 					return
 				case msg := <-c.outboundQueue:
 					err := c.sendMessage(ctx, msg.parts...)
+					c.lock.Lock()
+					c.sendingMessage = false
+					c.lock.Unlock()
 					if msg.errCh != nil {
 						msg.errCh <- err
-						close(msg.errCh) // help GC
+						// Close so the Send() caller's <-errCh never blocks
+						// if it has already consumed the error value.
+						close(msg.errCh)
 					}
 				default:
 					c.cfg.Logger.Error("received stable signal but outbound queue is empty")
@@ -448,7 +458,7 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 
 	// Handle initial prompt readiness: report "changing" until the queue is drained
 	// to avoid the status flipping "changing" -> "stable" -> "changing"
-	if len(c.outboundQueue) > 0 {
+	if len(c.outboundQueue) > 0 || c.sendingMessage {
 		return ConversationStatusChanging
 	}
 
