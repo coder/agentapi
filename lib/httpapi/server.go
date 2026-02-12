@@ -244,7 +244,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
-	emitter := NewEventEmitter(1024)
+	emitter := NewEventEmitter(1024, config.AgentType)
 
 	// Format initial prompt into message parts if provided
 	var initialPrompt []st.MessagePart
@@ -262,16 +262,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 		FormatToolCall:        formatToolCall,
 		InitialPrompt:         initialPrompt,
-		// OnSnapshot uses a callback rather than passing the emitter directly
-		// to keep the screentracker package decoupled from httpapi concerns.
-		// This preserves clean package boundaries and avoids import cycles.
-		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
-			emitter.UpdateStatusAndEmitChanges(status, config.AgentType)
-			emitter.UpdateMessagesAndEmitChanges(messages)
-			emitter.UpdateScreenAndEmitChanges(screen)
-		},
-		Logger: logger,
-	})
+		Logger:                logger,
+	}, emitter)
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")

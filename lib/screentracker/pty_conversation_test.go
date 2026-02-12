@@ -49,6 +49,12 @@ func (a *testAgent) setScreen(s string) {
 	a.screen = s
 }
 
+type testEmitter struct{}
+
+func (testEmitter) EmitMessages([]st.ConversationMessage) {}
+func (testEmitter) EmitStatus(st.ConversationStatus)      {}
+func (testEmitter) EmitScreen(string)                      {}
+
 // advanceFor is a shorthand for advanceUntil with a time-based condition.
 func advanceFor(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {
 	t.Helper()
@@ -125,7 +131,7 @@ func statusTest(t *testing.T, params statusTestParams) {
 		params.cfg.AgentIO = agent
 		params.cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		c := st.NewPTY(ctx, params.cfg)
+		c := st.NewPTY(ctx, params.cfg, &testEmitter{})
 		c.Start(ctx)
 
 		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
@@ -233,7 +239,7 @@ func TestMessages(t *testing.T) {
 			agent = a
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		return c, agent, mClock
@@ -460,7 +466,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			Logger:        discardLogger,
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		// Take a snapshot with "loading...". Threshold is 1 (stability 0 / interval 1s = 0 + 1 = 1).
@@ -488,7 +494,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			Logger:        discardLogger,
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		// Agent not ready initially.
@@ -524,7 +530,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			Logger:                     discardLogger,
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		// Status is "changing" while waiting for readiness.
@@ -564,7 +570,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			Logger: discardLogger,
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		advanceFor(ctx, t, mClock, 1*time.Second)
@@ -586,7 +592,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 			Logger:                     discardLogger,
 		}
 
-		c := st.NewPTY(ctx, cfg)
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
 		// Fill buffer to reach stability with "ready" screen.

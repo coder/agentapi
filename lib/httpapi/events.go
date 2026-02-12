@@ -86,11 +86,12 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 // Listeners must actively drain the channel, so it's important to
 // set this to a value that is large enough to handle the expected
 // number of events.
-func NewEventEmitter(subscriptionBufSize int) *EventEmitter {
+func NewEventEmitter(subscriptionBufSize int, agentType mf.AgentType) *EventEmitter {
 	return &EventEmitter{
 		mu:                  sync.Mutex{},
 		messages:            make([]st.ConversationMessage, 0),
 		status:              AgentStatusRunning,
+		agentType:           agentType,
 		chans:               make(map[int]chan Event),
 		chanIdx:             0,
 		subscriptionBufSize: subscriptionBufSize,
@@ -122,7 +123,7 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 
 // Assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
-func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.ConversationMessage) {
+func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -149,7 +150,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 	e.messages = newMessages
 }
 
-func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) {
+func (e *EventEmitter) EmitStatus(newStatus st.ConversationStatus) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -158,12 +159,11 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: agentType})
+	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: e.agentType})
 	e.status = newAgentStatus
-	e.agentType = agentType
 }
 
-func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
+func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
