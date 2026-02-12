@@ -87,7 +87,11 @@ type EventEmitterOption func(*EventEmitter)
 
 func WithSubscriptionBufSize(size int) EventEmitterOption {
 	return func(e *EventEmitter) {
-		e.subscriptionBufSize = size
+		if size <= 0 {
+			e.subscriptionBufSize = defaultSubscriptionBufSize
+		} else {
+			e.subscriptionBufSize = size
+		}
 	}
 }
 
@@ -150,6 +154,9 @@ func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
+			if i >= len(newMessages) {
+				continue
+			}
 			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,

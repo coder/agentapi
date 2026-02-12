@@ -68,7 +68,7 @@ type PTYConversationConfig struct {
 	FormatToolCall func(message string) (string, []string)
 	// InitialPrompt is the initial prompt to send to the agent once ready
 	InitialPrompt []MessagePart
-	Logger     *slog.Logger
+	Logger        *slog.Logger
 }
 
 func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
@@ -114,9 +114,18 @@ type PTYConversation struct {
 
 var _ Conversation = &PTYConversation{}
 
+type noopEmitter struct{}
+
+func (noopEmitter) EmitMessages([]ConversationMessage) {}
+func (noopEmitter) EmitStatus(ConversationStatus)      {}
+func (noopEmitter) EmitScreen(string)                  {}
+
 func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PTYConversation {
 	if cfg.Clock == nil {
 		cfg.Clock = quartz.NewReal()
+	}
+	if emitter == nil {
+		emitter = noopEmitter{}
 	}
 	threshold := cfg.getStableSnapshotsThreshold()
 	c := &PTYConversation{

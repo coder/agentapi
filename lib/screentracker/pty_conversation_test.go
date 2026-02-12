@@ -20,8 +20,8 @@ const testTimeout = 10 * time.Second
 
 // testAgent is a goroutine-safe mock implementation of AgentIO.
 type testAgent struct {
-	mu      sync.Mutex
-	screen  string
+	mu     sync.Mutex
+	screen string
 	// onWrite is called during Write to simulate the agent reacting to
 	// terminal input (e.g., changing the screen), which unblocks
 	// writeStabilize's polling loops.
@@ -53,7 +53,7 @@ type testEmitter struct{}
 
 func (testEmitter) EmitMessages([]st.ConversationMessage) {}
 func (testEmitter) EmitStatus(st.ConversationStatus)      {}
-func (testEmitter) EmitScreen(string)                      {}
+func (testEmitter) EmitScreen(string)                     {}
 
 // advanceFor is a shorthand for advanceUntil with a time-based condition.
 func advanceFor(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {
@@ -226,11 +226,11 @@ func TestMessages(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		mClock.Set(now)
 		cfg := st.PTYConversationConfig{
-			Clock:                      mClock,
-			AgentIO:                    agent,
-			SnapshotInterval:           100 * time.Millisecond,
-			ScreenStabilityLength:      200 * time.Millisecond,
-			Logger:                     slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Clock:                 mClock,
+			AgentIO:               agent,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
 		}
 		for _, opt := range opts {
 			opt(&cfg)
@@ -519,15 +519,15 @@ func TestInitialPromptReadiness(t *testing.T) {
 			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
 		}
 		cfg := st.PTYConversationConfig{
-			Clock:                      mClock,
-			SnapshotInterval:           1 * time.Second,
-			ScreenStabilityLength:      0,
-			AgentIO:                    agent,
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 0,
+			AgentIO:               agent,
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
-			InitialPrompt:             []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
-			Logger:                     discardLogger,
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
+			Logger:        discardLogger,
 		}
 
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
@@ -585,11 +585,11 @@ func TestInitialPromptReadiness(t *testing.T) {
 		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "ready"}
 		cfg := st.PTYConversationConfig{
-			Clock:                      mClock,
-			SnapshotInterval:           1 * time.Second,
-			ScreenStabilityLength:      2 * time.Second, // threshold = 3
-			AgentIO:                    agent,
-			Logger:                     discardLogger,
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 2 * time.Second, // threshold = 3
+			AgentIO:               agent,
+			Logger:                discardLogger,
 		}
 
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
