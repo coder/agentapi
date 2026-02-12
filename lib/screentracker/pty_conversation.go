@@ -181,7 +181,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				case msg := <-c.outboundQueue:
 					if msg.errCh != nil {
 						msg.errCh <- ctx.Err()
-						close(msg.errCh)
+						close(msg.errCh) // help GC
 					}
 				default:
 					return
@@ -200,7 +200,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 					err := c.sendMessage(ctx, msg.parts...)
 					if msg.errCh != nil {
 						msg.errCh <- err
-						close(msg.errCh)
+						close(msg.errCh) // help GC
 					}
 				default:
 					c.cfg.Logger.Error("received stable signal but outbound queue is empty")
