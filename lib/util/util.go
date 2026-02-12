@@ -23,6 +23,8 @@ var WaitTimedOut = xerrors.New("timeout waiting for condition")
 
 // WaitFor waits for a condition to be true or the timeout to expire.
 // It will wait for the condition to be true with exponential backoff.
+// A single sleep timer is reused across iterations via Reset so that
+// mock-clock tests always have a pending timer to advance.
 func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, error)) error {
 	clock := timeout.Clock
 	if clock == nil {
@@ -41,53 +43,46 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 	if timeoutDuration == 0 {
 		timeoutDuration = 10 * time.Second
 	}
-	timeoutTimer := clock.NewTimer(timeoutDuration)
-	defer timeoutTimer.Stop()
-
 	if minInterval > maxInterval {
 		return xerrors.Errorf("minInterval is greater than maxInterval")
 	}
 
+	timeoutTimer := clock.NewTimer(timeoutDuration)
+	defer timeoutTimer.Stop()
+
 	interval := minInterval
-	if timeout.InitialWait {
-		initialTimer := clock.NewTimer(interval)
-		defer initialTimer.Stop()
-		select {
-		case <-initialTimer.C:
-		case <-ctx.Done():
-			initialTimer.Stop()
-			return ctx.Err()
-		case <-timeoutTimer.C:
-			initialTimer.Stop()
-			return WaitTimedOut
-		}
-	}
+	sleepTimer := clock.NewTimer(interval)
+	defer sleepTimer.Stop()
+
+	waitForTimer := timeout.InitialWait
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeoutTimer.C:
-			return WaitTimedOut
-		default:
-			ok, err := condition()
-			if err != nil {
-				return err
-			}
-			if ok {
-				return nil
-			}
-			sleepTimer := clock.NewTimer(interval)
+		if waitForTimer {
 			select {
 			case <-sleepTimer.C:
 			case <-ctx.Done():
-				sleepTimer.Stop()
 				return ctx.Err()
 			case <-timeoutTimer.C:
-				sleepTimer.Stop()
 				return WaitTimedOut
 			}
-			interval = min(interval*2, maxInterval)
 		}
+		waitForTimer = true
+
+		ok, err := condition()
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+
+		interval = min(interval*2, maxInterval)
+		if !sleepTimer.Stop() {
+			select {
+			case <-sleepTimer.C:
+			default:
+			}
+		}
+		sleepTimer.Reset(interval)
 	}
 }
 
