@@ -129,9 +129,7 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 	return nil
 }
 
-
 // statusResponse is used to parse the /status endpoint response.
-// The ACPMode field may not be present on older servers.
 type statusResponse struct {
 	Status    string `json:"status"`
 	AgentType string `json:"agent_type"`
@@ -143,17 +141,15 @@ func checkACPMode(remoteUrl string) error {
 	if err != nil {
 		return xerrors.Errorf("failed to check server status: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// Server doesn't support /status or had an error, continue anyway
-		return nil
+		return xerrors.Errorf("unexpected %d response from server: %s", resp.StatusCode, resp.Status)
 	}
 
 	var status statusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		// Can't parse response, continue anyway
-		return nil
+		return xerrors.Errorf("failed to decode server status: %w", err)
 	}
 
 	if status.ACPMode {
