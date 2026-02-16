@@ -28,10 +28,6 @@ export default function MessageList({messages}: MessageListProps) {
 
   // Track if user is at bottom - default to true for initial scroll
   const isAtBottomRef = useRef(true);
-  // Track the last known scroll height to detect new content
-  const lastScrollHeightRef = useRef(0);
-  // Track if we're currently doing a programmatic scroll
-  const isProgrammaticScrollRef = useRef(false);
 
   const checkIfAtBottom = useCallback(() => {
     if (!scrollAreaRef) return false;
@@ -60,58 +56,31 @@ export default function MessageList({messages}: MessageListProps) {
     };
   }, []);
 
-  // Update isAtBottom on scroll
+  // Track whether the user is scrolled to the bottom. Every scroll event
+  // updates the ref so auto-scroll decisions are always based on the
+  // user's actual position.
   useEffect(() => {
     if (!scrollAreaRef) return;
-
     const handleScroll = () => {
-      if (isProgrammaticScrollRef.current) return;
       isAtBottomRef.current = checkIfAtBottom();
     };
-
-    // Initial check
     handleScroll();
-
     scrollAreaRef.addEventListener("scroll", handleScroll);
-    scrollAreaRef.addEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
-    return () => {
-      scrollAreaRef.removeEventListener("scroll", handleScroll)
-      scrollAreaRef.removeEventListener("scrollend", () => isProgrammaticScrollRef.current = false);
-
-    };
+    return () => scrollAreaRef.removeEventListener("scroll", handleScroll);
   }, [checkIfAtBottom, scrollAreaRef]);
 
-  // Handle auto-scrolling when messages change
+  // Pin to bottom when new content arrives, but only if the user hasn't
+  // scrolled away. Always scroll when the latest message is from the user
+  // (they just sent it and should see it). Direct scrollTop assignment is
+  // synchronous and avoids the animation conflicts that smooth scrollTo
+  // causes during streaming.
   useLayoutEffect(() => {
     if (!scrollAreaRef) return;
-
-    const currentScrollHeight = scrollAreaRef.scrollHeight;
-
-    // Check if this is new content (scroll height increased)
-    const hasNewContent = currentScrollHeight > lastScrollHeightRef.current;
-    const isFirstRender = lastScrollHeightRef.current === 0;
-    const isNewUserMessage =
-      messages.length > 0 && messages[messages.length - 1].role === "user";
-
-    // Auto-scroll only if:
-    // 1. It's the first render, OR
-    // 2. There's new content AND user was at the bottom, OR
-    // 3. The user sent a new message
-    if (
-      hasNewContent &&
-      (isFirstRender || isAtBottomRef.current || isNewUserMessage)
-    ) {
-      isProgrammaticScrollRef.current = true;
-      scrollAreaRef.scrollTo({
-        top: currentScrollHeight,
-        behavior: isFirstRender ? "instant" : "smooth",
-      });
-      // After scrolling, we're at the bottom
-      isAtBottomRef.current = true;
-    }
-
-    // Update the last known scroll height
-    lastScrollHeightRef.current = currentScrollHeight;
+    const lastMessage = messages[messages.length - 1];
+    const isUserMessage = lastMessage && lastMessage.role === "user";
+    if (!isAtBottomRef.current && !isUserMessage) return;
+    scrollAreaRef.scrollTop = scrollAreaRef.scrollHeight;
+    isAtBottomRef.current = true;
   }, [messages, scrollAreaRef]);
 
   // If no messages, show a placeholder
@@ -126,7 +95,7 @@ export default function MessageList({messages}: MessageListProps) {
   return (
     <div className="overflow-y-auto flex-1" ref={setScrollAreaRef}>
       <div
-        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto transition-all duration-300 ease-in-out min-h-0">
+        className="p-4 flex flex-col gap-4 max-w-4xl mx-auto min-h-0">
         {messages.map((message, index) => (
           <div
             key={message.id ?? "draft"}
@@ -137,7 +106,7 @@ export default function MessageList({messages}: MessageListProps) {
                 message.role === "user"
                   ? "bg-accent-foreground rounded-lg max-w-[90%] px-4 py-3 text-accent"
                   : "max-w-[80ch]"
-              } ${message.id === undefined ? "animate-pulse" : ""}`}
+              }`}
             >
               <div
                 className={`whitespace-pre-wrap break-words text-left text-xs md:text-sm leading-relaxed md:leading-normal ${
@@ -186,7 +155,7 @@ const ProcessedMessage = React.memo(function ProcessedMessage({
                                                               }: ProcessedMessageProps) {
   // Regex to find URLs
   // https://stackoverflow.com/a/17773849
-  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/g, []);
+  const urlRegex = useMemo<RegExp>(() => /(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})/, []);
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     if (e.metaKey || e.ctrlKey) {
