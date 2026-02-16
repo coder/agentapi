@@ -14,6 +14,7 @@ import (
 	"github.com/ActiveState/termtest/xpty"
 	"github.com/coder/agentapi/lib/logctx"
 	"github.com/coder/agentapi/lib/util"
+	"github.com/coder/quartz"
 	"golang.org/x/xerrors"
 )
 
@@ -22,6 +23,7 @@ type Process struct {
 	execCmd          *exec.Cmd
 	screenUpdateLock sync.RWMutex
 	lastScreenUpdate time.Time
+	clock            quartz.Clock
 }
 
 type StartProcessConfig struct {
@@ -29,10 +31,15 @@ type StartProcessConfig struct {
 	Args           []string
 	TerminalWidth  uint16
 	TerminalHeight uint16
+	Clock          quartz.Clock
 }
 
 func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error) {
 	logger := logctx.From(ctx)
+	clock := args.Clock
+	if clock == nil {
+		clock = quartz.NewReal()
+	}
 	xp, err := xpty.New(args.TerminalWidth, args.TerminalHeight, false)
 	if err != nil {
 		return nil, err
@@ -46,7 +53,7 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		return nil, err
 	}
 
-	process := &Process{xp: xp, execCmd: execCmd}
+	process := &Process{xp: xp, execCmd: execCmd, clock: clock}
 
 	go func() {
 		// HACK: Working around xpty concurrency limitations
@@ -90,7 +97,7 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 			// writing to the terminal updates its state. without it,
 			// xp.State will always return an empty string
 			xp.Term.WriteRune(r)
-			process.lastScreenUpdate = time.Now()
+			process.lastScreenUpdate = clock.Now()
 			process.screenUpdateLock.Unlock()
 		}
 	}()
@@ -114,13 +121,13 @@ func (p *Process) Signal(sig os.Signal) error {
 func (p *Process) ReadScreen() string {
 	for range 3 {
 		p.screenUpdateLock.RLock()
-		if time.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
+		if p.clock.Since(p.lastScreenUpdate) >= 16*time.Millisecond {
 			state := p.xp.State.String()
 			p.screenUpdateLock.RUnlock()
 			return state
 		}
 		p.screenUpdateLock.RUnlock()
-		time.Sleep(16 * time.Millisecond)
+		<-util.After(p.clock, 16*time.Millisecond)
 	}
 	return p.xp.State.String()
 }
@@ -147,7 +154,7 @@ func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 
 	var exitErr error
 	select {
-	case <-time.After(timeout):
+	case <-util.After(p.clock, timeout):
 		if err := p.execCmd.Process.Kill(); err != nil {
 			exitErr = xerrors.Errorf("failed to forcefully kill the process: %w", err)
 		}

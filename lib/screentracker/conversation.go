@@ -34,9 +34,9 @@ var ConversationRoleValues = []ConversationRole{
 }
 
 var (
-	MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
-	MessageValidationErrorEmpty      = xerrors.New("message must not be empty")
-	MessageValidationErrorChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
+	ErrMessageValidationWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
+	ErrMessageValidationEmpty      = xerrors.New("message must not be empty")
+	ErrMessageValidationChanging   = xerrors.New("message can only be sent when the agent is waiting for user input")
 )
 
 type AgentIO interface {
@@ -49,15 +49,20 @@ type MessagePart interface {
 	String() string
 }
 
-// Conversation allows tracking of a conversation between a user and an agent.
+// Conversation represents a conversation between a user and an agent.
+// It is intended as the primary interface for interacting with a session.
+// Implementations must support the following capabilities:
+//   - Fetching all messages between the user and agent,
+//   - Sending a message to the agent,
+//   - Starting a background loop to update the conversation state, if required,
+//   - Fetching the status of the conversation,
+//   - Returning a textual representation of the conversation "screen" (used for notifying subscribers of updates to the conversation).
 type Conversation interface {
 	Messages() []ConversationMessage
-	SaveState([]ConversationMessage, string) error
-	LoadState(string) ([]ConversationMessage, error)
-	Snapshot(string)
+	Send(...MessagePart) error
 	Start(context.Context)
 	Status() ConversationStatus
-	String() string
+	Text() string
 }
 
 type ConversationMessage struct {
@@ -65,11 +70,4 @@ type ConversationMessage struct {
 	Message string
 	Role    ConversationRole
 	Time    time.Time
-}
-
-type AgentState struct {
-	Version           int                   `json:"version"`
-	Messages          []ConversationMessage `json:"messages"`
-	InitialPrompt     string                `json:"initial_prompt"`
-	InitialPromptSent bool                  `json:"initial_prompt_sent"`
 }

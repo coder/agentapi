@@ -172,7 +172,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
-	srv.StartSnapshotLoop(ctx)
 	srv.HandleSignals(ctx, process)
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)

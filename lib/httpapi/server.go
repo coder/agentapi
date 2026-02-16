@@ -24,6 +24,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -34,18 +35,19 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router                 chi.Router
-	api                    huma.API
-	port                   int
-	srv                    *http.Server
-	mu                     sync.RWMutex
-	logger                 *slog.Logger
-	conversation           *st.PTYConversation
-	agentio                *termexec.Process
-	agentType              mf.AgentType
-	emitter                *EventEmitter
-	chatBasePath           string
-	tempDir                string
+	router       chi.Router
+	api          huma.API
+	port         int
+	srv          *http.Server
+	mu           sync.RWMutex
+	logger       *slog.Logger
+	conversation st.Conversation
+	agentio      *termexec.Process
+	agentType    mf.AgentType
+	emitter      *EventEmitter
+	chatBasePath string
+	tempDir      string
+	clock        quartz.Clock
 	statePersistenceConfig StatePersistenceConfig
 	stateLoadComplete      bool
 }
@@ -103,13 +105,14 @@ type StatePersistenceConfig struct {
 }
 
 type ServerConfig struct {
-	AgentType              mf.AgentType
-	Process                *termexec.Process
-	Port                   int
-	ChatBasePath           string
-	AllowedHosts           []string
-	AllowedOrigins         []string
-	InitialPrompt          string
+	AgentType      mf.AgentType
+	Process        *termexec.Process
+	Port           int
+	ChatBasePath   string
+	AllowedHosts   []string
+	AllowedOrigins []string
+	InitialPrompt  string
+	Clock          quartz.Clock
 	StatePersistenceConfig StatePersistenceConfig
 }
 
@@ -203,6 +206,10 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	logger := logctx.From(ctx)
 
+	if config.Clock == nil {
+		config.Clock = quartz.NewReal()
+	}
+
 	allowedHosts, err := parseAllowedHosts(config.AllowedHosts)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to parse allowed hosts: %w", err)
@@ -246,20 +253,34 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		return mf.FormatToolCall(config.AgentType, message)
 	}
 
+	emitter := NewEventEmitter(1024)
+
+	// Format initial prompt into message parts if provided
+	var initialPrompt []st.MessagePart
+	if config.InitialPrompt != "" {
+		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
+	}
+
 	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType: config.AgentType,
-		AgentIO:   config.Process,
-		GetTime: func() time.Time {
-			return time.Now()
-		},
+		AgentType:             config.AgentType,
+		AgentIO:               config.Process,
+		Clock:                 config.Clock,
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
 		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
 		FormatToolCall:        formatToolCall,
-		Logger:                logger,
-	}, config.InitialPrompt)
-	emitter := NewEventEmitter(1024)
+		InitialPrompt:         initialPrompt,
+		// OnSnapshot uses a callback rather than passing the emitter directly
+		// to keep the screentracker package decoupled from httpapi concerns.
+		// This preserves clean package boundaries and avoids import cycles.
+		OnSnapshot: func(status st.ConversationStatus, messages []st.ConversationMessage, screen string) {
+			emitter.UpdateStatusAndEmitChanges(status, config.AgentType)
+			emitter.UpdateMessagesAndEmitChanges(messages)
+			emitter.UpdateScreenAndEmitChanges(screen)
+		},
+		Logger: logger,
+	})
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -269,22 +290,33 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
 	s := &Server{
-		router:                 router,
-		api:                    api,
-		port:                   config.Port,
-		conversation:           conversation,
-		logger:                 logger,
-		agentio:                config.Process,
-		agentType:              config.AgentType,
-		emitter:                emitter,
-		chatBasePath:           strings.TrimSuffix(config.ChatBasePath, "/"),
-		tempDir:                tempDir,
+		router:       router,
+		api:          api,
+		port:         config.Port,
+		conversation: conversation,
+		logger:       logger,
+		agentio:      config.Process,
+		agentType:    config.AgentType,
+		emitter:      emitter,
+		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
+		tempDir:      tempDir,
+		clock:        config.Clock,
 		statePersistenceConfig: config.StatePersistenceConfig,
 		stateLoadComplete:      false,
 	}
 
 	// Register API routes
 	s.registerRoutes()
+
+	// Start the conversation polling loop if we have a process.
+	// Process is nil only when --print-openapi is used (no agent runs).
+	// The process is already running at this point - termexec.StartProcess()
+	// blocks until the PTY is created and the process is active. Agent
+	// readiness (waiting for the prompt) is handled asynchronously inside
+	// conversation.Start() via ReadyForInitialPrompt.
+	if config.Process != nil {
+		s.conversation.Start(ctx)
+	}
 
 	return s, nil
 }
@@ -342,32 +374,26 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 }
 
 func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.Start(ctx)
+	s.conversation.StartSnapshotLoop(ctx)
 	go func() {
 		for {
 			currentStatus := s.conversation.Status()
 
-			// Send initial prompt & load state when agent becomes stable for the first time
-			if convertStatus(currentStatus) == AgentStatusStable {
+			// Send initial prompt when agent becomes stable for the first time
+			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
 
-				if !s.stateLoadComplete && s.statePersistenceConfig.LoadState {
-					_, _ = s.conversation.LoadState(s.statePersistenceConfig.StateFile)
-					s.stateLoadComplete = true
-				}
-				if !s.conversation.InitialPromptSent {
-					if err := s.conversation.Send(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-						s.logger.Error("Failed to send initial prompt", "error", err)
-					} else {
-						s.conversation.InitialPromptSent = true
-						s.conversation.ReadyForInitialPrompt = false
-						currentStatus = st.ConversationStatusChanging
-						s.logger.Info("Initial prompt sent successfully")
-					}
+				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
+					s.logger.Error("Failed to send initial prompt", "error", err)
+				} else {
+					s.conversation.InitialPromptSent = true
+					s.conversation.ReadyForInitialPrompt = false
+					currentStatus = st.ConversationStatusChanging
+					s.logger.Info("Initial prompt sent successfully")
 				}
 			}
 			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.String())
+			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
 		}
 	}()

@@ -3,13 +3,103 @@ package screentracker_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	st "github.com/coder/agentapi/lib/screentracker"
 )
+
+const testTimeout = 10 * time.Second
+
+// testAgent is a goroutine-safe mock implementation of AgentIO.
+type testAgent struct {
+	mu      sync.Mutex
+	screen  string
+	// onWrite is called during Write to simulate the agent reacting to
+	// terminal input (e.g., changing the screen), which unblocks
+	// writeStabilize's polling loops.
+	onWrite func(data []byte)
+}
+
+func (a *testAgent) ReadScreen() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.screen
+}
+
+func (a *testAgent) Write(data []byte) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.onWrite != nil {
+		a.onWrite(data)
+	}
+	return len(data), nil
+}
+
+func (a *testAgent) setScreen(s string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.screen = s
+}
+
+// advanceFor is a shorthand for advanceUntil with a time-based condition.
+func advanceFor(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {
+	t.Helper()
+	target := mClock.Now().Add(total)
+	advanceUntil(ctx, t, mClock, func() bool { return !mClock.Now().Before(target) })
+}
+
+// advanceUntil advances the mock clock one event at a time until done returns
+// true. Because the snapshot TickerFunc is always pending and WaitFor reuses a
+// single timer via Reset, there is always at least one event to advance.
+func advanceUntil(ctx context.Context, t *testing.T, mClock *quartz.Mock, done func() bool) {
+	t.Helper()
+	for !done() {
+		select {
+		case <-ctx.Done():
+			t.Fatal("context cancelled waiting for condition")
+		default:
+		}
+		_, w := mClock.AdvanceNext()
+		w.MustWait(ctx)
+	}
+}
+
+// sendAndAdvance calls Send() in a goroutine and advances the mock clock until
+// Send completes.
+func sendAndAdvance(ctx context.Context, t *testing.T, c *st.PTYConversation, mClock *quartz.Mock, parts ...st.MessagePart) {
+	t.Helper()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.Send(parts...)
+	}()
+	advanceUntil(ctx, t, mClock, func() bool {
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+func assertMessages(t *testing.T, c *st.PTYConversation, expected []st.ConversationMessage) {
+	t.Helper()
+	actual := c.Messages()
+	for i := range actual {
+		require.False(t, actual[i].Time.IsZero(), "message %d Time should be non-zero", i)
+		actual[i].Time = time.Time{}
+	}
+	require.Equal(t, expected, actual)
+}
 
 type statusTestStep struct {
 	snapshot string
@@ -20,30 +110,29 @@ type statusTestParams struct {
 	steps []statusTestStep
 }
 
-type testAgent struct {
-	st.AgentIO
-	screen string
-}
-
-func (a *testAgent) ReadScreen() string {
-	return a.screen
-}
-
-func (a *testAgent) Write(data []byte) (int, error) {
-	return 0, nil
-}
-
 func statusTest(t *testing.T, params statusTestParams) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	t.Cleanup(cancel)
 	t.Run(fmt.Sprintf("interval-%s,stability_length-%s", params.cfg.SnapshotInterval, params.cfg.ScreenStabilityLength), func(t *testing.T) {
-		if params.cfg.GetTime == nil {
-			params.cfg.GetTime = func() time.Time { return time.Now() }
+		mClock := quartz.NewMock(t)
+		params.cfg.Clock = mClock
+		agent := &testAgent{}
+		if params.cfg.AgentIO != nil {
+			if a, ok := params.cfg.AgentIO.(*testAgent); ok {
+				agent = a
+			}
 		}
-		c := st.NewPTY(ctx, params.cfg, "")
+		params.cfg.AgentIO = agent
+		params.cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		c := st.NewPTY(ctx, params.cfg)
+		c.Start(ctx)
+
 		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
 
 		for i, step := range params.steps {
-			c.Snapshot(step.snapshot)
+			agent.setScreen(step.snapshot)
+			advanceFor(ctx, t, mClock, params.cfg.SnapshotInterval)
 			assert.Equal(t, step.status, c.Status(), "step %d", i)
 		}
 	})
@@ -113,385 +202,406 @@ func TestConversation(t *testing.T) {
 }
 
 func TestMessages(t *testing.T) {
-	now := time.Now()
-	agentMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
-			Id:      id,
-			Message: msg,
-			Role:    st.ConversationRoleAgent,
-			Time:    now,
+	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// newConversation creates a started conversation with a mock clock and
+	// testAgent. Tests that Send() messages must use sendAndAdvance.
+	newConversation := func(ctx context.Context, t *testing.T, opts ...func(*st.PTYConversationConfig)) (*st.PTYConversation, *testAgent, *quartz.Mock) {
+		t.Helper()
+
+		writeCounter := 0
+		agent := &testAgent{}
+		// Default onWrite: each write produces a unique screen so that
+		// writeStabilize can detect screen changes.
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
 		}
-	}
-	userMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
-			Id:      id,
-			Message: msg,
-			Role:    st.ConversationRoleUser,
-			Time:    now,
-		}
-	}
-	sendMsg := func(c *st.PTYConversation, msg string) error {
-		return c.Send(st.MessagePartText{Content: msg})
-	}
-	newConversation := func(opts ...func(*st.PTYConversationConfig)) *st.PTYConversation {
+		mClock := quartz.NewMock(t)
+		mClock.Set(now)
 		cfg := st.PTYConversationConfig{
-			GetTime:                    func() time.Time { return now },
-			SnapshotInterval:           1 * time.Second,
-			ScreenStabilityLength:      2 * time.Second,
-			SkipWritingMessage:         true,
-			SkipSendMessageStatusCheck: true,
+			Clock:                      mClock,
+			AgentIO:                    agent,
+			SnapshotInterval:           100 * time.Millisecond,
+			ScreenStabilityLength:      200 * time.Millisecond,
+			Logger:                     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		}
 		for _, opt := range opts {
 			opt(&cfg)
 		}
-		return st.NewPTY(context.Background(), cfg, "")
+		if a, ok := cfg.AgentIO.(*testAgent); ok {
+			agent = a
+		}
+
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
+
+		return c, agent, mClock
 	}
 
+	// threshold = 3 (200ms / 100ms = 2, + 1 = 3)
+	const threshold = 3
+	const interval = 100 * time.Millisecond
+
 	t.Run("messages are copied", func(t *testing.T) {
-		c := newConversation()
+		c, _, _ := newConversation(context.Background(), t)
 		messages := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, ""),
-		}, messages)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
+		})
 
 		messages[0].Message = "modification"
 
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, ""),
-		}, c.Messages())
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
+		})
 	})
 
 	t.Run("whitespace-padding", func(t *testing.T) {
-		c := newConversation()
+		c, _, _ := newConversation(context.Background(), t)
 		for _, msg := range []string{"123 ", " 123", "123\t\t", "\n123", "123\n\t", " \t123\n\t"} {
 			err := c.Send(st.MessagePartText{Content: msg})
-			assert.Error(t, err, st.MessageValidationErrorWhitespace)
+			assert.ErrorIs(t, err, st.ErrMessageValidationWhitespace)
 		}
 	})
 
 	t.Run("no-change-no-message-update", func(t *testing.T) {
-		nowWrapper := struct {
-			time.Time
-		}{
-			Time: now,
-		}
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.GetTime = func() time.Time { return nowWrapper.Time }
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
+
+		agent.setScreen("1")
+		advanceFor(ctx, t, mClock, interval)
+		msgs := c.Messages()
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 		})
 
-		c.Snapshot("1")
-		msgs := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-		}, msgs)
-		nowWrapper.Time = nowWrapper.Add(1 * time.Second)
-		c.Snapshot("1")
+		advanceFor(ctx, t, mClock, interval)
 		assert.Equal(t, msgs, c.Messages())
 	})
 
 	t.Run("tracking messages", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.AgentIO = agent
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
+
+		// Agent message is recorded when the first snapshot is taken.
+		agent.setScreen("1")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
 		})
-		// agent message is recorded when the first snapshot is added
-		c.Snapshot("1")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-		}, c.Messages())
 
-		// agent message is updated when the screen changes
-		c.Snapshot("2")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-		}, c.Messages())
+		// Agent message is updated when the screen changes.
+		agent.setScreen("2")
+		advanceFor(ctx, t, mClock, interval)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
+		})
 
-		// user message is recorded
-		agent.screen = "2"
-		assert.NoError(t, sendMsg(c, "3"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-		}, c.Messages())
+		// Fill to stable so Send can proceed (screen is "2").
+		agent.setScreen("2")
+		advanceFor(ctx, t, mClock, interval*threshold)
 
-		// agent message is added after a user message
-		c.Snapshot("4")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "4"),
-		}, c.Messages())
+		// User message is recorded.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "3"})
 
-		// agent message is updated when the screen changes before a user message
-		agent.screen = "5"
-		assert.NoError(t, sendMsg(c, "6"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "5"),
-			userMsg(3, "6"),
-		}, c.Messages())
+		// After send, screen is dirty from writeStabilize. Set to "4" and stabilize.
+		agent.setScreen("4")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "4", Role: st.ConversationRoleAgent},
+		})
 
-		// conversation status is changing right after a user message
-		c.Snapshot("7")
-		c.Snapshot("7")
-		c.Snapshot("7")
+		// Agent message is updated when the screen changes before a user message.
+		agent.setScreen("5")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "6"})
+
+		agent.setScreen("7")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "2", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "3", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "5", Role: st.ConversationRoleAgent},
+			{Id: 3, Message: "6", Role: st.ConversationRoleUser},
+			{Id: 4, Message: "7", Role: st.ConversationRoleAgent},
+		})
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		agent.screen = "7"
-		assert.NoError(t, sendMsg(c, "8"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "5"),
-			userMsg(3, "6"),
-			agentMsg(4, "7"),
-			userMsg(5, "8"),
-		}, c.Messages())
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 
-		// conversation status is back to stable after a snapshot that
-		// doesn't change the screen
-		c.Snapshot("7")
+		// Send another message.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "8"})
+
+		// After filling to stable, messages and status are correct.
+		agent.setScreen("7")
+		advanceFor(ctx, t, mClock, interval*threshold)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
 	t.Run("tracking messages overlap", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.AgentIO = agent
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
+
+		// Common overlap between screens is removed after a user message.
+		agent.setScreen("1")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
+		agent.setScreen("1\n3")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "3", Role: st.ConversationRoleAgent},
 		})
 
-		// common overlap between screens is removed after a user message
-		c.Snapshot("1")
-		agent.screen = "1"
-		assert.NoError(t, sendMsg(c, "2"))
-		c.Snapshot("1\n3")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-			userMsg(1, "2"),
-			agentMsg(2, "3"),
-		}, c.Messages())
-
-		agent.screen = "1\n3x"
-		assert.NoError(t, sendMsg(c, "4"))
-		c.Snapshot("1\n3x\n5")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-			userMsg(1, "2"),
-			agentMsg(2, "3x"),
-			userMsg(3, "4"),
-			agentMsg(4, "5"),
-		}, c.Messages())
+		agent.setScreen("1\n3x")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
+		agent.setScreen("1\n3x\n5")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "3x", Role: st.ConversationRoleAgent},
+			{Id: 3, Message: "4", Role: st.ConversationRoleUser},
+			{Id: 4, Message: "5", Role: st.ConversationRoleAgent},
+		})
 	})
 
 	t.Run("format-message", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.AgentIO = agent
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
 			cfg.FormatMessage = func(message string, userInput string) string {
 				return message + " " + userInput
 			}
 		})
-		agent.screen = "1"
-		assert.NoError(t, sendMsg(c, "2"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1 "),
-			userMsg(1, "2"),
-		}, c.Messages())
-		agent.screen = "x"
-		c.Snapshot("x")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1 "),
-			userMsg(1, "2"),
-			agentMsg(2, "x 2"),
-		}, c.Messages())
+
+		// Fill to stable with screen "1", then send.
+		agent.setScreen("1")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "2"})
+
+		// After send, set screen to "x" and take snapshots for new agent message.
+		agent.setScreen("x")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "1 ", Role: st.ConversationRoleAgent},
+			{Id: 1, Message: "2", Role: st.ConversationRoleUser},
+			{Id: 2, Message: "x 2", Role: st.ConversationRoleAgent},
+		})
 	})
 
-	t.Run("format-message", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.AgentIO = agent
+	t.Run("format-message-initial", func(t *testing.T) {
+		c, _, _ := newConversation(context.Background(), t, func(cfg *st.PTYConversationConfig) {
 			cfg.FormatMessage = func(message string, userInput string) string {
 				return "formatted"
 			}
 		})
-		assert.Equal(t, []st.ConversationMessage{
-			{
-				Id:      0,
-				Message: "",
-				Role:    st.ConversationRoleAgent,
-				Time:    now,
-			},
-		}, c.Messages())
+		assertMessages(t, c, []st.ConversationMessage{
+			{Id: 0, Message: "", Role: st.ConversationRoleAgent},
+		})
 	})
 
 	t.Run("send-message-status-check", func(t *testing.T) {
-		c := newConversation(func(cfg *st.PTYConversationConfig) {
-			cfg.SkipSendMessageStatusCheck = false
-			cfg.SnapshotInterval = 1 * time.Second
-			cfg.ScreenStabilityLength = 2 * time.Second
-			cfg.AgentIO = &testAgent{}
-		})
-		assert.Error(t, sendMsg(c, "1"), st.MessageValidationErrorChanging)
-		for range 3 {
-			c.Snapshot("1")
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		c, agent, mClock := newConversation(ctx, t)
+
+		sendMsg := func(msg string) error {
+			return c.Send(st.MessagePartText{Content: msg})
 		}
-		assert.NoError(t, sendMsg(c, "4"))
-		c.Snapshot("2")
-		assert.Error(t, sendMsg(c, "5"), st.MessageValidationErrorChanging)
+
+		// Status is initializing, send should fail.
+		assert.ErrorIs(t, sendMsg("1"), st.ErrMessageValidationChanging)
+
+		// Fill to stable.
+		agent.setScreen("1")
+		advanceFor(ctx, t, mClock, interval*threshold)
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
+
+		// Now send should succeed.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "4"})
+
+		// After send, screen is dirty. Set to "2" (different from "1") so status is changing.
+		agent.setScreen("2")
+		advanceFor(ctx, t, mClock, interval)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		assert.ErrorIs(t, sendMsg("5"), st.ErrMessageValidationChanging)
 	})
 
 	t.Run("send-message-empty-message", func(t *testing.T) {
-		c := newConversation()
-		assert.Error(t, sendMsg(c, ""), st.MessageValidationErrorEmpty)
+		c, _, _ := newConversation(context.Background(), t)
+		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
 	})
 }
 
 func TestInitialPromptReadiness(t *testing.T) {
-	now := time.Now()
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("agent not ready - status remains changing", func(t *testing.T) {
-		cfg := st.PTYConversationConfig{
-			GetTime:               func() time.Time { return now },
-			SnapshotInterval:      1 * time.Second,
-			ScreenStabilityLength: 0,
-			AgentIO:               &testAgent{screen: "loading..."},
-			ReadyForInitialPrompt: func(message string) bool {
-				return message == "ready"
-			},
-		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
-
-		// Fill buffer with stable snapshots, but agent is not ready
-		c.Snapshot("loading...")
-
-		// Even though screen is stable, status should be changing because agent is not ready
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
-	})
-
-	t.Run("agent becomes ready - status changes to stable", func(t *testing.T) {
-		cfg := st.PTYConversationConfig{
-			GetTime:               func() time.Time { return now },
-			SnapshotInterval:      1 * time.Second,
-			ScreenStabilityLength: 0,
-			AgentIO:               &testAgent{screen: "loading..."},
-			ReadyForInitialPrompt: func(message string) bool {
-				return message == "ready"
-			},
-		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
-
-		// Agent not ready initially
-		c.Snapshot("loading...")
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
-
-		// Agent becomes ready
-		c.Snapshot("ready")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
-	})
-
-	t.Run("ready for initial prompt lifecycle: false -> true -> false", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		mClock := quartz.NewMock(t)
 		agent := &testAgent{screen: "loading..."}
 		cfg := st.PTYConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               agent,
 			ReadyForInitialPrompt: func(message string) bool {
 				return message == "ready"
 			},
-			SkipWritingMessage:         true,
-			SkipSendMessageStatusCheck: true,
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
+			Logger:        discardLogger,
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
 
-		// Initial state: ReadyForInitialPrompt should be false
-		c.Snapshot("loading...")
-		assert.False(t, c.ReadyForInitialPrompt, "should start as false")
-		assert.False(t, c.InitialPromptSent)
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
+
+		// Take a snapshot with "loading...". Threshold is 1 (stability 0 / interval 1s = 0 + 1 = 1).
+		advanceFor(ctx, t, mClock, 1*time.Second)
+
+		// Even though screen is stable, status should be changing because
+		// the initial prompt is still in the outbound queue.
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+	})
+
+	t.Run("agent becomes ready - status stays changing until initial prompt sent", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 0,
+			AgentIO:               agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
+			Logger:        discardLogger,
+		}
+
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
+
+		// Agent not ready initially.
+		advanceFor(ctx, t, mClock, 1*time.Second)
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 
-		// Agent becomes ready: ReadyForInitialPrompt should become true
-		agent.screen = "ready"
-		c.Snapshot("ready")
+		// Agent becomes ready, but status stays "changing" because the
+		// initial prompt is still in the outbound queue.
+		agent.setScreen("ready")
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+	})
+
+	t.Run("initial prompt lifecycle - status stays changing until sent", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
+		writeCounter := 0
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
+		}
+		cfg := st.PTYConversationConfig{
+			Clock:                      mClock,
+			SnapshotInterval:           1 * time.Second,
+			ScreenStabilityLength:      0,
+			AgentIO:                    agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			InitialPrompt:             []st.MessagePart{st.MessagePartText{Content: "initial prompt here"}},
+			Logger:                     discardLogger,
+		}
+
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
+
+		// Status is "changing" while waiting for readiness.
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+
+		// Agent becomes ready. The readiness loop detects this, the snapshot
+		// loop sees queue + stable + ready and signals the send loop.
+		// writeStabilize runs with onWrite changing the screen, so it completes.
+		agent.setScreen("ready")
+		// Drive clock until the initial prompt is sent (queue drains).
+		advanceUntil(ctx, t, mClock, func() bool {
+			return len(c.Messages()) >= 2
+		})
+
+		// The initial prompt should have been sent. Set a clean screen and
+		// advance enough ticks for the snapshot loop to record it as an
+		// agent message and fill the stability buffer (threshold=1).
+		agent.setScreen("response")
+		advanceFor(ctx, t, mClock, 2*time.Second)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt, "should become true when ready")
-		assert.False(t, c.InitialPromptSent)
-
-		// Send the initial prompt
-		assert.NoError(t, c.Send(st.MessagePartText{Content: "initial prompt here"}))
-
-		// After sending initial prompt: ReadyForInitialPrompt should be set back to false
-		// (simulating what happens in the actual server code)
-		c.InitialPromptSent = true
-		c.ReadyForInitialPrompt = false
-
-		// Verify final state
-		assert.False(t, c.ReadyForInitialPrompt, "should be false after initial prompt sent")
-		assert.True(t, c.InitialPromptSent)
 	})
 
 	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
 		cfg := st.PTYConversationConfig{
-			GetTime:               func() time.Time { return now },
-			SnapshotInterval:      1 * time.Second,
-			ScreenStabilityLength: 0,
-			AgentIO:               &testAgent{screen: "loading..."},
-			ReadyForInitialPrompt: func(message string) bool {
-				return false // Agent never ready
-			},
-		}
-		// Empty initial prompt means no need to wait for readiness
-		c := st.NewPTY(context.Background(), cfg, "")
-
-		c.Snapshot("loading...")
-
-		// Status should be stable because no initial prompt to wait for
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.True(t, c.InitialPromptSent) // Set to true when initial prompt is empty
-	})
-
-	t.Run("initial prompt sent - normal status logic applies", func(t *testing.T) {
-		agent := &testAgent{screen: "ready"}
-		cfg := st.PTYConversationConfig{
-			GetTime:               func() time.Time { return now },
+			Clock:                 mClock,
 			SnapshotInterval:      1 * time.Second,
 			ScreenStabilityLength: 0,
 			AgentIO:               agent,
 			ReadyForInitialPrompt: func(message string) bool {
-				return message == "ready"
+				return false
 			},
-			SkipWritingMessage:         true,
-			SkipSendMessageStatusCheck: true,
+			Logger: discardLogger,
 		}
-		c := st.NewPTY(context.Background(), cfg, "initial prompt here")
 
-		// First, agent becomes ready
-		c.Snapshot("ready")
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 1*time.Second)
+
+		// Status should be stable because no initial prompt to wait for.
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.True(t, c.ReadyForInitialPrompt)
-		assert.False(t, c.InitialPromptSent)
+	})
 
-		// Send the initial prompt
-		agent.screen = "processing..."
-		assert.NoError(t, c.Send(st.MessagePartText{Content: "initial prompt here"}))
+	t.Run("no initial prompt configured - normal status logic applies", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                      mClock,
+			SnapshotInterval:           1 * time.Second,
+			ScreenStabilityLength:      2 * time.Second, // threshold = 3
+			AgentIO:                    agent,
+			Logger:                     discardLogger,
+		}
 
-		// Mark initial prompt as sent (simulating what the server does)
-		c.InitialPromptSent = true
-		c.ReadyForInitialPrompt = false
+		c := st.NewPTY(ctx, cfg)
+		c.Start(ctx)
 
-		// Now test that status logic works normally after initial prompt is sent
-		c.Snapshot("processing...")
-
-		// Status should be stable because initial prompt was already sent
-		// and the readiness check is bypassed
+		// Fill buffer to reach stability with "ready" screen.
+		agent.setScreen("ready")
+		advanceFor(ctx, t, mClock, 3*time.Second)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		assert.False(t, c.ReadyForInitialPrompt)
-		assert.True(t, c.InitialPromptSent)
+
+		// After screen changes, status becomes changing.
+		agent.setScreen("processing...")
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+
+		// After screen is stable again (3 identical snapshots), status becomes stable.
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 }

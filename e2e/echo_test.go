@@ -133,14 +133,11 @@ func setup(ctx context.Context, t testing.TB, p *params) ([]ScriptEntry, *agenta
 		cwd, err := os.Getwd()
 		require.NoError(t, err, "Failed to get current working directory")
 		binaryPath = filepath.Join(cwd, "..", "out", "agentapi")
-		_, err = os.Stat(binaryPath)
-		if err != nil {
-			t.Logf("Building binary at %s", binaryPath)
-			buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
-			buildCmd.Dir = filepath.Join(cwd, "..")
-			t.Logf("run: %s", buildCmd.String())
-			require.NoError(t, buildCmd.Run(), "Failed to build binary")
-		}
+		t.Logf("Building binary at %s", binaryPath)
+		buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
+		buildCmd.Dir = filepath.Join(cwd, "..")
+		t.Logf("run: %s", buildCmd.String())
+		require.NoError(t, buildCmd.Run(), "Failed to build binary")
 	}
 
 	serverPort, err := getFreePort()
@@ -254,7 +251,11 @@ func waitAgentAPIStable(ctx context.Context, t testing.TB, apiClient *agentapisd
 					return nil
 				}
 			} else {
-				t.Logf("Got %T event", evt)
+				var sb strings.Builder
+				if err := json.NewEncoder(&sb).Encode(evt); err != nil {
+					t.Logf("Failed to encode event: %v", err)
+				}
+				t.Logf("Got event: %s", sb.String())
 			}
 		case err := <-errs:
 			return fmt.Errorf("read events: %w", err)
