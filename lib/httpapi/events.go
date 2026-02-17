@@ -64,7 +64,7 @@ type EventEmitter struct {
 	agentType           mf.AgentType
 	chans               map[int]chan Event
 	chanIdx             int
-	subscriptionBufSize int
+	subscriptionBufSize uint
 	screen              string
 }
 
@@ -81,20 +81,37 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 	}
 }
 
-// subscriptionBufSize is the size of the buffer for each subscription.
-// Once the buffer is full, the channel will be closed.
-// Listeners must actively drain the channel, so it's important to
-// set this to a value that is large enough to handle the expected
-// number of events.
-func NewEventEmitter(subscriptionBufSize int) *EventEmitter {
-	return &EventEmitter{
-		mu:                  sync.Mutex{},
+const defaultSubscriptionBufSize uint = 1024
+
+type EventEmitterOption func(*EventEmitter)
+
+func WithSubscriptionBufSize(size uint) EventEmitterOption {
+	return func(e *EventEmitter) {
+		if size == 0 {
+			e.subscriptionBufSize = defaultSubscriptionBufSize
+		} else {
+			e.subscriptionBufSize = size
+		}
+	}
+}
+
+func WithAgentType(agentType mf.AgentType) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.agentType = agentType
+	}
+}
+
+func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
+	e := &EventEmitter{
 		messages:            make([]st.ConversationMessage, 0),
 		status:              AgentStatusRunning,
 		chans:               make(map[int]chan Event),
-		chanIdx:             0,
-		subscriptionBufSize: subscriptionBufSize,
+		subscriptionBufSize: defaultSubscriptionBufSize,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // Assumes the caller holds the lock.
@@ -122,7 +139,7 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 
 // UpdateMessagesAndEmitChanges assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
-func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.ConversationMessage) {
+func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -137,6 +154,9 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
+			if i >= len(newMessages) {
+				continue
+			}
 			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,
@@ -149,7 +169,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 	e.messages = newMessages
 }
 
-func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) {
+func (e *EventEmitter) EmitStatus(newStatus st.ConversationStatus) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -158,12 +178,11 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: agentType})
+	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: e.agentType})
 	e.status = newAgentStatus
-	e.agentType = agentType
 }
 
-func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
+func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

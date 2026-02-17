@@ -97,7 +97,8 @@ func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
 // PTYConversation is a conversation that uses a pseudo-terminal (PTY) for communication.
 // It uses a combination of polling and diffs to detect changes in the screen.
 type PTYConversation struct {
-	cfg PTYConversationConfig
+	cfg     PTYConversationConfig
+	emitter Emitter
 	// How many stable snapshots are required to consider the screen stable
 	stableSnapshotsThreshold    int
 	snapshotBuffer              *RingBuffer[screenSnapshot]
@@ -134,13 +135,23 @@ type PTYConversation struct {
 
 var _ Conversation = &PTYConversation{}
 
-func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
+type noopEmitter struct{}
+
+func (noopEmitter) EmitMessages([]ConversationMessage) {}
+func (noopEmitter) EmitStatus(ConversationStatus)      {}
+func (noopEmitter) EmitScreen(string)                  {}
+
+func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PTYConversation {
 	if cfg.Clock == nil {
 		cfg.Clock = quartz.NewReal()
+	}
+	if emitter == nil {
+		emitter = noopEmitter{}
 	}
 	threshold := cfg.getStableSnapshotsThreshold()
 	c := &PTYConversation{
 		cfg:                      cfg,
+		emitter:                  emitter,
 		stableSnapshotsThreshold: threshold,
 		snapshotBuffer:           NewRingBuffer[screenSnapshot](threshold),
 		messages: []ConversationMessage{
@@ -161,9 +172,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 	// If we have an initial prompt, enqueue it
 	if len(cfg.InitialPrompt) > 0 {
 		c.outboundQueue <- outboundMessage{parts: cfg.InitialPrompt, errCh: nil}
-	}
-	if c.cfg.OnSnapshot == nil {
-		c.cfg.OnSnapshot = func(ConversationStatus, []ConversationMessage, string) {}
 	}
 	if c.cfg.ReadyForInitialPrompt == nil {
 		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
@@ -202,7 +210,9 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 		c.lock.Unlock()
 
-		c.cfg.OnSnapshot(status, messages, screen)
+		c.emitter.EmitStatus(status)
+		c.emitter.EmitMessages(messages)
+		c.emitter.EmitScreen(screen)
 		return nil
 	}, "snapshot")
 
