@@ -63,6 +63,7 @@ type Conversation interface {
 	Start(context.Context)
 	Status() ConversationStatus
 	Text() string
+	SaveState() error
 }
 
 type ConversationMessage struct {
@@ -70,4 +71,10 @@ type ConversationMessage struct {
 	Message string
 	Role    ConversationRole
 	Time    time.Time
+}
+
+type StatePersistenceConfig struct {
+	StateFile string
+	LoadState bool
+	SaveState bool
 }

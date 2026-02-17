@@ -40,6 +40,7 @@ type Server struct {
 	port         int
 	srv          *http.Server
 	mu           sync.RWMutex
+	stopOnce     sync.Once
 	logger       *slog.Logger
 	conversation st.Conversation
 	agentio      *termexec.Process
@@ -48,8 +49,6 @@ type Server struct {
 	chatBasePath string
 	tempDir      string
 	clock        quartz.Clock
-	statePersistenceConfig StatePersistenceConfig
-	stateLoadComplete      bool
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -98,22 +97,16 @@ func (s *Server) GetOpenAPI() string {
 // because the action of taking a snapshot takes time too.
 const snapshotInterval = 25 * time.Millisecond
 
-type StatePersistenceConfig struct {
-	StateFile string
-	LoadState bool
-	SaveState bool
-}
-
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
-	InitialPrompt  string
-	Clock          quartz.Clock
-	StatePersistenceConfig StatePersistenceConfig
+	AgentType              mf.AgentType
+	Process                *termexec.Process
+	Port                   int
+	ChatBasePath           string
+	AllowedHosts           []string
+	AllowedOrigins         []string
+	InitialPrompt          string
+	Clock                  quartz.Clock
+	StatePersistenceConfig st.StatePersistenceConfig
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -279,7 +272,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 			emitter.UpdateMessagesAndEmitChanges(messages)
 			emitter.UpdateScreenAndEmitChanges(screen)
 		},
-		Logger: logger,
+		Logger:                 logger,
+		StatePersistenceConfig: config.StatePersistenceConfig,
 	})
 
 	// Create temporary directory for uploads
@@ -301,8 +295,6 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
 		clock:        config.Clock,
-		statePersistenceConfig: config.StatePersistenceConfig,
-		stateLoadComplete:      false,
 	}
 
 	// Register API routes
@@ -371,32 +363,6 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	ctx.SetHeader("Connection", "keep-alive")
 
 	next(ctx)
-}
-
-func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.StartSnapshotLoop(ctx)
-	go func() {
-		for {
-			currentStatus := s.conversation.Status()
-
-			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
-
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					s.conversation.ReadyForInitialPrompt = false
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
-				}
-			}
-			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
-			time.Sleep(snapshotInterval)
-		}
-	}()
 }
 
 // registerRoutes sets up all API endpoints
@@ -633,15 +599,19 @@ func (s *Server) Start() error {
 	return s.srv.ListenAndServe()
 }
 
-// Stop gracefully stops the HTTP server
+// Stop gracefully stops the HTTP server. It is safe to call multiple times;
+// only the first call will perform the shutdown, subsequent calls are no-ops.
 func (s *Server) Stop(ctx context.Context) error {
-	// Clean up temporary directory
-	s.cleanupTempDir()
+	var err error
+	s.stopOnce.Do(func() {
+		// Clean up temporary directory
+		s.cleanupTempDir()
 
-	if s.srv != nil {
-		return s.srv.Shutdown(ctx)
-	}
-	return nil
+		if s.srv != nil {
+			err = s.srv.Shutdown(ctx)
+		}
+	})
+	return err
 }
 
 // cleanupTempDir removes the temporary directory and all its contents
@@ -653,28 +623,14 @@ func (s *Server) cleanupTempDir() {
 	}
 }
 
-// saveAndCleanup saves the conversation state and cleans up before shutdown
-func (s *Server) saveAndCleanup(sig os.Signal, process *termexec.Process) {
-	// Save conversation state if configured (synchronously before closing process)
-	s.saveStateIfConfigured(sig.String())
-
-	// Now close the process
-	if err := process.Close(s.logger, 5*time.Second); err != nil {
-		s.logger.Error("Error closing process", "signal", sig, "error", err)
+// SaveState saves the conversation state if configured. This can be called from signal handlers.
+// The source parameter indicates what triggered the save (e.g., "SIGTERM", "SIGUSR1").
+func (s *Server) SaveState(source string) error {
+	if err := s.conversation.SaveState(); err != nil {
+		s.logger.Error("Failed to save conversation state", "source", source, "error", err)
+		return err
 	}
-}
-
-// saveStateIfConfigured saves the conversation state if configured
-func (s *Server) saveStateIfConfigured(source string) {
-	if s.statePersistenceConfig.SaveState && s.statePersistenceConfig.StateFile != "" {
-		if err := s.conversation.SaveState(s.conversation.Messages(), s.statePersistenceConfig.StateFile); err != nil {
-			s.logger.Error("Failed to save conversation state", "source", source, "error", err)
-		} else {
-			s.logger.Info("Saved conversation state", "source", source, "stateFile", s.statePersistenceConfig.StateFile)
-		}
-	} else {
-		s.logger.Warn("Save requested but state saving is not configured", "source", source)
-	}
+	return nil
 }
 
 // registerStaticFileRoutes sets up routes for serving static files

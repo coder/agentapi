@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/coder/agentapi/lib/screentracker"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -106,8 +108,10 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 
 	// Get the variables related to state management
 	stateFile := viper.GetString(StateFile)
-	loadState := true
-	saveState := true
+	loadState := false
+	saveState := false
+
+	// Validate state file configuration
 	if stateFile != "" {
 		if !viper.IsSet(LoadState) {
 			loadState = true
@@ -119,6 +123,14 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			saveState = true
 		} else {
 			saveState = viper.GetBool(SaveState)
+		}
+	} else {
+		// No state file provided - ensure load/save flags are not explicitly set to true
+		if viper.IsSet(LoadState) && viper.GetBool(LoadState) {
+			return xerrors.Errorf("--load-state requires --state-file to be set")
+		}
+		if viper.IsSet(SaveState) && viper.GetBool(SaveState) {
+			return xerrors.Errorf("--save-state requires --state-file to be set")
 		}
 	}
 
@@ -158,7 +170,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
-		StatePersistenceConfig: httpapi.StatePersistenceConfig{
+		StatePersistenceConfig: screentracker.StatePersistenceConfig{
 			StateFile: stateFile,
 			LoadState: loadState,
 			SaveState: saveState,
@@ -172,7 +184,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
-	srv.HandleSignals(ctx, process)
+	handleSignals(ctx, logger, srv, process)
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)
 	go func() {
@@ -184,8 +196,10 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
 			}
 		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Stop(shutdownCtx); err != nil {
+			logger.Error("Failed to stop server after process exit", "error", err)
 		}
 	}()
 	if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {

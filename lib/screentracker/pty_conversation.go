@@ -29,6 +29,13 @@ type MessagePartText struct {
 	Hidden  bool
 }
 
+type AgentState struct {
+	Version       int                   `json:"version"`
+	Messages      []ConversationMessage `json:"messages"`
+	InitialPrompt string                `json:"initial_prompt"`
+	//InitialPromptSent bool                  `json:"initial_prompt_sent"`
+}
+
 var _ MessagePart = &MessagePartText{}
 
 func (p MessagePartText) Do(writer AgentIO) error {
@@ -72,8 +79,9 @@ type PTYConversationConfig struct {
 	// InitialPrompt is the initial prompt to send to the agent once ready
 	InitialPrompt []MessagePart
 	// OnSnapshot is called after each snapshot with current status, messages, and screen content
-	OnSnapshot func(status ConversationStatus, messages []ConversationMessage, screen string)
-	Logger     *slog.Logger
+	OnSnapshot             func(status ConversationStatus, messages []ConversationMessage, screen string)
+	Logger                 *slog.Logger
+	StatePersistenceConfig StatePersistenceConfig
 }
 
 func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
@@ -142,9 +150,9 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		outboundQueue:      make(chan outboundMessage, 1),
-		stableSignal:       make(chan struct{}, 1),
-		toolCallMessageSet: make(map[string]bool),
+		outboundQueue:                 make(chan outboundMessage, 1),
+		stableSignal:                  make(chan struct{}, 1),
+		toolCallMessageSet:            make(map[string]bool),
 		dirty:                         false,
 		firstStableSnapshot:           "",
 		userSentMessageAfterLoadState: false,
@@ -178,6 +186,12 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		if !c.initialPromptReady && c.cfg.ReadyForInitialPrompt(screen) {
 			c.initialPromptReady = true
 		}
+
+		if !c.loadStateSuccessful && c.cfg.StatePersistenceConfig.LoadState {
+			_ = c.loadState()
+			c.loadStateSuccessful = true
+		}
+
 		if c.initialPromptReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
 			case c.stableSignal <- struct{}{}:
@@ -284,6 +298,8 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 		c.messages[len(c.messages)-1] = conversationMessage
 	}
 	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
+
+	c.dirty = true
 }
 
 // caller MUST hold c.lock
@@ -297,10 +313,6 @@ func (c *PTYConversation) snapshotLocked(screen string) {
 }
 
 func (c *PTYConversation) Send(messageParts ...MessagePart) error {
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusLocked() != ConversationStatusStable {
-		return MessageValidationErrorChanging
-	}
-
 	// Validate message content before enqueueing
 	var sb strings.Builder
 	for _, part := range messageParts {
@@ -514,26 +526,41 @@ func (c *PTYConversation) Text() string {
 	return snapshots[len(snapshots)-1].screen
 }
 
-func (c *PTYConversation) SaveState(conversation []ConversationMessage, stateFile string) error {
+func (c *PTYConversation) SaveState() error {
+	conversation := c.Messages()
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	// Skip if state file is not configured
-	if stateFile == "" {
+	stateFile := c.cfg.StatePersistenceConfig.StateFile
+	saveState := c.cfg.StatePersistenceConfig.SaveState
+
+	if !saveState {
+		c.cfg.Logger.Info("")
 		return nil
 	}
 
 	// Skip if not dirty
 	if !c.dirty {
+		c.cfg.Logger.Info("Skipping state save: no changes since last save")
 		return nil
+	}
+
+	// Serialize initial prompt from message parts
+	var initialPromptStr string
+	if len(c.cfg.InitialPrompt) > 0 {
+		var sb strings.Builder
+		for _, part := range c.cfg.InitialPrompt {
+			sb.WriteString(part.String())
+		}
+		initialPromptStr = sb.String()
 	}
 
 	// Use atomic write: write to temp file, then rename to target path
 	data, err := json.MarshalIndent(AgentState{
-		Version:           1,
-		Messages:          conversation,
-		InitialPrompt:     c.InitialPrompt,
-		InitialPromptSent: c.InitialPromptSent,
+		Version:       1,
+		Messages:      conversation,
+		InitialPrompt: initialPromptStr,
 	}, "", " ")
 	if err != nil {
 		return xerrors.Errorf("failed to marshal state: %w", err)
@@ -558,44 +585,51 @@ func (c *PTYConversation) SaveState(conversation []ConversationMessage, stateFil
 
 	// Clear dirty flag after successful save
 	c.dirty = false
+
+	c.cfg.Logger.Info("State saved successfully to: %s", stateFile)
+
 	return nil
 }
 
-func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+// LoadState loads the state, this method assumes that caller holds the Lock
+func (c *PTYConversation) loadState() error {
+	stateFile := c.cfg.StatePersistenceConfig.StateFile
+	loadState := c.cfg.StatePersistenceConfig.LoadState
 
-	// Skip if state file is not configured
-	if stateFile == "" {
-		return nil, nil
+	if !loadState {
+		return nil
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		c.cfg.Logger.Info("No previous state to load (file does not exist)", "path", stateFile)
-		return nil, nil
+		return nil
 	}
 
 	// Read state file
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		c.cfg.Logger.Warn("Failed to load state file", "path", stateFile, "err", err)
-		return nil, xerrors.Errorf("failed to read state file: %w", err)
+		return xerrors.Errorf("failed to read state file: %w", err)
 	}
 
 	if len(data) == 0 {
 		c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
-		return nil, nil
+		return nil
 	}
 
 	var agentState AgentState
 	if err := json.Unmarshal(data, &agentState); err != nil {
 		c.cfg.Logger.Warn("Failed to load state file (corrupted or invalid JSON)", "path", stateFile, "err", err)
-		return nil, xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
+		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 
-	c.InitialPromptSent = agentState.InitialPromptSent
-	c.InitialPrompt = agentState.InitialPrompt
+	//c.cfg.initialPromptSent = agentState.InitialPromptSent
+	c.cfg.InitialPrompt = []MessagePart{MessagePartText{
+		Content: agentState.InitialPrompt,
+		Alias:   "",
+		Hidden:  false,
+	}}
 	c.messages = agentState.Messages
 
 	// Store the first stable snapshot for filtering later
@@ -606,10 +640,15 @@ func (c *PTYConversation) LoadState(stateFile string) ([]ConversationMessage, er
 
 	c.loadStateSuccessful = true
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
-	return c.messages, nil
+	return nil
 }
 
 func (c *PTYConversation) adjustScreenAfterStateLoad(screen string) string {
+
+	if c.firstStableSnapshot == "" {
+		return screen
+	}
+
 	newScreen := strings.Replace(screen, c.firstStableSnapshot, "", 1)
 
 	// Before the first user message after loading state, return the last message from the loaded state.
