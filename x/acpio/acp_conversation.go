@@ -199,9 +199,8 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
 
 	if err != nil {
 		c.logger.Error("ACPConversation message failed", "error", err)
-		// Remove the empty streaming message on error
-		if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent &&
-			c.messages[len(c.messages)-1].Message == "" {
+		// Remove the agent's streaming message on error (may be empty or partial)
+		if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent {
 			c.messages = c.messages[:len(c.messages)-1]
 		}
 		messages := slices.Clone(c.messages)

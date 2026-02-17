@@ -423,3 +423,52 @@ func Test_Messages_AreCopied(t *testing.T) {
 	// Unblock the write to let the test complete cleanly
 	close(done)
 }
+
+func Test_ErrorRemovesPartialMessage(t *testing.T) {
+	mClock := quartz.NewMock(t)
+	mock := newMockAgentIO()
+	// Block the write so we can simulate partial content before error
+	started, done := mock.BlockWrite()
+
+	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv.Start(context.Background())
+
+	// Send a message
+	err := conv.Send(screentracker.MessagePartText{Content: "test"})
+	require.NoError(t, err)
+
+	// Wait for write to start
+	<-started
+
+	// Should have user message + placeholder agent message
+	messages := conv.Messages()
+	require.Len(t, messages, 2)
+	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
+	assert.Equal(t, screentracker.ConversationRoleAgent, messages[1].Role)
+
+	// Simulate the agent streaming partial content before the error
+	mock.SimulateChunks("partial ", "response ", "content")
+
+	// Verify partial content is in the agent message
+	messages = conv.Messages()
+	require.Len(t, messages, 2)
+	assert.Equal(t, "partial response content", messages[1].Message)
+
+	// Now configure the mock to return an error and unblock
+	mock.mu.Lock()
+	mock.writeErr = assert.AnError
+	mock.mu.Unlock()
+	close(done)
+
+	// Wait for the conversation to stabilize after the error
+	require.Eventually(t, func() bool {
+		return conv.Status() == screentracker.ConversationStatusStable
+	}, 100*time.Millisecond, 5*time.Millisecond, "status should return to stable")
+
+	// The partial agent message should be removed on error.
+	// Only the user message should remain.
+	messages = conv.Messages()
+	require.Len(t, messages, 1, "partial agent message should be removed on error")
+	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
+	assert.Equal(t, "test", messages[0].Message)
+}
