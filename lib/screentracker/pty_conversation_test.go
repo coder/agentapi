@@ -2,9 +2,11 @@ package screentracker_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -443,6 +445,357 @@ func TestMessages(t *testing.T) {
 	t.Run("send-message-empty-message", func(t *testing.T) {
 		c, _, _ := newConversation(context.Background(), t)
 		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
+	})
+}
+
+func TestStatePersistence(t *testing.T) {
+	t.Run("SaveState creates file with correct structure", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		// Create temp directory for state file
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "initial"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "test prompt"}},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Generate some conversation
+		agent.setScreen("hello")
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Save state
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		// Read and verify the saved file
+		data, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+
+		var agentState st.AgentState
+		err = json.Unmarshal(data, &agentState)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, agentState.Version)
+		assert.Equal(t, "test prompt", agentState.InitialPrompt)
+		assert.NotEmpty(t, agentState.Messages)
+	})
+
+	t.Run("SaveState skips when not configured", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "initial"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		// File should not be created
+		_, err = os.Stat(stateFile)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("SaveState honors dirty flag", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "initial"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Generate conversation and save
+		agent.setScreen("hello")
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		// Get file modification time
+		info1, err := os.Stat(stateFile)
+		require.NoError(t, err)
+		modTime1 := info1.ModTime()
+
+		// Save again without changes - file should not be modified
+		err = c.SaveState()
+		require.NoError(t, err)
+
+		info2, err := os.Stat(stateFile)
+		require.NoError(t, err)
+		modTime2 := info2.ModTime()
+
+		// File modification time should be the same (dirty flag prevents save)
+		assert.Equal(t, modTime1, modTime2)
+	})
+
+	t.Run("SaveState creates directory if not exists", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/nested/deep/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "initial"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		agent.setScreen("hello")
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		// Verify file and directory were created
+		_, err = os.Stat(stateFile)
+		assert.NoError(t, err)
+	})
+
+	t.Run("LoadState restores conversation from file", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		// Create a state file with test data
+		testState := st.AgentState{
+			Version:       1,
+			InitialPrompt: "restored prompt",
+			Messages: []st.ConversationMessage{
+				{Id: 0, Message: "agent message 1", Role: st.ConversationRoleAgent, Time: time.Now()},
+				{Id: 1, Message: "user message 1", Role: st.ConversationRoleUser, Time: time.Now()},
+				{Id: 2, Message: "agent message 2", Role: st.ConversationRoleAgent, Time: time.Now()},
+			},
+		}
+		data, err := json.MarshalIndent(testState, "", " ")
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, data, 0o644)
+		require.NoError(t, err)
+
+		// Create conversation with LoadState enabled
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Advance until agent is ready and state is loaded
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Verify messages were restored
+		messages := c.Messages()
+		assert.Len(t, messages, 3)
+		assert.Equal(t, "agent message 1", messages[0].Message)
+		assert.Equal(t, "user message 1", messages[1].Message)
+		// The last agent message may have adjustments from adjustScreenAfterStateLoad
+		assert.Contains(t, messages[2].Message, "agent message 2")
+	})
+
+	t.Run("LoadState handles missing file gracefully", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/nonexistent.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		// Should not panic or error
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Should have default initial message
+		messages := c.Messages()
+		assert.Len(t, messages, 1)
+	})
+
+	t.Run("LoadState handles empty file gracefully", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/empty.json"
+
+		// Create empty file
+		err := os.WriteFile(stateFile, []byte(""), 0o644)
+		require.NoError(t, err)
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		// Should not panic or error
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Should have default initial message
+		messages := c.Messages()
+		assert.Len(t, messages, 1)
+	})
+
+	t.Run("LoadState handles corrupted JSON gracefully", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/corrupted.json"
+
+		// Create corrupted JSON file
+		err := os.WriteFile(stateFile, []byte("{invalid json}"), 0o644)
+		require.NoError(t, err)
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		// Should not panic - logs warning and continues
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Should have default initial message
+		messages := c.Messages()
+		assert.Len(t, messages, 1)
 	})
 }
 

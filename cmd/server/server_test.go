@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -475,6 +477,218 @@ func TestServerCmd_AllowedHosts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerCmd_StatePersistenceFlags(t *testing.T) {
+	// NOTE: These tests use --exit flag to test flag parsing and defaults.
+	// Runtime validation that happens in runServer (e.g., "--load-state requires --state-file")
+	// would call os.Exit(1) which terminates the test process, so those validations
+	// are tested through integration/E2E tests instead.
+
+	t.Run("state-file with defaults", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--state-file", "/tmp/state.json", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		// load-state and save-state default to true when state-file is set (validated in runServer)
+	})
+
+	t.Run("state-file with explicit load-state=false", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--state-file", "/tmp/state.json", "--load-state=false", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		assert.Equal(t, false, viper.GetBool(LoadState))
+	})
+
+	t.Run("state-file with explicit save-state=false", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--state-file", "/tmp/state.json", "--save-state=false", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		assert.Equal(t, false, viper.GetBool(SaveState))
+	})
+
+	t.Run("state-file with explicit load-state=true and save-state=true", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{
+			"--state-file", "/tmp/state.json",
+			"--load-state=true",
+			"--save-state=true",
+			"--exit", "dummy-command",
+		})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		assert.Equal(t, true, viper.GetBool(LoadState))
+		assert.Equal(t, true, viper.GetBool(SaveState))
+	})
+
+	t.Run("load-state flag can be parsed", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--load-state", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		// Flag is parsed correctly (validation happens in runServer)
+		assert.Equal(t, true, viper.GetBool(LoadState))
+	})
+
+	t.Run("save-state flag can be parsed", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--save-state", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		// Flag is parsed correctly (validation happens in runServer)
+		assert.Equal(t, true, viper.GetBool(SaveState))
+	})
+
+	t.Run("pid-file can be set independently", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--pid-file", "/tmp/server.pid", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/server.pid", viper.GetString(PidFile))
+	})
+
+	t.Run("state-file and pid-file can be set together", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{
+			"--state-file", "/tmp/state.json",
+			"--pid-file", "/tmp/server.pid",
+			"--exit", "dummy-command",
+		})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		assert.Equal(t, "/tmp/server.pid", viper.GetString(PidFile))
+	})
+}
+
+func TestPIDFileOperations(t *testing.T) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("writePIDFile creates file with process ID", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/test.pid"
+
+		err := writePIDFile(pidFile, discardLogger)
+		require.NoError(t, err)
+
+		// Verify file exists
+		_, err = os.Stat(pidFile)
+		require.NoError(t, err)
+
+		// Verify content contains current PID
+		data, err := os.ReadFile(pidFile)
+		require.NoError(t, err)
+
+		expectedPID := fmt.Sprintf("%d\n", os.Getpid())
+		assert.Equal(t, expectedPID, string(data))
+	})
+
+	t.Run("writePIDFile creates directory if not exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/nested/deep/test.pid"
+
+		err := writePIDFile(pidFile, discardLogger)
+		require.NoError(t, err)
+
+		// Verify file exists
+		_, err = os.Stat(pidFile)
+		require.NoError(t, err)
+
+		// Verify directory was created
+		_, err = os.Stat(tmpDir + "/nested/deep")
+		require.NoError(t, err)
+	})
+
+	t.Run("writePIDFile overwrites existing file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/test.pid"
+
+		// Write initial PID file
+		err := os.WriteFile(pidFile, []byte("12345\n"), 0o644)
+		require.NoError(t, err)
+
+		// Overwrite with current PID
+		err = writePIDFile(pidFile, discardLogger)
+		require.NoError(t, err)
+
+		// Verify content is updated
+		data, err := os.ReadFile(pidFile)
+		require.NoError(t, err)
+
+		expectedPID := fmt.Sprintf("%d\n", os.Getpid())
+		assert.Equal(t, expectedPID, string(data))
+	})
+
+	t.Run("cleanupPIDFile removes file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/test.pid"
+
+		// Create PID file
+		err := os.WriteFile(pidFile, []byte("12345\n"), 0o644)
+		require.NoError(t, err)
+
+		// Cleanup
+		cleanupPIDFile(pidFile, discardLogger)
+
+		// Verify file is removed
+		_, err = os.Stat(pidFile)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("cleanupPIDFile handles non-existent file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/nonexistent.pid"
+
+		// Should not panic or error
+		cleanupPIDFile(pidFile, discardLogger)
+	})
+
+	t.Run("cleanupPIDFile handles directory removal error gracefully", func(t *testing.T) {
+		// Create a file in a protected directory (this is system-dependent)
+		// Just verify it doesn't panic when it can't remove the file
+		pidFile := "/this/should/not/exist/test.pid"
+
+		// Should not panic
+		cleanupPIDFile(pidFile, discardLogger)
+	})
 }
 
 func TestServerCmd_AllowedOrigins(t *testing.T) {
