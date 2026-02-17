@@ -105,10 +105,11 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, erro
 		select {
 		case <-ctx.Done():
 			logger.Info("Context done, closing ACP agent")
-			_ = stdin.Close()
-			_ = stdout.Close()
 			// Try graceful shutdown first
 			_ = cmd.Process.Signal(syscall.SIGTERM)
+			// Then close pipes
+			_ = stdin.Close()
+			_ = stdout.Close()
 			// Force kill after timeout
 			time.AfterFunc(5*time.Second, func() {
 				_ = cmd.Process.Kill()
