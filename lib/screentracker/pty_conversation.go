@@ -195,7 +195,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			c.initialPromptReady = true
 		}
 
-		if !c.loadStateSuccessful && c.cfg.StatePersistenceConfig.LoadState {
+		if c.initialPromptReady && !c.loadStateSuccessful && c.cfg.StatePersistenceConfig.LoadState {
 			_ = c.loadState()
 			c.loadStateSuccessful = true
 		}
@@ -596,7 +596,7 @@ func (c *PTYConversation) SaveState() error {
 	// Clear dirty flag after successful save
 	c.dirty = false
 
-	c.cfg.Logger.Info("State saved successfully to: %s", stateFile)
+	c.cfg.Logger.Info(fmt.Sprintf("State saved successfully to: %s", stateFile))
 
 	return nil
 }
