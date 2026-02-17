@@ -255,15 +255,15 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 
 	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType:             config.AgentType,
-		AgentIO:               config.Process,
-		Clock:                 config.Clock,
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
-		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
-		FormatToolCall:        formatToolCall,
-		InitialPrompt:         initialPrompt,
+		AgentType:              config.AgentType,
+		AgentIO:                config.Process,
+		Clock:                  config.Clock,
+		SnapshotInterval:       snapshotInterval,
+		ScreenStabilityLength:  2 * time.Second,
+		FormatMessage:          formatMessage,
+		ReadyForInitialPrompt:  isAgentReadyForInitialPrompt,
+		FormatToolCall:         formatToolCall,
+		InitialPrompt:          initialPrompt,
 		Logger:                 logger,
 		StatePersistenceConfig: config.StatePersistenceConfig,
 	}, emitter)
@@ -591,8 +591,7 @@ func (s *Server) Start() error {
 	return s.srv.ListenAndServe()
 }
 
-// Stop gracefully stops the HTTP server. It is safe to call multiple times;
-// only the first call will perform the shutdown, subsequent calls are no-ops.
+// Stop gracefully stops the HTTP server. It is safe to call multiple times.
 func (s *Server) Stop(ctx context.Context) error {
 	var err error
 	s.stopOnce.Do(func() {
@@ -615,8 +614,6 @@ func (s *Server) cleanupTempDir() {
 	}
 }
 
-// SaveState saves the conversation state if configured. This can be called from signal handlers.
-// The source parameter indicates what triggered the save (e.g., "SIGTERM", "SIGUSR1").
 func (s *Server) SaveState(source string) error {
 	if err := s.conversation.SaveState(); err != nil {
 		s.logger.Error("Failed to save conversation state", "source", source, "error", err)

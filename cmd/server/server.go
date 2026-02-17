@@ -125,7 +125,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			saveState = viper.GetBool(SaveState)
 		}
 	} else {
-		// No state file provided - ensure load/save flags are not explicitly set to true
 		if viper.IsSet(LoadState) && viper.GetBool(LoadState) {
 			return xerrors.Errorf("--load-state requires --state-file to be set")
 		}

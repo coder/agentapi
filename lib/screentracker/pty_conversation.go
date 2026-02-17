@@ -76,9 +76,7 @@ type PTYConversationConfig struct {
 	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
 	FormatToolCall func(message string) (string, []string)
 	// InitialPrompt is the initial prompt to send to the agent once ready
-	InitialPrompt []MessagePart
-	// OnSnapshot is called after each snapshot with current status, messages, and screen content
-	OnSnapshot             func(status ConversationStatus, messages []ConversationMessage, screen string)
+	InitialPrompt          []MessagePart
 	Logger                 *slog.Logger
 	StatePersistenceConfig StatePersistenceConfig
 }
