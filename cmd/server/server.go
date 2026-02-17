@@ -114,12 +114,13 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	var agentIO st.AgentIO
 	var transport = "pty"
 	var process *termexec.Process
-	var acpWait func() error
+	var acpResult *httpapi.SetupACPResult
 
 	if printOpenAPI {
 		agentIO = nil
 	} else if experimentalACP {
-		acpResult, err := httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
+		var err error
+		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
 			Program:     agent,
 			ProgramArgs: argsToPass[1:],
 		})
@@ -127,7 +128,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			return xerrors.Errorf("failed to setup ACP: %w", err)
 		}
 		acpIO := acpResult.AgentIO
-		acpWait = acpResult.Wait
 		agentIO = acpIO
 		transport = "acp"
 	} else {
@@ -181,10 +181,11 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		}()
 	}
 	// Wait for process exit in ACP mode
-	if acpWait != nil {
+	if acpResult != nil {
 		go func() {
 			defer close(processExitCh)
-			if err := acpWait(); err != nil {
+			defer close(acpResult.Done) // Signal cleanup goroutine to exit
+			if err := acpResult.Wait(); err != nil {
 				processExitCh <- xerrors.Errorf("ACP process exited: %w", err)
 			}
 			if err := srv.Stop(ctx); err != nil {
