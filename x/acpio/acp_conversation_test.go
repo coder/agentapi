@@ -212,6 +212,34 @@ func Test_Send_RejectsEmptyMessage(t *testing.T) {
 	assert.ErrorIs(t, err, screentracker.ErrMessageValidationEmpty)
 }
 
+func Test_Send_RejectsWhitespace(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"leading space", " hello"},
+		{"trailing space", "hello "},
+		{"leading newline", "\nhello"},
+		{"trailing newline", "hello\n"},
+		{"both sides", " hello "},
+		{"newlines both sides", "\nhello\n"},
+		{"leading tab", "\thello"},
+		{"trailing tab", "hello\t"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mClock := quartz.NewMock(t)
+			mock := newMockAgentIO()
+			conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+
+			err := conv.Send(screentracker.MessagePartText{Content: tt.content})
+
+			assert.ErrorIs(t, err, screentracker.ErrMessageValidationWhitespace)
+		})
+	}
+}
+
 func Test_Send_RejectsDuplicateSend(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()

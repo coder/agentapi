@@ -82,7 +82,11 @@ func (c *ACPConversation) Send(messageParts ...st.MessagePart) error {
 	for _, part := range messageParts {
 		message += part.String()
 	}
-	message = strings.TrimSpace(message)
+
+	// Validate whitespace BEFORE trimming (match PTY behavior)
+	if message != strings.TrimSpace(message) {
+		return st.ErrMessageValidationWhitespace
+	}
 
 	if message == "" {
 		return st.ErrMessageValidationEmpty

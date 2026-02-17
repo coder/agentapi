@@ -437,6 +437,7 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 	resp := &StatusResponse{}
 	resp.Body.Status = agentStatus
 	resp.Body.AgentType = s.agentType
+	resp.Body.Backend = s.transport
 
 	return resp, nil
 }

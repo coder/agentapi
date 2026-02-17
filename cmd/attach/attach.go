@@ -133,7 +133,7 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 type statusResponse struct {
 	Status    string `json:"status"`
 	AgentType string `json:"agent_type"`
-	ACPMode   bool   `json:"acp_mode"`
+	Backend   string `json:"backend"`
 }
 
 func checkACPMode(remoteUrl string) error {
@@ -152,7 +152,7 @@ func checkACPMode(remoteUrl string) error {
 		return xerrors.Errorf("failed to decode server status: %w", err)
 	}
 
-	if status.ACPMode {
+	if status.Backend == "acp" {
 		return xerrors.New("attach is not supported in ACP mode. The server is running with --experimental-acp which uses JSON-RPC instead of terminal emulation.")
 	}
 
