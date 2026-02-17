@@ -14,6 +14,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	"github.com/coder/agentapi/lib/termexec"
 	"github.com/coder/agentapi/x/acpio"
+	"github.com/coder/quartz"
 )
 
 type SetupProcessConfig struct {
@@ -64,6 +65,7 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 type SetupACPConfig struct {
 	Program     string
 	ProgramArgs []string
+	Clock       quartz.Clock
 }
 
 // SetupACPResult contains the result of setting up an ACP process.
@@ -75,6 +77,10 @@ type SetupACPResult struct {
 
 func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, error) {
 	logger := logctx.From(ctx)
+
+	if config.Clock == nil {
+		config.Clock = quartz.NewReal()
+	}
 
 	args := config.ProgramArgs
 	logger.Info(fmt.Sprintf("Running (ACP): %s %s", config.Program, strings.Join(args, " ")))
@@ -111,7 +117,7 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, erro
 			_ = stdin.Close()
 			_ = stdout.Close()
 			// Force kill after timeout
-			time.AfterFunc(5*time.Second, func() {
+			config.Clock.AfterFunc(5*time.Second, func() {
 				_ = cmd.Process.Kill()
 			})
 		case <-done:
