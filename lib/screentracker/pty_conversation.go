@@ -33,7 +33,6 @@ type AgentState struct {
 	Version       int                   `json:"version"`
 	Messages      []ConversationMessage `json:"messages"`
 	InitialPrompt string                `json:"initial_prompt"`
-	//InitialPromptSent bool                  `json:"initial_prompt_sent"`
 }
 
 var _ MessagePart = &MessagePartText{}
