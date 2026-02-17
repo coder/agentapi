@@ -649,6 +649,8 @@ func (c *PTYConversation) loadState() error {
 	}
 
 	c.loadStateSuccessful = true
+	c.dirty = false
+
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
 	return nil
 }
