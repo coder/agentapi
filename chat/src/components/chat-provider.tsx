@@ -280,7 +280,6 @@ export function ChatProvider({ children }: PropsWithChildren) {
       });
 
       if (!response.ok) {
-        setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
         const errorData = await response.json() as APIErrorModel;
         console.error("Failed to send message:", errorData);
         const detail = errorData.detail;
@@ -297,7 +296,6 @@ export function ChatProvider({ children }: PropsWithChildren) {
       }
 
     } catch (error) {
-      setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
       console.error("Error sending message:", error);
       const message = getErrorMessage(error)
 
@@ -305,6 +303,8 @@ export function ChatProvider({ children }: PropsWithChildren) {
         description: message,
       });
     } finally {
+      // Remove optimistic draft message if still present (may have been replaced by server response via SSE).
+      setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
       if (type === "user") {
         setLoading(false);
       }
