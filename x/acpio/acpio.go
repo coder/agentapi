@@ -208,6 +208,11 @@ func (a *ACPAgentIO) Write(data []byte) (int, error) {
 		"textLen", len(text),
 		"rawDataLen", len(data))
 
+	// Ensure the context has not been cancelled before writing prompt
+	if err := a.ctx.Err(); err != nil {
+		a.logger.Debug("Aborting write", "error", err)
+		return 0, err
+	}
 	// Use a timeout to prevent hanging indefinitely
 	promptCtx, cancel := context.WithTimeout(a.ctx, DefaultPromptTimeout)
 	defer cancel()
