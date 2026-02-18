@@ -120,6 +120,7 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, erro
 			config.Clock.AfterFunc(5*time.Second, func() {
 				_ = cmd.Process.Kill()
 			})
+			return
 		case <-done:
 			// Process exited normally, nothing to clean up
 			return
