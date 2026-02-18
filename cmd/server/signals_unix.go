@@ -16,14 +16,14 @@ import (
 // handleSignals sets up signal handlers for:
 // - SIGTERM, SIGINT, SIGHUP: save conversation state, stop server, then close the process
 // - SIGUSR1: save conversation state without exiting
-func handleSignals(ctx context.Context, logger *slog.Logger, srv *httpapi.Server, process *termexec.Process) {
+func handleSignals(ctx context.Context, logger *slog.Logger, srv *httpapi.Server, process *termexec.Process, pidFile string) {
 	// Handle shutdown signals (SIGTERM, SIGINT, SIGHUP)
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
 	go func() {
 		defer signal.Stop(shutdownCh)
 		sig := <-shutdownCh
-		performGracefulShutdown(sig, logger, srv, process)
+		performGracefulShutdown(sig, logger, srv, process, pidFile)
 	}()
 
 	// Handle SIGUSR1 for save without exit

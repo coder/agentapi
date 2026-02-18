@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -193,7 +194,17 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 
 		if c.initialPromptReady && !c.loadStateSuccessful && c.cfg.StatePersistenceConfig.LoadState {
-			_ = c.loadState()
+			if err := c.loadStateLocked(); err != nil {
+				// Add error message to conversation so user is aware
+				errorMsg := fmt.Sprintf("AgentAPI state restoration failed, the conversation history may be missing: %v", err)
+				c.messages = append(c.messages, ConversationMessage{
+					Id:      len(c.messages),
+					Message: errorMsg,
+					Role:    ConversationRoleAgent,
+					Time:    c.cfg.Clock.Now(),
+				})
+				c.cfg.Logger.Error("Failed to load state", "error", err)
+			}
 			c.loadStateSuccessful = true
 		}
 
@@ -534,8 +545,6 @@ func (c *PTYConversation) Text() string {
 }
 
 func (c *PTYConversation) SaveState() error {
-	conversation := c.Messages()
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -543,7 +552,7 @@ func (c *PTYConversation) SaveState() error {
 	saveState := c.cfg.StatePersistenceConfig.SaveState
 
 	if !saveState {
-		c.cfg.Logger.Info("")
+		c.cfg.Logger.Info("State persistence is disabled")
 		return nil
 	}
 
@@ -552,6 +561,8 @@ func (c *PTYConversation) SaveState() error {
 		c.cfg.Logger.Info("Skipping state save: no changes since last save")
 		return nil
 	}
+
+	conversation := c.messagesLocked()
 
 	// Serialize initial prompt from message parts
 	var initialPromptStr string
@@ -598,8 +609,8 @@ func (c *PTYConversation) SaveState() error {
 	return nil
 }
 
-// LoadState loads the state, this method assumes that caller holds the Lock
-func (c *PTYConversation) loadState() error {
+// loadStateLocked loads the state, this method assumes that caller holds the Lock
+func (c *PTYConversation) loadStateLocked() error {
 	stateFile := c.cfg.StatePersistenceConfig.StateFile
 	loadState := c.cfg.StatePersistenceConfig.LoadState
 
@@ -613,20 +624,25 @@ func (c *PTYConversation) loadState() error {
 		return nil
 	}
 
-	// Read state file
-	data, err := os.ReadFile(stateFile)
+	// Open state file
+	f, err := os.Open(stateFile)
 	if err != nil {
-		c.cfg.Logger.Warn("Failed to load state file", "path", stateFile, "err", err)
-		return xerrors.Errorf("failed to read state file: %w", err)
+		c.cfg.Logger.Warn("Failed to open state file", "path", stateFile, "err", err)
+		return xerrors.Errorf("failed to open state file: %w", err)
 	}
-
-	if len(data) == 0 {
-		c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
-		return nil
-	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			c.cfg.Logger.Warn("Failed to close state file", "path", stateFile, "err", closeErr)
+		}
+	}()
 
 	var agentState AgentState
-	if err := json.Unmarshal(data, &agentState); err != nil {
+	decoder := json.NewDecoder(f)
+	if err := decoder.Decode(&agentState); err != nil {
+		if err == io.EOF {
+			c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
+			return nil
+		}
 		c.cfg.Logger.Warn("Failed to load state file (corrupted or invalid JSON)", "path", stateFile, "err", err)
 		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
@@ -663,7 +679,7 @@ func (c *PTYConversation) adjustScreenAfterStateLoad(screen string) string {
 	// Before the first user message after loading state, return the last message from the loaded state.
 	// This prevents computing incorrect diffs from the restored screen, as the agent's message should
 	// remain stable until the user continues the conversation.
-	if c.userSentMessageAfterLoadState == false {
+	if !c.userSentMessageAfterLoadState {
 		newScreen = "\n" + c.messages[len(c.messages)-1].Message
 	}
 

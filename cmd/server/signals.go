@@ -12,7 +12,7 @@ import (
 
 // performGracefulShutdown handles the common shutdown logic for all platforms.
 // It saves state, stops the HTTP server, closes the process, and exits.
-func performGracefulShutdown(sig os.Signal, logger *slog.Logger, srv *httpapi.Server, process *termexec.Process) {
+func performGracefulShutdown(sig os.Signal, logger *slog.Logger, srv *httpapi.Server, process *termexec.Process, pidFile string) {
 	logger.Info("Received shutdown signal, initiating graceful shutdown", "signal", sig)
 
 	// Save state
@@ -29,6 +29,11 @@ func performGracefulShutdown(sig os.Signal, logger *slog.Logger, srv *httpapi.Se
 	// Close the process
 	if err := process.Close(logger, 5*time.Second); err != nil {
 		logger.Error("Failed to close process cleanly", "signal", sig, "error", err)
+	}
+
+	// Clean up PID file before exit
+	if pidFile != "" {
+		cleanupPIDFile(pidFile, logger)
 	}
 
 	// Exit cleanly

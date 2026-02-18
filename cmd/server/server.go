@@ -140,8 +140,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		if err := writePIDFile(pidFile, logger); err != nil {
 			return xerrors.Errorf("failed to write PID file: %w", err)
 		}
-		// Ensure PID file is cleaned up on exit
-		defer cleanupPIDFile(pidFile, logger)
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
@@ -183,7 +181,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
-	handleSignals(ctx, logger, srv, process)
+	handleSignals(ctx, logger, srv, process, pidFile)
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)
 	go func() {
