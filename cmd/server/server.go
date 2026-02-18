@@ -274,12 +274,12 @@ func writePIDFile(pidFile string, logger *slog.Logger) error {
 
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(pidFile)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return xerrors.Errorf("failed to create PID file directory: %w", err)
 	}
 
 	// Write PID file
-	if err := os.WriteFile(pidFile, []byte(pidContent), 0o644); err != nil {
+	if err := os.WriteFile(pidFile, []byte(pidContent), 0o600); err != nil {
 		return xerrors.Errorf("failed to write PID file: %w", err)
 	}
 
