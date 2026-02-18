@@ -263,7 +263,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		if !ok {
 			return nil, fmt.Errorf("ACP transport requires ACPAgentIO")
 		}
-		conversation = acpio.NewACPConversation(acpIO, logger, initialPrompt, emitter, config.Clock)
+		conversation = acpio.NewACPConversation(ctx, acpIO, logger, initialPrompt, emitter, config.Clock)
 	} else {
 		// Default to PTY transport
 		proc, ok := config.AgentIO.(*termexec.Process)

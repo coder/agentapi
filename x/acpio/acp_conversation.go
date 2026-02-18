@@ -26,6 +26,8 @@ type ChunkableAgentIO interface {
 // response is complete when Write() returns.
 type ACPConversation struct {
 	mu                sync.Mutex
+	ctx               context.Context
+	cancel            context.CancelFunc
 	agentIO           ChunkableAgentIO
 	messages          []st.ConversationMessage
 	prompting         bool // true while agent is processing
@@ -46,7 +48,7 @@ func (noopEmitter) EmitScreen(string)                     {}
 // NewACPConversation creates a new ACPConversation.
 // If emitter is provided, it will receive events when messages/status/screen change.
 // If clock is nil, a real clock will be used.
-func NewACPConversation(agentIO ChunkableAgentIO, logger *slog.Logger, initialPrompt []st.MessagePart, emitter st.Emitter, clock quartz.Clock) *ACPConversation {
+func NewACPConversation(ctx context.Context, agentIO ChunkableAgentIO, logger *slog.Logger, initialPrompt []st.MessagePart, emitter st.Emitter, clock quartz.Clock) *ACPConversation {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -56,7 +58,10 @@ func NewACPConversation(agentIO ChunkableAgentIO, logger *slog.Logger, initialPr
 	if emitter == nil {
 		emitter = noopEmitter{}
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	c := &ACPConversation{
+		ctx:           ctx,
+		cancel:        cancel,
 		agentIO:       agentIO,
 		logger:        logger,
 		initialPrompt: initialPrompt,
@@ -159,6 +164,11 @@ func (c *ACPConversation) statusLocked() st.ConversationStatus {
 	return st.ConversationStatusStable
 }
 
+// Stop cancels any in-progress operations.
+func (c *ACPConversation) Stop() {
+	c.cancel()
+}
+
 // Text returns the current streaming response text.
 func (c *ACPConversation) Text() string {
 	c.mu.Lock()
@@ -188,6 +198,10 @@ func (c *ACPConversation) handleChunk(chunk string) {
 func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
 	var err error
 	for _, part := range messageParts {
+		if c.ctx.Err() != nil {
+			err = c.ctx.Err()
+			break
+		}
 		if partErr := part.Do(c.agentIO); partErr != nil {
 			err = partErr
 			break

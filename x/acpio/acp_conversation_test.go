@@ -151,7 +151,7 @@ func Test_NewACPConversation(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 
 	require.NotNil(t, conv)
 }
@@ -159,7 +159,7 @@ func Test_NewACPConversation(t *testing.T) {
 func Test_Messages_InitiallyEmpty(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 
 	messages := conv.Messages()
 
@@ -169,7 +169,7 @@ func Test_Messages_InitiallyEmpty(t *testing.T) {
 func Test_Status_InitiallyStable(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 
 	status := conv.Status()
 
@@ -182,7 +182,7 @@ func Test_Send_AddsUserMessage(t *testing.T) {
 	// Set up blocking to synchronize with the goroutine
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	err := conv.Send(screentracker.MessagePartText{Content: "hello"})
@@ -205,7 +205,7 @@ func Test_Send_AddsUserMessage(t *testing.T) {
 func Test_Send_RejectsEmptyMessage(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 
 	err := conv.Send(screentracker.MessagePartText{Content: ""})
 
@@ -231,7 +231,7 @@ func Test_Send_RejectsWhitespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mClock := quartz.NewMock(t)
 			mock := newMockAgentIO()
-			conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+			conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 
 			err := conv.Send(screentracker.MessagePartText{Content: tt.content})
 
@@ -246,7 +246,7 @@ func Test_Send_RejectsDuplicateSend(t *testing.T) {
 	// Block the write so it doesn't complete immediately
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	// First send should succeed
@@ -270,7 +270,7 @@ func Test_Status_ChangesWhileProcessing(t *testing.T) {
 	// Block the write so we can observe status changes
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	// Initially stable
@@ -301,7 +301,7 @@ func Test_Text_ReturnsStreamingContent(t *testing.T) {
 	// Block the write so we can simulate streaming during processing
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	// Initially empty
@@ -337,7 +337,7 @@ func Test_Emitter_CalledOnChanges(t *testing.T) {
 
 	emitter := newMockEmitter()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, emitter, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, emitter, mClock)
 	conv.Start(context.Background())
 
 	// Send a message
@@ -380,7 +380,7 @@ func Test_InitialPrompt_SentOnStart(t *testing.T) {
 		screentracker.MessagePartText{Content: "initial prompt"},
 	}
 
-	conv := acpio.NewACPConversation(mock, nil, initialPrompt, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, initialPrompt, nil, mClock)
 	conv.Start(context.Background())
 
 	// Wait for write to start (initial prompt is being sent)
@@ -402,7 +402,7 @@ func Test_Messages_AreCopied(t *testing.T) {
 	// Set up blocking to synchronize
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	err := conv.Send(screentracker.MessagePartText{Content: "test"})
@@ -430,7 +430,7 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	// Block the write so we can simulate partial content before error
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(mock, nil, nil, nil, mClock)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
 	// Send a message
