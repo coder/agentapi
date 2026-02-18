@@ -195,14 +195,6 @@ func (c *PTYConversation) Start(ctx context.Context) {
 
 		if c.initialPromptReady && !c.loadStateSuccessful && c.cfg.StatePersistenceConfig.LoadState {
 			if err := c.loadStateLocked(); err != nil {
-				// Add error message to conversation so user is aware
-				errorMsg := fmt.Sprintf("AgentAPI state restoration failed, the conversation history may be missing: %v", err)
-				c.messages = append(c.messages, ConversationMessage{
-					Id:      len(c.messages),
-					Message: errorMsg,
-					Role:    ConversationRoleAgent,
-					Time:    c.cfg.Clock.Now(),
-				})
 				c.cfg.Logger.Error("Failed to load state", "error", err)
 			}
 			c.loadStateSuccessful = true
@@ -627,7 +619,6 @@ func (c *PTYConversation) loadStateLocked() error {
 	// Open state file
 	f, err := os.Open(stateFile)
 	if err != nil {
-		c.cfg.Logger.Warn("Failed to open state file", "path", stateFile, "err", err)
 		return xerrors.Errorf("failed to open state file: %w", err)
 	}
 	defer func() {
@@ -643,7 +634,6 @@ func (c *PTYConversation) loadStateLocked() error {
 			c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
 			return nil
 		}
-		c.cfg.Logger.Warn("Failed to load state file (corrupted or invalid JSON)", "path", stateFile, "err", err)
 		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 
