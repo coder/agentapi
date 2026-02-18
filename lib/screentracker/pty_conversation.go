@@ -596,7 +596,7 @@ func (c *PTYConversation) SaveState() error {
 	// Clear dirty flag after successful save
 	c.dirty = false
 
-	c.cfg.Logger.Info(fmt.Sprintf("State saved successfully to: %s", stateFile))
+	c.cfg.Logger.Info("State saved successfully", "path", stateFile)
 
 	return nil
 }
@@ -606,7 +606,7 @@ func (c *PTYConversation) loadStateLocked() error {
 	stateFile := c.cfg.StatePersistenceConfig.StateFile
 	loadState := c.cfg.StatePersistenceConfig.LoadState
 
-	if !loadState {
+	if !loadState || c.loadStateSuccessful {
 		return nil
 	}
 
@@ -647,7 +647,7 @@ func (c *PTYConversation) loadStateLocked() error {
 
 	// Store the first stable snapshot for filtering later
 	snapshots := c.snapshotBuffer.GetAll()
-	if len(snapshots) > 0 {
+	if len(snapshots) > 0 && c.cfg.FormatMessage != nil {
 		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
 	}
 
@@ -669,7 +669,7 @@ func (c *PTYConversation) adjustScreenAfterStateLoad(screen string) string {
 	// Before the first user message after loading state, return the last message from the loaded state.
 	// This prevents computing incorrect diffs from the restored screen, as the agent's message should
 	// remain stable until the user continues the conversation.
-	if !c.userSentMessageAfterLoadState {
+	if !c.userSentMessageAfterLoadState && len(c.messages) > 0 {
 		newScreen = "\n" + c.messages[len(c.messages)-1].Message
 	}
 

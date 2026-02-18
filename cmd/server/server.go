@@ -107,33 +107,33 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	// Get the variables related to state management
-	stateFile := viper.GetString(StateFile)
+	stateFile := viper.GetString(FlagStateFile)
 	loadState := false
 	saveState := false
 
 	// Validate state file configuration
 	if stateFile != "" {
-		if !viper.IsSet(LoadState) {
+		if !viper.IsSet(FlagLoadState) {
 			loadState = true
 		} else {
-			loadState = viper.GetBool(LoadState)
+			loadState = viper.GetBool(FlagLoadState)
 		}
 
-		if !viper.IsSet(SaveState) {
+		if !viper.IsSet(FlagSaveState) {
 			saveState = true
 		} else {
-			saveState = viper.GetBool(SaveState)
+			saveState = viper.GetBool(FlagSaveState)
 		}
 	} else {
-		if viper.IsSet(LoadState) && viper.GetBool(LoadState) {
+		if viper.IsSet(FlagLoadState) && viper.GetBool(FlagLoadState) {
 			return xerrors.Errorf("--load-state requires --state-file to be set")
 		}
-		if viper.IsSet(SaveState) && viper.GetBool(SaveState) {
+		if viper.IsSet(FlagSaveState) && viper.GetBool(FlagSaveState) {
 			return xerrors.Errorf("--save-state requires --state-file to be set")
 		}
 	}
 
-	pidFile := viper.GetString(PidFile)
+	pidFile := viper.GetString(FlagPidFile)
 
 	// Write PID file if configured
 	if pidFile != "" {
@@ -315,10 +315,10 @@ const (
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
 	FlagInitialPrompt  = "initial-prompt"
-	StateFile          = "state-file"
-	LoadState          = "load-state"
-	SaveState          = "save-state"
-	PidFile            = "pid-file"
+	FlagStateFile      = "state-file"
+	FlagLoadState      = "load-state"
+	FlagSaveState      = "save-state"
+	FlagPidFile        = "pid-file"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -357,10 +357,10 @@ func CreateServerCmd() *cobra.Command {
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
-		{StateFile, "s", "", "Path to file for saving/loading server state", "string"},
-		{LoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
-		{SaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
-		{PidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
+		{FlagStateFile, "s", "", "Path to file for saving/loading server state", "string"},
+		{FlagLoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
+		{FlagSaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
+		{FlagPidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
 	}
 
 	for _, spec := range flagSpecs {
