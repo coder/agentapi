@@ -494,7 +494,7 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
+		assert.Equal(t, "/tmp/state.json", viper.GetString(FlagStateFile))
 		// load-state and save-state default to true when state-file is set (validated in runServer)
 	})
 
@@ -507,8 +507,8 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
-		assert.Equal(t, false, viper.GetBool(LoadState))
+		assert.Equal(t, "/tmp/state.json", viper.GetString(FlagStateFile))
+		assert.Equal(t, false, viper.GetBool(FlagLoadState))
 	})
 
 	t.Run("state-file with explicit save-state=false", func(t *testing.T) {
@@ -520,8 +520,8 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
-		assert.Equal(t, false, viper.GetBool(SaveState))
+		assert.Equal(t, "/tmp/state.json", viper.GetString(FlagStateFile))
+		assert.Equal(t, false, viper.GetBool(FlagSaveState))
 	})
 
 	t.Run("state-file with explicit load-state=true and save-state=true", func(t *testing.T) {
@@ -538,9 +538,9 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
-		assert.Equal(t, true, viper.GetBool(LoadState))
-		assert.Equal(t, true, viper.GetBool(SaveState))
+		assert.Equal(t, "/tmp/state.json", viper.GetString(FlagStateFile))
+		assert.Equal(t, true, viper.GetBool(FlagLoadState))
+		assert.Equal(t, true, viper.GetBool(FlagSaveState))
 	})
 
 	t.Run("load-state flag can be parsed", func(t *testing.T) {
@@ -553,7 +553,7 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		require.NoError(t, err)
 
 		// Flag is parsed correctly (validation happens in runServer)
-		assert.Equal(t, true, viper.GetBool(LoadState))
+		assert.Equal(t, true, viper.GetBool(FlagLoadState))
 	})
 
 	t.Run("save-state flag can be parsed", func(t *testing.T) {
@@ -566,7 +566,7 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		require.NoError(t, err)
 
 		// Flag is parsed correctly (validation happens in runServer)
-		assert.Equal(t, true, viper.GetBool(SaveState))
+		assert.Equal(t, true, viper.GetBool(FlagSaveState))
 	})
 
 	t.Run("pid-file can be set independently", func(t *testing.T) {
@@ -578,7 +578,7 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/server.pid", viper.GetString(PidFile))
+		assert.Equal(t, "/tmp/server.pid", viper.GetString(FlagPidFile))
 	})
 
 	t.Run("state-file and pid-file can be set together", func(t *testing.T) {
@@ -594,8 +594,8 @@ func TestServerCmd_StatePersistenceFlags(t *testing.T) {
 		err := serverCmd.Execute()
 		require.NoError(t, err)
 
-		assert.Equal(t, "/tmp/state.json", viper.GetString(StateFile))
-		assert.Equal(t, "/tmp/server.pid", viper.GetString(PidFile))
+		assert.Equal(t, "/tmp/state.json", viper.GetString(FlagStateFile))
+		assert.Equal(t, "/tmp/server.pid", viper.GetString(FlagPidFile))
 	})
 }
 
