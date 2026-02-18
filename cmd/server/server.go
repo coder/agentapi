@@ -181,8 +181,22 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
-	handleSignals(ctx, logger, srv, process, pidFile)
+
+	// Create a context for graceful shutdown
+	gracefulCtx, gracefulCancel := context.WithCancel(ctx)
+	defer gracefulCancel()
+
+	// Setup signal handlers (they will call gracefulCancel)
+	handleSignals(gracefulCtx, gracefulCancel, logger, srv)
+
+	// Setup PID file cleanup
+	if pidFile != "" {
+		defer cleanupPIDFile(pidFile, logger)
+	}
+
 	logger.Info("Starting server on port", "port", port)
+
+	// Monitor process exit
 	processExitCh := make(chan error, 1)
 	go func() {
 		defer close(processExitCh)
@@ -193,18 +207,52 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
 			}
 		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Stop(shutdownCtx); err != nil {
-			logger.Error("Failed to stop server after process exit", "error", err)
+
+		select {
+		case <-gracefulCtx.Done():
+		default:
+			gracefulCancel()
 		}
 	}()
-	if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
-		return xerrors.Errorf("failed to start server: %w", err)
+
+	// Start the server
+	serverErrCh := make(chan error, 1)
+	go func() {
+		defer close(serverErrCh)
+		if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- err
+		}
+	}()
+
+	select {
+	case err := <-serverErrCh:
+		if err != nil {
+			return xerrors.Errorf("failed to start server: %w", err)
+		}
+	case <-gracefulCtx.Done():
 	}
+
+	if err := srv.SaveState("shutdown"); err != nil {
+		logger.Error("Failed to save state during shutdown", "error", err)
+	}
+
+	// Stop the HTTP server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Stop(shutdownCtx); err != nil {
+		logger.Error("Failed to stop HTTP server", "error", err)
+	}
+
+	// Close the process
+	if err := process.Close(logger, 5*time.Second); err != nil {
+		logger.Error("Failed to close process cleanly", "error", err)
+	}
+
 	select {
 	case err := <-processExitCh:
-		return xerrors.Errorf("agent exited with error: %w", err)
+		if err != nil {
+			return xerrors.Errorf("agent exited with error: %w", err)
+		}
 	default:
 	}
 	return nil

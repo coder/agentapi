@@ -49,6 +49,8 @@ type Server struct {
 	chatBasePath string
 	tempDir      string
 	clock        quartz.Clock
+	shutdownCtx  context.Context
+	shutdown     context.CancelFunc
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -275,6 +277,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	s := &Server{
 		router:       router,
 		api:          api,
@@ -287,6 +291,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
 		clock:        config.Clock,
+		shutdownCtx:  ctx,
+		shutdown:     cancel,
 	}
 
 	// Register API routes
@@ -514,6 +520,7 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.Sender) {
 	subscriberId, ch, stateEvents := s.emitter.Subscribe()
 	defer s.emitter.Unsubscribe(subscriberId)
+
 	s.logger.Info("New subscriber", "subscriberId", subscriberId)
 	for _, event := range stateEvents {
 		if event.Type == EventTypeScreenUpdate {
@@ -539,6 +546,9 @@ func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.
 				s.logger.Error("Failed to send event", "subscriberId", subscriberId, "error", err)
 				return
 			}
+		case <-s.shutdownCtx.Done():
+			s.logger.Info("Server stop initiated, unsubscribing.", "subscriberId", subscriberId)
+			return
 		case <-ctx.Done():
 			s.logger.Info("Context done", "subscriberId", subscriberId)
 			return
@@ -573,6 +583,9 @@ func (s *Server) subscribeScreen(ctx context.Context, input *struct{}, send sse.
 				s.logger.Error("Failed to send screen event", "subscriberId", subscriberId, "error", err)
 				return
 			}
+		case <-s.shutdownCtx.Done():
+			s.logger.Info("Server stop initiated, unsubscribing.", "subscriberId", subscriberId)
+			return
 		case <-ctx.Done():
 			s.logger.Info("Screen context done", "subscriberId", subscriberId)
 			return
@@ -595,6 +608,8 @@ func (s *Server) Start() error {
 func (s *Server) Stop(ctx context.Context) error {
 	var err error
 	s.stopOnce.Do(func() {
+		s.shutdown()
+
 		// Clean up temporary directory
 		s.cleanupTempDir()
 
