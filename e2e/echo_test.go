@@ -100,6 +100,34 @@ func TestE2E(t *testing.T) {
 		require.Equal(t, script[0].ExpectMessage, strings.TrimSpace(msgResp.Messages[1].Content))
 		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp.Messages[2].Content))
 	})
+
+	t.Run("acp_basic", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		script, apiClient := setup(ctx, t, &params{
+			cmdFn: func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
+				return binaryPath, []string{
+					"server",
+					fmt.Sprintf("--port=%d", serverPort),
+					"--experimental-acp",
+					"--", "go", "run", filepath.Join(cwd, "acp_echo.go"), scriptFilePath,
+				}
+			},
+		})
+		messageReq := agentapisdk.PostMessageParams{
+			Content: "This is a test message.",
+			Type:    agentapisdk.MessageTypeUser,
+		}
+		_, err := apiClient.PostMessage(ctx, messageReq)
+		require.NoError(t, err, "Failed to send message via SDK")
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "post message"))
+		msgResp, err := apiClient.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages via SDK")
+		require.Len(t, msgResp.Messages, 2)
+		require.Equal(t, script[0].ExpectMessage, strings.TrimSpace(msgResp.Messages[0].Content))
+		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp.Messages[1].Content))
+	})
 }
 
 type params struct {
