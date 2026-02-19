@@ -130,7 +130,8 @@ type PTYConversation struct {
 	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
 	// Checked inline in the snapshot loop on each tick.
 	initialPromptReady bool
-	initialPromptSent  bool
+	// initialPromptSent is set to true when the initial prompt has been enqueued to the outbound queue.
+	initialPromptSent bool
 }
 
 var _ Conversation = &PTYConversation{}
