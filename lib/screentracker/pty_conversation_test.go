@@ -56,6 +56,7 @@ type testEmitter struct{}
 func (testEmitter) EmitMessages([]st.ConversationMessage) {}
 func (testEmitter) EmitStatus(st.ConversationStatus)      {}
 func (testEmitter) EmitScreen(string)                     {}
+func (testEmitter) EmitError(_ string, _ string)          {}
 
 // advanceFor is a shorthand for advanceUntil with a time-based condition.
 func advanceFor(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {

@@ -18,6 +18,7 @@ const (
 	EventTypeMessageUpdate EventType = "message_update"
 	EventTypeStatusChange  EventType = "status_change"
 	EventTypeScreenUpdate  EventType = "screen_update"
+	EventTypeError         EventType = "agent_error"
 )
 
 type AgentStatus string
@@ -52,6 +53,12 @@ type ScreenUpdateBody struct {
 	Screen string `json:"screen"`
 }
 
+type ErrorBody struct {
+	Message string    `json:"message" doc:"Error message"`
+	Level   string    `json:"level" doc:"Error level: 'warning' or 'error'"`
+	Time    time.Time `json:"time" doc:"Timestamp when the error occurred"`
+}
+
 type Event struct {
 	Type    EventType
 	Payload any
@@ -66,6 +73,7 @@ type EventEmitter struct {
 	chanIdx             int
 	subscriptionBufSize uint
 	screen              string
+	errors              []ErrorBody
 }
 
 func convertStatus(status st.ConversationStatus) AgentStatus {
@@ -194,6 +202,22 @@ func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.screen = newScreen
 }
 
+func (e *EventEmitter) EmitError(message string, level string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	errorBody := ErrorBody{
+		Message: message,
+		Level:   level,
+		Time:    time.Now(),
+	}
+
+	// Store the error so new subscribers can receive all errors
+	e.errors = append(e.errors, errorBody)
+
+	e.notifyChannels(EventTypeError, errorBody)
+}
+
 // Assumes the caller holds the lock.
 func (e *EventEmitter) currentStateAsEvents() []Event {
 	events := make([]Event, 0, len(e.messages)+2)
@@ -211,6 +235,15 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 		Type:    EventTypeScreenUpdate,
 		Payload: ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
 	})
+
+	// Include all error events
+	for _, err := range e.errors {
+		events = append(events, Event{
+			Type:    EventTypeError,
+			Payload: err,
+		})
+	}
+
 	return events
 }
 

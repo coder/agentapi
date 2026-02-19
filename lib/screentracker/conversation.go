@@ -80,6 +80,7 @@ type Emitter interface {
 	EmitMessages([]ConversationMessage)
 	EmitStatus(ConversationStatus)
 	EmitScreen(string)
+	EmitError(message string, level string)
 }
 
 type ConversationMessage struct {

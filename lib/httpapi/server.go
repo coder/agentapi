@@ -396,6 +396,7 @@ func (s *Server) registerRoutes() {
 		// Mapping of event type name to Go struct for that event.
 		"message_update": MessageUpdateBody{},
 		"status_change":  StatusChangeBody{},
+		"agent_error":    ErrorBody{},
 	}, s.subscribeEvents)
 
 	sse.Register(s.api, huma.Operation{
