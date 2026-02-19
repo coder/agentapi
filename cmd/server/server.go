@@ -19,6 +19,7 @@ import (
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
 	"github.com/coder/agentapi/lib/msgfmt"
+	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
 )
 
@@ -104,11 +105,33 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
+	experimentalACP := viper.GetBool(FlagExperimentalACP)
+
+	if printOpenAPI && experimentalACP {
+		return xerrors.Errorf("flags --%s and --%s are mutually exclusive", FlagPrintOpenAPI, FlagExperimentalACP)
+	}
+
+	var agentIO st.AgentIO
+	var transport = "pty"
 	var process *termexec.Process
+	var acpResult *httpapi.SetupACPResult
+
 	if printOpenAPI {
-		process = nil
+		agentIO = nil
+	} else if experimentalACP {
+		var err error
+		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
+			Program:     agent,
+			ProgramArgs: argsToPass[1:],
+		})
+		if err != nil {
+			return xerrors.Errorf("failed to setup ACP: %w", err)
+		}
+		acpIO := acpResult.AgentIO
+		agentIO = acpIO
+		transport = "acp"
 	} else {
-		process, err = httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
+		proc, err := httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
 			Program:        agent,
 			ProgramArgs:    argsToPass[1:],
 			TerminalWidth:  termWidth,
@@ -118,11 +141,14 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
 		}
+		process = proc
+		agentIO = proc
 	}
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
-		Process:        process,
+		AgentIO:        agentIO,
+		Transport:      transport,
 		Port:           port,
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
@@ -138,19 +164,35 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 	logger.Info("Starting server on port", "port", port)
 	processExitCh := make(chan error, 1)
-	go func() {
-		defer close(processExitCh)
-		if err := process.Wait(); err != nil {
-			if errors.Is(err, termexec.ErrNonZeroExitCode) {
-				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
-			} else {
-				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+	// Wait for process exit in PTY mode
+	if process != nil {
+		go func() {
+			defer close(processExitCh)
+			if err := process.Wait(); err != nil {
+				if errors.Is(err, termexec.ErrNonZeroExitCode) {
+					processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
+				} else {
+					processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+				}
 			}
-		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
-		}
-	}()
+			if err := srv.Stop(ctx); err != nil {
+				logger.Error("Failed to stop server", "error", err)
+			}
+		}()
+	}
+	// Wait for process exit in ACP mode
+	if acpResult != nil {
+		go func() {
+			defer close(processExitCh)
+			defer close(acpResult.Done) // Signal cleanup goroutine to exit
+			if err := acpResult.Wait(); err != nil {
+				processExitCh <- xerrors.Errorf("ACP process exited: %w", err)
+			}
+			if err := srv.Stop(ctx); err != nil {
+				logger.Error("Failed to stop server", "error", err)
+			}
+		}()
+	}
 	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {
 		return xerrors.Errorf("failed to start server: %w", err)
 	}
@@ -180,16 +222,17 @@ type flagSpec struct {
 }
 
 const (
-	FlagType           = "type"
-	FlagPort           = "port"
-	FlagPrintOpenAPI   = "print-openapi"
-	FlagChatBasePath   = "chat-base-path"
-	FlagTermWidth      = "term-width"
-	FlagTermHeight     = "term-height"
-	FlagAllowedHosts   = "allowed-hosts"
-	FlagAllowedOrigins = "allowed-origins"
-	FlagExit           = "exit"
-	FlagInitialPrompt  = "initial-prompt"
+	FlagType            = "type"
+	FlagPort            = "port"
+	FlagPrintOpenAPI    = "print-openapi"
+	FlagChatBasePath    = "chat-base-path"
+	FlagTermWidth       = "term-width"
+	FlagTermHeight      = "term-height"
+	FlagAllowedHosts    = "allowed-hosts"
+	FlagAllowedOrigins  = "allowed-origins"
+	FlagExit            = "exit"
+	FlagInitialPrompt   = "initial-prompt"
+	FlagExperimentalACP = "experimental-acp"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -228,6 +271,7 @@ func CreateServerCmd() *cobra.Command {
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
+		{FlagExperimentalACP, "", false, "Use experimental ACP transport instead of PTY", "bool"},
 	}
 
 	for _, spec := range flagSpecs {
