@@ -37,6 +37,18 @@ type AgentState struct {
 	InitialPromptSent bool                  `json:"initial_prompt_sent"`
 }
 
+// LoadStateStatus represents the state of loading persisted conversation state.
+type LoadStateStatus int
+
+const (
+	// LoadStatePending indicates state loading has not been attempted yet.
+	LoadStatePending LoadStateStatus = iota
+	// LoadStateSucceeded indicates state was successfully loaded.
+	LoadStateSucceeded
+	// LoadStateFailed indicates state loading was attempted but failed.
+	LoadStateFailed
+)
+
 var _ MessagePart = &MessagePartText{}
 
 func (p MessagePartText) Do(writer AgentIO) error {
@@ -125,8 +137,8 @@ type PTYConversation struct {
 	firstStableSnapshot string
 	// userSentMessageAfterLoadState tracks if the user has sent their first message after we load the state
 	userSentMessageAfterLoadState bool
-	// loadStateAttempted indicates whether we have attempted to load conversation state from file (regardless of success).
-	loadStateAttempted bool
+	// loadStateStatus tracks the status of loading conversation state from file.
+	loadStateStatus LoadStateStatus
 	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
 	// Checked inline in the snapshot loop on each tick.
 	initialPromptReady bool
@@ -169,7 +181,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PT
 		dirty:                         false,
 		firstStableSnapshot:           "",
 		userSentMessageAfterLoadState: false,
-		loadStateAttempted:            false,
+		loadStateStatus:               LoadStatePending,
 	}
 	if c.cfg.ReadyForInitialPrompt == nil {
 		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
@@ -193,13 +205,14 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			c.initialPromptReady = true
 		}
 
-		var loadStateErr error
-		if c.initialPromptReady && !c.loadStateAttempted && c.cfg.StatePersistenceConfig.LoadState {
+		if c.initialPromptReady && c.loadStateStatus == LoadStatePending && c.cfg.StatePersistenceConfig.LoadState {
 			if err := c.loadStateLocked(); err != nil {
 				c.cfg.Logger.Error("Failed to load state", "error", err)
-				loadStateErr = err
+				c.emitter.EmitError(fmt.Sprintf("Failed to restore previous session: %v", err), "warning")
+				c.loadStateStatus = LoadStateFailed
+			} else {
+				c.loadStateStatus = LoadStateSucceeded
 			}
-			c.loadStateAttempted = true
 		}
 
 		// Enqueue initial prompt once after agent is ready (and after state is potentially loaded)
@@ -222,9 +235,6 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		c.emitter.EmitStatus(status)
 		c.emitter.EmitMessages(messages)
 		c.emitter.EmitScreen(screen)
-		if loadStateErr != nil {
-			c.emitter.EmitError(fmt.Sprintf("Failed to restore previous session: %v", loadStateErr), "warning")
-		}
 		return nil
 	}, "snapshot")
 
@@ -288,7 +298,7 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
 	}
-	if c.loadStateAttempted {
+	if c.loadStateStatus == LoadStateSucceeded {
 		agentMessage = c.adjustScreenAfterStateLoad(agentMessage)
 	}
 	if c.cfg.FormatToolCall != nil {
@@ -607,7 +617,7 @@ func (c *PTYConversation) loadStateLocked() error {
 	stateFile := c.cfg.StatePersistenceConfig.StateFile
 	loadState := c.cfg.StatePersistenceConfig.LoadState
 
-	if !loadState || c.loadStateAttempted {
+	if !loadState || c.loadStateStatus != LoadStatePending {
 		return nil
 	}
 
@@ -662,7 +672,6 @@ func (c *PTYConversation) loadStateLocked() error {
 		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
 	}
 
-	c.loadStateAttempted = true
 	c.dirty = false
 
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
