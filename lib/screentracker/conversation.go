@@ -2,6 +2,7 @@ package screentracker
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/coder/agentapi/lib/util"
@@ -47,6 +48,14 @@ type AgentIO interface {
 type MessagePart interface {
 	Do(writer AgentIO) error
 	String() string
+}
+
+func buildStringFromMessageParts(parts []MessagePart) string {
+	var sb strings.Builder
+	for _, part := range parts {
+		sb.WriteString(part.String())
+	}
+	return sb.String()
 }
 
 // Conversation represents a conversation between a user and an agent.

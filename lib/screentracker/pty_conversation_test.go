@@ -802,7 +802,7 @@ func TestStatePersistence(t *testing.T) {
 func TestInitialPromptReadiness(t *testing.T) {
 	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	t.Run("agent not ready - status remains changing", func(t *testing.T) {
+	t.Run("agent not ready - status is stable until agent becomes ready", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
@@ -825,12 +825,12 @@ func TestInitialPromptReadiness(t *testing.T) {
 		// Take a snapshot with "loading...". Threshold is 1 (stability 0 / interval 1s = 0 + 1 = 1).
 		advanceFor(ctx, t, mClock, 1*time.Second)
 
-		// Even though screen is stable, status should be changing because
-		// the initial prompt is still in the outbound queue.
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		// Screen is stable and agent is not ready, so initial prompt hasn't been enqueued yet.
+		// Status should be stable.
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
-	t.Run("agent becomes ready - status stays changing until initial prompt sent", func(t *testing.T) {
+	t.Run("agent becomes ready - prompt enqueued and status changes to changing", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
@@ -850,12 +850,11 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-		// Agent not ready initially.
+		// Agent not ready initially, status should be stable
 		advanceFor(ctx, t, mClock, 1*time.Second)
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
-		// Agent becomes ready, but status stays "changing" because the
-		// initial prompt is still in the outbound queue.
+		// Agent becomes ready, prompt gets enqueued, status becomes "changing"
 		agent.setScreen("ready")
 		advanceFor(ctx, t, mClock, 1*time.Second)
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
@@ -886,12 +885,12 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-		// Status is "changing" while waiting for readiness.
+		// Status is "stable" while waiting for readiness (prompt not yet enqueued).
 		advanceFor(ctx, t, mClock, 1*time.Second)
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		assert.Equal(t, st.ConversationStatusStable, c.Status())
 
-		// Agent becomes ready. The readiness loop detects this, the snapshot
-		// loop sees queue + stable + ready and signals the send loop.
+		// Agent becomes ready. The snapshot loop detects this, enqueues the prompt,
+		// then sees queue + stable + ready and signals the send loop.
 		// writeStabilize runs with onWrite changing the screen, so it completes.
 		agent.setScreen("ready")
 		// Drive clock until the initial prompt is sent (queue drains).
@@ -962,5 +961,328 @@ func TestInitialPromptReadiness(t *testing.T) {
 		advanceFor(ctx, t, mClock, 1*time.Second)
 		advanceFor(ctx, t, mClock, 1*time.Second)
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
+	})
+}
+
+func TestInitialPromptSent(t *testing.T) {
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("initialPromptSent is set when initial prompt is sent", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
+		writeCounter := 0
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
+		}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 0,
+			AgentIO:               agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "test prompt"}},
+			Logger:        discardLogger,
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Agent becomes ready and initial prompt is sent
+		agent.setScreen("ready")
+		advanceUntil(ctx, t, mClock, func() bool {
+			return len(c.Messages()) >= 2
+		})
+
+		// Save state and verify initialPromptSent is persisted
+		agent.setScreen("response")
+		advanceFor(ctx, t, mClock, 2*time.Second)
+
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+
+		var agentState st.AgentState
+		err = json.Unmarshal(data, &agentState)
+		require.NoError(t, err)
+
+		assert.True(t, agentState.InitialPromptSent, "initialPromptSent should be true after initial prompt is sent")
+		assert.Equal(t, "test prompt", agentState.InitialPrompt)
+	})
+
+	t.Run("initialPromptSent prevents re-sending prompt after state load", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		// Create a state file with initialPromptSent=true
+		testState := st.AgentState{
+			Version:           1,
+			InitialPrompt:     "test prompt",
+			InitialPromptSent: true,
+			Messages: []st.ConversationMessage{
+				{Id: 0, Message: "agent message", Role: st.ConversationRoleAgent, Time: time.Now()},
+				{Id: 1, Message: "test prompt", Role: st.ConversationRoleUser, Time: time.Now()},
+			},
+		}
+		data, err := json.MarshalIndent(testState, "", " ")
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, data, 0o644)
+		require.NoError(t, err)
+
+		// Create conversation with same initial prompt
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		writeCount := 0
+		agent.onWrite = func(data []byte) {
+			writeCount++
+			agent.screen = "after_write"
+		}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "test prompt"}},
+			Logger:        discardLogger,
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Advance until ready and state is loaded
+		advanceFor(ctx, t, mClock, 500*time.Millisecond)
+
+		// Verify the prompt was NOT re-sent (no writes occurred)
+		assert.Equal(t, 0, writeCount, "initial prompt should not be re-sent when already sent")
+
+		// Messages should be restored from state (at minimum, the original 2)
+		messages := c.Messages()
+		assert.GreaterOrEqual(t, len(messages), 2, "messages should be restored from state")
+		// Verify the first two messages match what we saved
+		assert.Equal(t, "agent message", messages[0].Message)
+		assert.Equal(t, st.ConversationRoleAgent, messages[0].Role)
+		assert.Equal(t, "test prompt", messages[1].Message)
+		assert.Equal(t, st.ConversationRoleUser, messages[1].Role)
+	})
+
+	t.Run("new initial prompt is sent if different from saved prompt", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		// Create a state file with old prompt
+		testState := st.AgentState{
+			Version:           1,
+			InitialPrompt:     "old prompt",
+			InitialPromptSent: true,
+			Messages: []st.ConversationMessage{
+				{Id: 0, Message: "agent message", Role: st.ConversationRoleAgent, Time: time.Now()},
+			},
+		}
+		data, err := json.MarshalIndent(testState, "", " ")
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, data, 0o644)
+		require.NoError(t, err)
+
+		// Create conversation with different initial prompt
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
+		writeCounter := 0
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
+		}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 0,
+			AgentIO:               agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "new prompt"}},
+			Logger:        discardLogger,
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Agent becomes ready
+		agent.setScreen("ready")
+
+		// Advance until the new prompt is sent
+		advanceUntil(ctx, t, mClock, func() bool {
+			msgs := c.Messages()
+			// Look for the new prompt in messages
+			for _, msg := range msgs {
+				if msg.Role == st.ConversationRoleUser && msg.Message == "new prompt" {
+					return true
+				}
+			}
+			return false
+		})
+
+		// Verify the new prompt was sent
+		messages := c.Messages()
+		found := false
+		for _, msg := range messages {
+			if msg.Role == st.ConversationRoleUser && msg.Message == "new prompt" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "new prompt should be sent when different from saved prompt")
+	})
+
+	t.Run("initialPromptSent not set when no initial prompt configured", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                discardLogger,
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+
+		var agentState st.AgentState
+		err = json.Unmarshal(data, &agentState)
+		require.NoError(t, err)
+
+		assert.False(t, agentState.InitialPromptSent, "initialPromptSent should be false when no initial prompt configured")
+	})
+
+	t.Run("restored prompt used when no new prompt provided", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		// Create a state file with a prompt
+		testState := st.AgentState{
+			Version:           1,
+			InitialPrompt:     "saved prompt",
+			InitialPromptSent: false,
+			Messages: []st.ConversationMessage{
+				{Id: 0, Message: "agent message", Role: st.ConversationRoleAgent, Time: time.Now()},
+			},
+		}
+		data, err := json.MarshalIndent(testState, "", " ")
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, data, 0o644)
+		require.NoError(t, err)
+
+		// Create conversation without providing an initial prompt
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "loading..."}
+		writeCounter := 0
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
+		}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      1 * time.Second,
+			ScreenStabilityLength: 0,
+			AgentIO:               agent,
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			Logger: discardLogger,
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Agent becomes ready
+		agent.setScreen("ready")
+
+		// Advance until the saved prompt is sent
+		advanceUntil(ctx, t, mClock, func() bool {
+			msgs := c.Messages()
+			for _, msg := range msgs {
+				if msg.Role == st.ConversationRoleUser && msg.Message == "saved prompt" {
+					return true
+				}
+			}
+			return false
+		})
+
+		// Verify the saved prompt was sent
+		messages := c.Messages()
+		found := false
+		for _, msg := range messages {
+			if msg.Role == st.ConversationRoleUser && msg.Message == "saved prompt" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "saved prompt should be sent when no new prompt provided")
 	})
 }

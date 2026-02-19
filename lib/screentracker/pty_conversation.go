@@ -31,9 +31,10 @@ type MessagePartText struct {
 }
 
 type AgentState struct {
-	Version       int                   `json:"version"`
-	Messages      []ConversationMessage `json:"messages"`
-	InitialPrompt string                `json:"initial_prompt"`
+	Version           int                   `json:"version"`
+	Messages          []ConversationMessage `json:"messages"`
+	InitialPrompt     string                `json:"initial_prompt"`
+	InitialPromptSent bool                  `json:"initial_prompt_sent"`
 }
 
 var _ MessagePart = &MessagePartText{}
@@ -129,6 +130,7 @@ type PTYConversation struct {
 	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
 	// Checked inline in the snapshot loop on each tick.
 	initialPromptReady bool
+	initialPromptSent  bool
 }
 
 var _ Conversation = &PTYConversation{}
@@ -167,10 +169,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PT
 		userSentMessageAfterLoadState: false,
 		loadStateSuccessful:           false,
 	}
-	// If we have an initial prompt, enqueue it
-	if len(cfg.InitialPrompt) > 0 {
-		c.outboundQueue <- outboundMessage{parts: cfg.InitialPrompt, errCh: nil}
-	}
 	if c.cfg.ReadyForInitialPrompt == nil {
 		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
 	}
@@ -198,6 +196,13 @@ func (c *PTYConversation) Start(ctx context.Context) {
 				c.cfg.Logger.Error("Failed to load state", "error", err)
 			}
 			c.loadStateSuccessful = true
+		}
+
+		// Enqueue initial prompt once after agent is ready (and after state is potentially loaded)
+		if c.initialPromptReady && len(c.cfg.InitialPrompt) > 0 && !c.initialPromptSent {
+			c.outboundQueue <- outboundMessage{parts: c.cfg.InitialPrompt, errCh: nil}
+			c.initialPromptSent = true
+			c.dirty = true
 		}
 
 		if c.initialPromptReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
@@ -324,11 +329,7 @@ func (c *PTYConversation) snapshotLocked(screen string) {
 
 func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	// Validate message content before enqueueing
-	var sb strings.Builder
-	for _, part := range messageParts {
-		sb.WriteString(part.String())
-	}
-	message := sb.String()
+	message := buildStringFromMessageParts(messageParts)
 	if message != msgfmt.TrimWhitespace(message) {
 		return ErrMessageValidationWhitespace
 	}
@@ -352,11 +353,7 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 // around the parts that access shared state, but releases it during
 // writeStabilize to avoid blocking the snapshot loop.
 func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...MessagePart) error {
-	var sb strings.Builder
-	for _, part := range messageParts {
-		sb.WriteString(part.String())
-	}
-	message := sb.String()
+	message := buildStringFromMessageParts(messageParts)
 
 	c.lock.Lock()
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
@@ -559,18 +556,15 @@ func (c *PTYConversation) SaveState() error {
 	// Serialize initial prompt from message parts
 	var initialPromptStr string
 	if len(c.cfg.InitialPrompt) > 0 {
-		var sb strings.Builder
-		for _, part := range c.cfg.InitialPrompt {
-			sb.WriteString(part.String())
-		}
-		initialPromptStr = sb.String()
+		initialPromptStr = buildStringFromMessageParts(c.cfg.InitialPrompt)
 	}
 
 	// Use atomic write: write to temp file, then rename to target path
 	data, err := json.MarshalIndent(AgentState{
-		Version:       1,
-		Messages:      conversation,
-		InitialPrompt: initialPromptStr,
+		Version:           1,
+		Messages:          conversation,
+		InitialPrompt:     initialPromptStr,
+		InitialPromptSent: c.initialPromptSent,
 	}, "", " ")
 	if err != nil {
 		return xerrors.Errorf("failed to marshal state: %w", err)
@@ -637,12 +631,22 @@ func (c *PTYConversation) loadStateLocked() error {
 		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 
-	//c.cfg.initialPromptSent = agentState.InitialPromptSent
-	c.cfg.InitialPrompt = []MessagePart{MessagePartText{
-		Content: agentState.InitialPrompt,
-		Alias:   "",
-		Hidden:  false,
-	}}
+	// Handle initial prompt restoration:
+	// - If a new initial prompt was provided via flags, check if it differs from the saved one.
+	//   If different, mark as not sent (will be sent). If same, preserve sent status.
+	// - If no new prompt provided, restore the saved prompt and its sent status.
+	c.initialPromptSent = agentState.InitialPromptSent
+	if len(c.cfg.InitialPrompt) > 0 {
+		isDifferent := buildStringFromMessageParts(c.cfg.InitialPrompt) != agentState.InitialPrompt
+		c.initialPromptSent = !isDifferent
+	} else {
+		c.cfg.InitialPrompt = []MessagePart{MessagePartText{
+			Content: agentState.InitialPrompt,
+			Alias:   "",
+			Hidden:  false,
+		}}
+	}
+
 	c.messages = agentState.Messages
 
 	// Store the first stable snapshot for filtering later
