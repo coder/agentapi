@@ -269,6 +269,10 @@
             "description": "Type of the agent being used by the server.",
             "type": "string"
           },
+          "backend": {
+            "description": "Backend transport being used ('acp' or 'pty').",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
@@ -276,6 +280,7 @@
         },
         "required": [
           "agent_type",
+          "backend",
           "status"
         ],
         "type": "object"

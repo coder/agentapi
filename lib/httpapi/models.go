@@ -38,6 +38,7 @@ type StatusResponse struct {
 	Body struct {
 		Status    AgentStatus  `json:"status" doc:"Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."`
 		AgentType mf.AgentType `json:"agent_type" doc:"Type of the agent being used by the server."`
+		Backend   string       `json:"backend" doc:"Backend transport being used ('acp' or 'pty')."`
 	}
 }
 
