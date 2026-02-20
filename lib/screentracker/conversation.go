@@ -2,6 +2,7 @@ package screentracker
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/coder/agentapi/lib/util"
@@ -49,6 +50,14 @@ type MessagePart interface {
 	String() string
 }
 
+func buildStringFromMessageParts(parts []MessagePart) string {
+	var sb strings.Builder
+	for _, part := range parts {
+		sb.WriteString(part.String())
+	}
+	return sb.String()
+}
+
 // Conversation represents a conversation between a user and an agent.
 // It is intended as the primary interface for interacting with a session.
 // Implementations must support the following capabilities:
@@ -63,6 +72,7 @@ type Conversation interface {
 	Start(context.Context)
 	Status() ConversationStatus
 	Text() string
+	SaveState() error
 }
 
 // Emitter receives conversation state updates.
@@ -70,6 +80,7 @@ type Emitter interface {
 	EmitMessages([]ConversationMessage)
 	EmitStatus(ConversationStatus)
 	EmitScreen(string)
+	EmitError(message string, level string)
 }
 
 type ConversationMessage struct {
@@ -77,4 +88,10 @@ type ConversationMessage struct {
 	Message string
 	Role    ConversationRole
 	Time    time.Time
+}
+
+type StatePersistenceConfig struct {
+	StateFile string
+	LoadState bool
+	SaveState bool
 }

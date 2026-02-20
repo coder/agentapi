@@ -163,7 +163,7 @@ func (p *Process) Close(logger *slog.Logger, timeout time.Duration) error {
 	case err := <-exited:
 		var pathErr *os.SyscallError
 		// ECHILD is expected if the process has already exited
-		if err != nil && !(errors.As(err, &pathErr) && pathErr.Err == syscall.ECHILD) {
+		if err != nil && !(errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ECHILD)) {
 			exitErr = xerrors.Errorf("process exited with error: %w", err)
 		}
 	}

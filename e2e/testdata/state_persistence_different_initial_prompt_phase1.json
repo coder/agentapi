@@ -1,0 +1,10 @@
+[
+  {
+    "expectMessage": "",
+    "responseMessage": "Hello! I'm ready to help you."
+  },
+  {
+    "expectMessage": "Test initial prompt",
+    "responseMessage": "Echo: Test initial prompt"
+  }
+]

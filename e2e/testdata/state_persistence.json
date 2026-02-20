@@ -1,0 +1,18 @@
+[
+  {
+    "expectMessage": "",
+    "responseMessage": "Hello! I'm ready to help you."
+  },
+  {
+    "expectMessage": "First message before state save.",
+    "responseMessage": "Echo: First message before state save."
+  },
+  {
+    "expectMessage": "Test initial prompt",
+    "responseMessage": "Echo: Test initial prompt"
+  },
+  {
+    "expectMessage": "Different initial prompt",
+    "responseMessage": "Echo: Different initial prompt"
+  }
+]

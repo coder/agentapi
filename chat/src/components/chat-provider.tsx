@@ -36,6 +36,12 @@ interface StatusChangeEvent {
   agent_type: string;
 }
 
+interface ErrorEventData {
+  message: string;
+  level: string;
+  time: string;
+}
+
 interface APIErrorDetail {
   location: string;
   message: string;
@@ -213,6 +219,25 @@ export function ChatProvider({ children }: PropsWithChildren) {
 
         // Set agent type
         setAgentType(data.agent_type === "" ? "unknown" : data.agent_type as AgentType);
+      });
+
+      // Handle agent error events
+      eventSource.addEventListener("agent_error", (event) => {
+        const messageEvent = event as MessageEvent;
+        try {
+          const data: ErrorEventData = JSON.parse(messageEvent.data);
+
+          // Display error as toast notification that persists until manually dismissed
+          if (data.level === "error") {
+            toast.error(data.message, { duration: Infinity });
+          } else if (data.level === "warning") {
+            toast.warning(data.message, { duration: Infinity });
+          } else {
+            toast.info(data.message, { duration: Infinity });
+          }
+        } catch (e) {
+          console.error("Failed to parse agent_error event data:", e);
+        }
       });
 
       // Handle connection open (server is online)

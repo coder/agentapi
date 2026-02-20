@@ -8,9 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/coder/agentapi/lib/screentracker"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -103,6 +106,43 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		}
 	}
 
+	// Get the variables related to state management
+	stateFile := viper.GetString(FlagStateFile)
+	loadState := false
+	saveState := false
+
+	// Validate state file configuration
+	if stateFile != "" {
+		if !viper.IsSet(FlagLoadState) {
+			loadState = true
+		} else {
+			loadState = viper.GetBool(FlagLoadState)
+		}
+
+		if !viper.IsSet(FlagSaveState) {
+			saveState = true
+		} else {
+			saveState = viper.GetBool(FlagSaveState)
+		}
+	} else {
+		if viper.IsSet(FlagLoadState) && viper.GetBool(FlagLoadState) {
+			return xerrors.Errorf("--load-state requires --state-file to be set")
+		}
+		if viper.IsSet(FlagSaveState) && viper.GetBool(FlagSaveState) {
+			return xerrors.Errorf("--save-state requires --state-file to be set")
+		}
+	}
+
+	pidFile := viper.GetString(FlagPidFile)
+
+	// Write PID file if configured
+	if pidFile != "" {
+		if err := writePIDFile(pidFile, logger); err != nil {
+			return xerrors.Errorf("failed to write PID file: %w", err)
+		}
+		defer cleanupPIDFile(pidFile, logger)
+	}
+
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
 	var process *termexec.Process
 	if printOpenAPI {
@@ -128,7 +168,13 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
+		StatePersistenceConfig: screentracker.StatePersistenceConfig{
+			StateFile: stateFile,
+			LoadState: loadState,
+			SaveState: saveState,
+		},
 	})
+
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
 	}
@@ -136,10 +182,21 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
+
+	// Create a context for graceful shutdown
+	gracefulCtx, gracefulCancel := context.WithCancel(ctx)
+	defer gracefulCancel()
+
+	// Setup signal handlers (they will call gracefulCancel)
+	handleSignals(gracefulCtx, gracefulCancel, logger, srv)
+
 	logger.Info("Starting server on port", "port", port)
+
+	// Monitor process exit
 	processExitCh := make(chan error, 1)
 	go func() {
 		defer close(processExitCh)
+		defer gracefulCancel()
 		if err := process.Wait(); err != nil {
 			if errors.Is(err, termexec.ErrNonZeroExitCode) {
 				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
@@ -147,17 +204,46 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
 			}
 		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
+	}()
+
+	// Start the server
+	serverErrCh := make(chan error, 1)
+	go func() {
+		defer close(serverErrCh)
+		if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- err
 		}
 	}()
-	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {
-		return xerrors.Errorf("failed to start server: %w", err)
+
+	select {
+	case err := <-serverErrCh:
+		if err != nil {
+			return xerrors.Errorf("failed to start server: %w", err)
+		}
+	case <-gracefulCtx.Done():
 	}
+
+	if err := srv.SaveState("shutdown"); err != nil {
+		logger.Error("Failed to save state during shutdown", "error", err)
+	}
+
+	// Stop the HTTP server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Stop(shutdownCtx); err != nil {
+		logger.Error("Failed to stop HTTP server", "error", err)
+	}
+
 	select {
 	case err := <-processExitCh:
-		return xerrors.Errorf("agent exited with error: %w", err)
+		if err != nil {
+			return xerrors.Errorf("agent exited with error: %w", err)
+		}
 	default:
+		// Close the process
+		if err := process.Close(logger, 5*time.Second); err != nil {
+			logger.Error("Failed to close process cleanly", "error", err)
+		}
 	}
 	return nil
 }
@@ -170,6 +256,35 @@ var agentNames = (func() []string {
 	sort.Strings(names)
 	return names
 })()
+
+// writePIDFile writes the current process ID to the specified file
+func writePIDFile(pidFile string, logger *slog.Logger) error {
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(pidFile)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return xerrors.Errorf("failed to create PID file directory: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(pidFile, []byte(pidContent), 0o600); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
+	logger.Info("Wrote PID file", "pidFile", pidFile, "pid", pid)
+	return nil
+}
+
+// cleanupPIDFile removes the PID file if it exists
+func cleanupPIDFile(pidFile string, logger *slog.Logger) {
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		logger.Error("Failed to remove PID file", "pidFile", pidFile, "error", err)
+	} else if err == nil {
+		logger.Info("Removed PID file", "pidFile", pidFile)
+	}
+}
 
 type flagSpec struct {
 	name         string
@@ -190,6 +305,10 @@ const (
 	FlagAllowedOrigins = "allowed-origins"
 	FlagExit           = "exit"
 	FlagInitialPrompt  = "initial-prompt"
+	FlagStateFile      = "state-file"
+	FlagLoadState      = "load-state"
+	FlagSaveState      = "save-state"
+	FlagPidFile        = "pid-file"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -228,6 +347,10 @@ func CreateServerCmd() *cobra.Command {
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
+		{FlagStateFile, "s", "", "Path to file for saving/loading server state", "string"},
+		{FlagLoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
+		{FlagSaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
+		{FlagPidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
 	}
 
 	for _, spec := range flagSpecs {
