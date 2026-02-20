@@ -40,7 +40,8 @@ func TestE2E(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
-		script, apiClient := setup(ctx, t, nil)
+		script, apiClient, cleanup := setup(ctx, t, nil, true)
+		defer cleanup()
 		messageReq := agentapisdk.PostMessageParams{
 			Content: "This is a test message.",
 			Type:    agentapisdk.MessageTypeUser,
@@ -60,7 +61,8 @@ func TestE2E(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		script, apiClient := setup(ctx, t, nil)
+		script, apiClient, cleanup := setup(ctx, t, nil, true)
+		defer cleanup()
 		messageReq := agentapisdk.PostMessageParams{
 			Content: "What is the answer to life, the universe, and everything?",
 			Type:    agentapisdk.MessageTypeUser,
@@ -86,13 +88,14 @@ func TestE2E(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		script, apiClient := setup(ctx, t, &params{
+		script, apiClient, cleanup := setup(ctx, t, &params{
 			cmdFn: func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
 				defCmd, defArgs := defaultCmdFn(ctx, t, serverPort, binaryPath, cwd, scriptFilePath)
 				script := fmt.Sprintf(`echo "hello agent" | %s %s`, defCmd, strings.Join(defArgs, " "))
 				return "/bin/sh", []string{"-c", script}
 			},
-		})
+		}, true)
+		defer cleanup()
 		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, 5*time.Second, "stdin"))
 		msgResp, err := apiClient.GetMessages(ctx)
 		require.NoError(t, err, "Failed to get messages via SDK")
@@ -100,27 +103,230 @@ func TestE2E(t *testing.T) {
 		require.Equal(t, script[0].ExpectMessage, strings.TrimSpace(msgResp.Messages[1].Content))
 		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp.Messages[2].Content))
 	})
+
+	t.Run("state_persistence", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		// Create a temporary state file
+		stateFile := filepath.Join(t.TempDir(), "state.json")
+		scriptFilePath := filepath.Join("testdata", "state_persistence.json")
+
+		// Step 1: Start server with state persistence enabled and send first message
+		script, apiClient, cleanup := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: scriptFilePath,
+		}, true)
+
+		// Send first message
+		messageReq := agentapisdk.PostMessageParams{
+			Content: "First message before state save.",
+			Type:    agentapisdk.MessageTypeUser,
+		}
+		_, err := apiClient.PostMessage(ctx, messageReq)
+		require.NoError(t, err, "Failed to send first message")
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "first message"))
+
+		// Verify messages before shutdown
+		msgResp, err := apiClient.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages before shutdown")
+		require.Len(t, msgResp.Messages, 3, "Expected 3 messages before shutdown")
+		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp.Messages[0].Content))
+		require.Equal(t, script[1].ExpectMessage, strings.TrimSpace(msgResp.Messages[1].Content))
+		require.Equal(t, script[1].ResponseMessage, strings.TrimSpace(msgResp.Messages[2].Content))
+
+		// Step 2: Stop server (triggers state save)
+		cleanup()
+
+		// Give filesystem a moment to sync
+		time.Sleep(100 * time.Millisecond)
+
+		// Verify state file was created
+		require.FileExists(t, stateFile, "State file should exist after shutdown")
+
+		// Step 3: Start new server instance and load state
+		// Note: We don't wait for stable here because the echo agent will try to replay
+		// from the beginning, which conflicts with restored state. We just verify the
+		// state was loaded and messages are present.
+		_, apiClient2, cleanup2 := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: scriptFilePath,
+		}, false)
+		defer cleanup2()
+
+		// Give the server a moment to load state
+		time.Sleep(500 * time.Millisecond)
+
+		// Step 4: Verify state was restored by checking messages via API
+		msgResp2, err := apiClient2.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after state restore")
+		require.Len(t, msgResp2.Messages, 3, "Expected 3 messages after state restore")
+
+		// Verify all messages match the state before shutdown
+		require.Equal(t, script[0].ResponseMessage, strings.TrimSpace(msgResp2.Messages[0].Content))
+		require.Equal(t, script[1].ExpectMessage, strings.TrimSpace(msgResp2.Messages[1].Content))
+		require.Equal(t, script[1].ResponseMessage, strings.TrimSpace(msgResp2.Messages[2].Content))
+	})
+
+	t.Run("state_persistence_initial_prompt", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		// Create a temporary state file
+		stateFile := filepath.Join(t.TempDir(), "state.json")
+		scriptFilePath := filepath.Join("testdata", "state_persistence_initial_prompt.json")
+
+		// Step 1: Start server with initial prompt
+		initialPrompt1 := "Test initial prompt"
+		_, apiClient, cleanup := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: scriptFilePath,
+			initialPrompt:  initialPrompt1,
+		}, true)
+
+		// Verify initial prompt was sent (should have 3 messages: agent greeting + initial prompt + response)
+		msgResp, err := apiClient.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after initial prompt")
+		require.Len(t, msgResp.Messages, 3, "Expected 3 messages after initial prompt")
+		require.Equal(t, "Hello! I'm ready to help you.", strings.TrimSpace(msgResp.Messages[0].Content))
+		require.Equal(t, initialPrompt1, strings.TrimSpace(msgResp.Messages[1].Content))
+		require.Equal(t, "Echo: Test initial prompt", strings.TrimSpace(msgResp.Messages[2].Content))
+
+		// Step 2: Close server
+		cleanup()
+		time.Sleep(100 * time.Millisecond)
+		require.FileExists(t, stateFile, "State file should exist after shutdown")
+
+		// Step 3: Restart WITHOUT an initial prompt
+		_, apiClient2, cleanup2 := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: scriptFilePath,
+		}, false)
+		defer cleanup2()
+		time.Sleep(500 * time.Millisecond)
+
+		// Step 4: Verify initial prompt was NOT sent again (should still have 3 messages)
+		msgResp2, err := apiClient2.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after restart without initial prompt")
+		require.Len(t, msgResp2.Messages, 3, "Expected 3 messages (initial prompt should not be sent again)")
+		require.Equal(t, initialPrompt1, strings.TrimSpace(msgResp2.Messages[1].Content))
+
+		// Step 5: Close server
+		cleanup2()
+		time.Sleep(100 * time.Millisecond)
+
+		// Step 6: Restart with same initial prompt
+		_, apiClient3, cleanup3 := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: scriptFilePath,
+			initialPrompt:  initialPrompt1,
+		}, false)
+		defer cleanup3()
+		time.Sleep(500 * time.Millisecond)
+
+		// Step 7: Verify same initial prompt was NOT sent again (should still have 3 messages)
+		msgResp3, err := apiClient3.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after restart with same initial prompt")
+		require.Len(t, msgResp3.Messages, 3, "Expected 3 messages (same initial prompt should not be sent again)")
+
+	})
+
+	t.Run("state_persistence_different_initial_prompt", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		// Create a temporary state file
+		stateFile := filepath.Join(t.TempDir(), "state.json")
+
+		// Step 1: Start server with initial prompt "Test initial prompt" using phase1 script
+		initialPrompt1 := "Test initial prompt"
+		_, apiClient, cleanup := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: filepath.Join("testdata", "state_persistence_different_initial_prompt_phase1.json"),
+			initialPrompt:  initialPrompt1,
+		}, true)
+
+		// Verify initial prompt was sent (3 messages: greeting + prompt + response)
+		msgResp, err := apiClient.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after initial prompt")
+		require.Len(t, msgResp.Messages, 3, "Expected 3 messages after initial prompt")
+		require.Equal(t, "Hello! I'm ready to help you.", strings.TrimSpace(msgResp.Messages[0].Content))
+		require.Equal(t, initialPrompt1, strings.TrimSpace(msgResp.Messages[1].Content))
+		require.Equal(t, "Echo: Test initial prompt", strings.TrimSpace(msgResp.Messages[2].Content))
+
+		// Step 2: Close server
+		cleanup()
+		time.Sleep(100 * time.Millisecond)
+		require.FileExists(t, stateFile, "State file should exist after shutdown")
+
+		// Step 3: Restart with DIFFERENT initial prompt using a different script
+		initialPrompt2 := "Different initial prompt"
+		_, apiClient2, cleanup2 := setup(ctx, t, &params{
+			stateFile:      stateFile,
+			scriptFilePath: filepath.Join("testdata", "state_persistence_different_initial_prompt.json"),
+			initialPrompt:  initialPrompt2,
+		}, false)
+		defer cleanup2()
+
+		// Wait for initial prompt to be processed
+		time.Sleep(1 * time.Second)
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient2, operationTimeout, "after different initial prompt"))
+
+		// Step 4: Verify new initial prompt WAS sent (5 messages: 3 previous + 2 new)
+		msgResp2, err := apiClient2.GetMessages(ctx)
+		require.NoError(t, err, "Failed to get messages after different initial prompt")
+		require.Len(t, msgResp2.Messages, 5, "Expected 5 messages after different initial prompt (3 previous + 2 new)")
+		// Verify the new initial prompt and response were added
+		require.Equal(t, initialPrompt2, strings.TrimSpace(msgResp2.Messages[3].Content))
+		require.Equal(t, "Echo: Different initial prompt", strings.TrimSpace(msgResp2.Messages[4].Content))
+
+	})
 }
 
 type params struct {
-	cmdFn func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string)
+	cmdFn          func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string)
+	stateFile      string
+	scriptFilePath string
+	initialPrompt  string
 }
 
 func defaultCmdFn(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
 	return binaryPath, []string{"server", fmt.Sprintf("--port=%d", serverPort), "--", "go", "run", filepath.Join(cwd, "echo.go"), scriptFilePath}
 }
 
-func setup(ctx context.Context, t testing.TB, p *params) ([]ScriptEntry, *agentapisdk.Client) {
+func stateCmdFn(stateFile, initialPrompt string) func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
+	return func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
+		args := []string{
+			"server",
+			fmt.Sprintf("--port=%d", serverPort),
+			fmt.Sprintf("--state-file=%s", stateFile),
+		}
+		if initialPrompt != "" {
+			args = append(args, fmt.Sprintf("--initial-prompt=%s", initialPrompt))
+		}
+		args = append(args, "--", "go", "run", filepath.Join(cwd, "echo.go"), scriptFilePath)
+		return binaryPath, args
+	}
+}
+
+func setup(ctx context.Context, t testing.TB, p *params, waitForStable bool) ([]ScriptEntry, *agentapisdk.Client, func()) {
 	t.Helper()
 
 	if p == nil {
 		p = &params{}
 	}
 	if p.cmdFn == nil {
-		p.cmdFn = defaultCmdFn
+		if p.stateFile != "" {
+			p.cmdFn = stateCmdFn(p.stateFile, p.initialPrompt)
+		} else {
+			p.cmdFn = defaultCmdFn
+		}
 	}
 
-	scriptFilePath := filepath.Join("testdata", filepath.Base(t.Name())+".json")
+	scriptFilePath := p.scriptFilePath
+	if scriptFilePath == "" {
+		scriptFilePath = filepath.Join("testdata", filepath.Base(t.Name())+".json")
+	}
 	data, err := os.ReadFile(scriptFilePath)
 	require.NoError(t, err, "Failed to read test script file: %s", scriptFilePath)
 
@@ -175,22 +381,37 @@ func setup(ctx context.Context, t testing.TB, p *params) ([]ScriptEntry, *agenta
 		logOutput(t, "SERVER-STDERR", stderr)
 	}()
 
-	// Clean up process
-	t.Cleanup(func() {
+	// Create cleanup function
+	cleanup := func() {
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
+			// Send SIGTERM to allow graceful shutdown and state save
+			_ = cmd.Process.Signal(os.Interrupt)
+			// Wait for process to exit gracefully (with timeout)
+			done := make(chan error, 1)
+			go func() {
+				done <- cmd.Wait()
+			}()
+			select {
+			case <-done:
+				// Process exited gracefully
+			case <-time.After(5 * time.Second):
+				// Timeout, force kill
+				_ = cmd.Process.Kill()
+				<-done
+			}
 		}
 		wg.Wait()
-	})
+	}
 
 	serverURL := fmt.Sprintf("http://localhost:%d", serverPort)
 	require.NoError(t, waitForServer(ctx, t, serverURL, healthCheckTimeout), "Server not ready")
 	apiClient, err := agentapisdk.NewClient(serverURL)
 	require.NoError(t, err, "Failed to create agentapi SDK client")
 
-	require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "setup"))
-	return script, apiClient
+	if waitForStable {
+		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient, operationTimeout, "setup"))
+	}
+	return script, apiClient, cleanup
 }
 
 // logOutput logs process output with prefix

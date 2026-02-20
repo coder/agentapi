@@ -1,0 +1,10 @@
+[
+  {
+    "expectMessage": "",
+    "responseMessage": "Hello! I'm ready to help you."
+  },
+  {
+    "expectMessage": "Different initial prompt",
+    "responseMessage": "Echo: Different initial prompt"
+  }
+]
