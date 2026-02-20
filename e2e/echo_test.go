@@ -138,9 +138,6 @@ func TestE2E(t *testing.T) {
 		// Step 2: Stop server (triggers state save)
 		cleanup()
 
-		// Give filesystem a moment to sync
-		time.Sleep(100 * time.Millisecond)
-
 		// Verify state file was created
 		require.FileExists(t, stateFile, "State file should exist after shutdown")
 
@@ -194,7 +191,6 @@ func TestE2E(t *testing.T) {
 
 		// Step 2: Close server
 		cleanup()
-		time.Sleep(100 * time.Millisecond)
 		require.FileExists(t, stateFile, "State file should exist after shutdown")
 
 		// Step 3: Restart WITHOUT an initial prompt
@@ -213,7 +209,6 @@ func TestE2E(t *testing.T) {
 
 		// Step 5: Close server
 		cleanup2()
-		time.Sleep(100 * time.Millisecond)
 
 		// Step 6: Restart with same initial prompt
 		_, apiClient3, cleanup3 := setup(ctx, t, &params{
@@ -256,7 +251,6 @@ func TestE2E(t *testing.T) {
 
 		// Step 2: Close server
 		cleanup()
-		time.Sleep(100 * time.Millisecond)
 		require.FileExists(t, stateFile, "State file should exist after shutdown")
 
 		// Step 3: Restart with DIFFERENT initial prompt using a different script
@@ -384,7 +378,7 @@ func setup(ctx context.Context, t testing.TB, p *params, waitForStable bool) ([]
 	// Create cleanup function
 	cleanup := func() {
 		if cmd.Process != nil {
-			// Send SIGTERM to allow graceful shutdown and state save
+			// Send SIGINT to allow graceful shutdown and state save
 			_ = cmd.Process.Signal(os.Interrupt)
 			// Wait for process to exit gracefully (with timeout)
 			done := make(chan error, 1)
@@ -394,7 +388,7 @@ func setup(ctx context.Context, t testing.TB, p *params, waitForStable bool) ([]
 			select {
 			case <-done:
 				// Process exited gracefully
-			case <-time.After(5 * time.Second):
+			case <-time.After(10 * time.Second):
 				// Timeout, force kill
 				_ = cmd.Process.Kill()
 				<-done

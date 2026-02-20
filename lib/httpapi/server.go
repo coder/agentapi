@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -615,7 +616,9 @@ func (s *Server) Stop(ctx context.Context) error {
 		s.cleanupTempDir()
 
 		if s.srv != nil {
-			err = s.srv.Shutdown(ctx)
+			if err = s.srv.Shutdown(ctx); errors.Is(err, http.ErrServerClosed) {
+				err = nil
+			}
 		}
 	})
 	return err

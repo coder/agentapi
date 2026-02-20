@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -215,7 +214,6 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			}
 		}
 
-		// Enqueue initial prompt once after agent is ready (and after state is potentially loaded)
 		if c.initialPromptReady && len(c.cfg.InitialPrompt) > 0 && !c.initialPromptSent {
 			c.outboundQueue <- outboundMessage{parts: c.cfg.InitialPrompt, errCh: nil}
 			c.initialPromptSent = true
@@ -576,27 +574,34 @@ func (c *PTYConversation) SaveState() error {
 		initialPromptStr = buildStringFromMessageParts(c.cfg.InitialPrompt)
 	}
 
-	// Use atomic write: write to temp file, then rename to target path
-	data, err := json.MarshalIndent(AgentState{
-		Version:           1,
-		Messages:          conversation,
-		InitialPrompt:     initialPromptStr,
-		InitialPromptSent: c.initialPromptSent,
-	}, "", " ")
-	if err != nil {
-		return xerrors.Errorf("failed to marshal state: %w", err)
-	}
-
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(stateFile)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return xerrors.Errorf("failed to create state directory: %w", err)
 	}
 
-	// Write to temp file
+	// Use atomic write: write to temp file, then rename to target path
 	tempFile := stateFile + ".tmp"
-	if err := os.WriteFile(tempFile, data, 0o600); err != nil {
-		return xerrors.Errorf("failed to write temp state file: %w", err)
+	f, err := os.OpenFile(tempFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return xerrors.Errorf("failed to create temp state file: %w", err)
+	}
+
+	// Encode directly to file to avoid loading entire JSON into memory
+	encoder := json.NewEncoder(f)
+	encoder.SetIndent("", " ")
+	if err := encoder.Encode(AgentState{
+		Version:           1,
+		Messages:          conversation,
+		InitialPrompt:     initialPromptStr,
+		InitialPromptSent: c.initialPromptSent,
+	}); err != nil {
+		return xerrors.Errorf("failed to encode state: %w", err)
+	}
+
+	// Close file before rename
+	if err := f.Close(); err != nil {
+		return xerrors.Errorf("failed to close temp state file: %w", err)
 	}
 
 	// Atomic rename
@@ -641,10 +646,6 @@ func (c *PTYConversation) loadStateLocked() error {
 	var agentState AgentState
 	decoder := json.NewDecoder(f)
 	if err := decoder.Decode(&agentState); err != nil {
-		if err == io.EOF {
-			c.cfg.Logger.Info("No previous state to load (file is empty)", "path", stateFile)
-			return nil
-		}
 		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 

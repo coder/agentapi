@@ -140,6 +140,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		if err := writePIDFile(pidFile, logger); err != nil {
 			return xerrors.Errorf("failed to write PID file: %w", err)
 		}
+		defer cleanupPIDFile(pidFile, logger)
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
@@ -189,29 +190,19 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	// Setup signal handlers (they will call gracefulCancel)
 	handleSignals(gracefulCtx, gracefulCancel, logger, srv)
 
-	// Setup PID file cleanup
-	if pidFile != "" {
-		defer cleanupPIDFile(pidFile, logger)
-	}
-
 	logger.Info("Starting server on port", "port", port)
 
 	// Monitor process exit
 	processExitCh := make(chan error, 1)
 	go func() {
 		defer close(processExitCh)
+		defer gracefulCancel()
 		if err := process.Wait(); err != nil {
 			if errors.Is(err, termexec.ErrNonZeroExitCode) {
 				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
 			} else {
 				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
 			}
-		}
-
-		select {
-		case <-gracefulCtx.Done():
-		default:
-			gracefulCancel()
 		}
 	}()
 
@@ -243,17 +234,16 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		logger.Error("Failed to stop HTTP server", "error", err)
 	}
 
-	// Close the process
-	if err := process.Close(logger, 5*time.Second); err != nil {
-		logger.Error("Failed to close process cleanly", "error", err)
-	}
-
 	select {
 	case err := <-processExitCh:
 		if err != nil {
 			return xerrors.Errorf("agent exited with error: %w", err)
 		}
 	default:
+		// Close the process
+		if err := process.Close(logger, 5*time.Second); err != nil {
+			logger.Error("Failed to close process cleanly", "error", err)
+		}
 	}
 	return nil
 }
