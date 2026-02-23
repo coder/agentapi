@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -66,8 +65,7 @@ func (s *Server) Shutdown() {
 
 func (s *Server) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "ok",
-		"cliproxy": s.router.cliproxyURL,
+		"status": "ok",
 	})
 }
 
@@ -121,13 +119,12 @@ func (s *Server) listSessions(c *gin.Context) {
 func (s *Server) proxy(c *gin.Context) {
 	// Proxy requests to cliproxy+bifrost
 	path := c.Param("path")
-	url := s.router.cliproxyURL + path
 	
-	log.Printf("Proxying request to: %s", url)
+	log.Printf("Proxying request to: %s", path)
 	
 	// Simple proxy - just forward the request
 	c.JSON(http.StatusOK, gin.H{
-		"proxied": url,
-		"method": c.Request.Method,
+		"proxied": path,
+		"method":  c.Request.Method,
 	})
 }

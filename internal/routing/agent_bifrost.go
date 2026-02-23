@@ -1,15 +1,16 @@
 package routing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 )
-
 // AgentBifrost is the Bifrost extension for agent-specific routing
 // It sits between thegent and cliproxy+bifrost, providing:
 // - Custom routing rules per agent
@@ -100,7 +101,7 @@ func (a *AgentBifrost) forwardToCliproxy(ctx context.Context, body map[string]in
 	}
 	
 	req.Header.Set("Content-Type", "application/json")
-	req.Body = json.RawMessage(jsonBody)
+	req.Body = io.NopCloser(bytes.NewReader(jsonBody))
 	
 	resp, err := a.client.Do(req)
 	if err != nil {

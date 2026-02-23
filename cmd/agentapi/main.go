@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,7 +12,7 @@ import (
 )
 
 var (
-	port       = flag.Int("port", 8318, "AgentAPI server port")
+	port        = flag.Int("port", 8318, "AgentAPI server port")
 	cliproxyURL = flag.String("cliproxy", "http://127.0.0.1:8317", "cliproxy+bifrost backend URL")
 )
 
