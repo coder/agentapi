@@ -7,10 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
-
-	"github.com/acarl005/stripansi"
 )
 
 func main() {
@@ -31,7 +28,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to open cast file: %v\n", err)
 		os.Exit(1)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stdinReader := bufio.NewReader(os.Stdin)
 	fileScanner := bufio.NewScanner(f)
@@ -104,20 +101,4 @@ func main() {
 
 	// Block until interrupted.
 	<-make(chan struct{})
-}
-
-func cleanTerminalInput(input string) string {
-	input = stripansi.Strip(input)
-
-	bracketedPasteRe := regexp.MustCompile(`\x1b\[\d+~`)
-	input = bracketedPasteRe.ReplaceAllString(input, "")
-
-	backspaceRe := regexp.MustCompile(`.\x08`)
-	input = backspaceRe.ReplaceAllString(input, "")
-
-	input = strings.ReplaceAll(input, "\x08", "")
-	input = strings.ReplaceAll(input, "\x7f", "")
-	input = strings.ReplaceAll(input, "\x1b", "")
-
-	return strings.TrimSpace(input)
 }
