@@ -2,6 +2,27 @@
 
 This file provides guidance to AI agents working with code in this repository.
 
+## Kush Ecosystem
+
+This project is part of the Kush multi-repo system:
+
+```
+kush/
+├── thegent/         # Agent orchestration
+├── agentapi++/      # HTTP API for coding agents (this repo - CANONICAL)
+├── agentapi/        # DEPRECATED - merged into agentapi++
+├── cliproxy++/      # LLM proxy with multi-provider support
+├── tokenledger/     # Token and cost tracking
+├── 4sgm/           # Python tooling workspace
+├── civ/             # Deterministic simulation
+├── parpour/        # Spec-first planning
+└── pheno-sdk/       # Python SDK
+```
+
+> **Important:** The legacy `agentapi/` directory is deprecated. All development
+> should happen in `agentapi++/` (this directory). The agentapi repo has been
+> merged into agentapi++.
+
 ## Build Commands
 
 - `make build` - Build the binary to `out/agentapi` (includes chat UI build)
