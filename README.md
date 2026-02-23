@@ -1,17 +1,87 @@
 # AgentAPI (KooshaPari Fork)
 
-**Forked from [coder/agentapi](https://github.com/coder/agentapi)** - HTTP API for controlling AI coding agents.
+HTTP API for controlling AI coding agents (Claude Code, Cursor, Aider, etc.)
 
-## Overview
+This repository works with Claude and other AI agents as autonomous software engineers.
 
-This fork adds customizations for the Kush ecosystem integration:
-- Enhanced agent message formatting
-- Custom MCP server integration
-- Integration with cliproxy for LLM routing
+## Quick Start
+
+```bash
+# Install binary
+OS=$(uname -s | tr "[:upper:]" "[:lower:]")
+ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
+curl -fsSL "https://github.com/KooshaPari/agentapi/releases/latest/download/agentapi-${OS}-${ARCH}" -o agentapi
+chmod +x agentapi
+
+# Or build from source
+go build -o out/agentapi main.go
+
+# Run with agent
+./agentapi server -- claude
+```
+
+## Environment
+
+```bash
+# Optional environment variables
+export AGENTAPI_PORT=3284
+export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
+```
+
+---
+
+## Development Philosophy
+
+### Extend, Never Duplicate
+
+- NEVER create a v2 file. Refactor the original.
+- NEVER create a new class if an existing one can be made generic.
+- NEVER create custom implementations when an OSS library exists.
+- Before writing ANY new code: search the codebase for existing patterns.
+
+### Primitives First
+
+- Build generic building blocks before application logic.
+- A provider interface + registry is better than N isolated classes.
+- Template strings > hardcoded messages. Config-driven > code-driven.
+
+### Research Before Implementing
+
+- Check pkg.go.dev for existing libraries.
+- Search GitHub for 80%+ implementations to fork/adapt.
+
+---
+
+## Library Preferences (DO NOT REINVENT)
+
+| Need | Use | NOT |
+|------|-----|-----|
+| HTTP router | chi | custom router |
+| CLI | cobra | manual flag parsing |
+| Logging | zerolog | fmt.Print |
+| Terminal emulation | tty | raw os/exec |
+
+---
+
+## Code Quality Non-Negotiables
+
+- Zero new lint suppressions without inline justification
+- All new code must pass: go fmt, go vet, golint
+- Max function: 40 lines
+- No placeholder TODOs in committed code
+
+---
+
+## Verifiable Constraints
+
+| Metric | Threshold | Enforcement |
+|--------|-----------|-------------|
+| Tests | 80% coverage | CI gate |
+| Lint | 0 errors | golangci-lint |
+
+---
 
 ## Supported Agents
-
-Control these AI coding agents via HTTP API:
 
 | Agent | Type | Status |
 |-------|------|--------|
@@ -27,72 +97,7 @@ Control these AI coding agents via HTTP API:
 | Auggie | auggie | ✅ |
 | Cursor | cursor | ✅ |
 
-## Architecture
-
-```
-┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-│   HTTP API   │────▶│  AgentAPI    │────▶│ Agent CLI   │
-│  (this repo) │     │  (terminal  │     │ (claude,    │
-│              │     │   emulator)  │     │  cursor)    │
-└──────────────┘     └──────────────┘     └─────────────┘
-                            │
-                            ▼
-                     ┌──────────────┐
-                     │   Message   │
-                     │  Formatter  │
-                     │ (custom)    │
-                     └──────────────┘
-```
-
-## Quick Start
-
-### Install
-
-```bash
-# Binary
-OS=$(uname -s | tr "[:upper:]" "[:lower:]")
-ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
-curl -fsSL "https://github.com/KooshaPari/agentapi/releases/latest/download/agentapi-${OS}-${ARCH}" -o agentapi
-chmod +x agentapi
-
-# Or build from source
-go build -o out/agentapi main.go
-```
-
-### Run
-
-```bash
-# Start with Claude Code
-./agentapi server -- claude
-
-# Start with specific agent
-./agentapi server -- cursor
-./agentapi server -- aider
-```
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/chat` | GET | Chat UI |
-| `/api/v0` | POST | Send message |
-| `/api/v0/agents` | GET | List agents |
-| `/api/v0/sessions` | GET | List sessions |
-
-## Configuration
-
-```yaml
-# config.yaml
-server:
-  port: 3284
-
-agents:
-  claude:
-    preferred_model: claude-3-5-sonnet-20241022
-  cursor:
-    preferred_model: gpt-4o
-```
+---
 
 ## Integration
 
@@ -109,24 +114,9 @@ mcp:
 
 ### With cliproxy
 
-The agentapi routes LLM requests through cliproxy for:
-- Cost optimization
-- Rate limiting
-- Multi-provider fallback
+The agentapi routes LLM requests through cliproxy for cost optimization and rate limiting.
 
-## Development
-
-```bash
-# Build
-make build
-
-# Test
-go test ./...
-
-# Lint
-go fmt ./...
-go vet ./...
-```
+---
 
 ## Fork Differences
 
@@ -135,6 +125,8 @@ This fork includes:
 - ✅ MCP server integration
 - ✅ cliproxy routing integration
 - ✅ Enhanced session management
+
+---
 
 ## License
 
