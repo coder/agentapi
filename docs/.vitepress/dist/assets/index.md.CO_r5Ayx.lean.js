@@ -1,0 +1,1 @@
+import{_ as e,o as t,c as i,ae as o}from"./chunks/framework.DdTkHido.js";const h=JSON.parse('{"title":"agentapi++","description":"","frontmatter":{},"headers":[],"relativePath":"index.md","filePath":"index.md"}'),n={name:"index.md"};function r(l,a,s,d,c,u){return t(),i("div",null,[...a[0]||(a[0]=[o("",6)])])}const m=e(n,[["render",r]]);export{h as __pageData,m as default};
