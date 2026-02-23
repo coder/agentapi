@@ -55,6 +55,12 @@ You can use AgentAPI:
 
 1. Try the chat web interface at http://localhost:3284/chat.
 
+## Changelog
+
+- [CHANGELOG.md](./CHANGELOG.md)
+- [Changelog process guide](./docs/guides/CHANGELOG_PROCESS.md)
+- [Changelog entry template](./docs/reference/CHANGELOG_ENTRY_TEMPLATE.md)
+
 ## CLI Commands
 
 ### `agentapi server`

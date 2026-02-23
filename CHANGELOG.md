@@ -1,80 +1,94 @@
 # Changelog
 
-## v0.10.0
+All notable changes to this project will be documented in this file.
 
-### Features
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.10.0]
+
+### Added
 - Feature to upload files to agentapi
 - Introduced clickable links
 - Added e2e tests
+
+### Fixed
 - Fixed the resizing scroll issue
 
-## v0.9.0
+## [0.9.0]
 
-### Features
+### Added
 - Add support for initial prompt via `-I` flag
 
-## v0.8.0
+## [0.8.0]
 
-### Features
-- Add Support for GitHub Copilot
-- Fix inconsistent openapi generation
+### Added
+- Add support for GitHub Copilot
 
-## v0.7.1
+### Fixed
+- Fix inconsistent OpenAPI generation
 
-### Fixes
+## [0.7.1]
 
+### Fixed
 - Adds headers to prevent proxies buffering SSE connections
 
-## v0.7.0
+## [0.7.0]
 
-### Features
-- Add Support for Opencode.
-- Add support for Agent aliases
+### Added
+- Add support for Opencode
+- Add support for agent aliases
 - Explicitly support AmazonQ
-- Bump NEXT.JS version
 
-## v0.6.3
+### Changed
+- Bump Next.js version
 
-- CI fixes.
+## [0.6.3]
 
-## v0.6.2
+### Fixed
+- CI fixes
 
-- Fix incorrect version string.
+## [0.6.2]
 
-## v0.6.1
+### Fixed
+- Fix incorrect version string
 
-### Features
-- Handle animation on Amp cli start screen.
+## [0.6.1]
 
-## v0.6.0
+### Added
+- Handle animation on Amp CLI start screen
 
-### Features
+## [0.6.0]
 
-- Adds support for Auggie CLI.
+### Added
+- Add support for Auggie CLI
 
-## v0.5.0
+## [0.5.0]
 
-### Features
+### Added
+- Add support for Cursor CLI
 
-- Adds support for Cursor CLI.
+## [0.4.1]
 
-## v0.4.1
+### Fixed
+- Set `CGO_ENABLED=0` in build process to improve compatibility with older Linux versions
 
-### Fixes
+## [0.4.0]
 
-- Sets `CGO_ENABLED=0` in build process to improve compatibility with older Linux versions.
-
-## v0.4.0
-
-### Breaking changes
-
-- If you're running agentapi behind a reverse proxy, you'll now likely need to set the `--allowed-hosts` flag. See the [README](./README.md) for more details.
-
-### New features
-
+### Added
 - Sourcegraph Amp support
-- Added a new `--allowed-hosts` flag to the `server` command.
+- Added a new `--allowed-hosts` flag to the `server` command
 
-### Fixes
+### Changed
+- If running agentapi behind a reverse proxy, set the `--allowed-hosts` flag. See [README](./README.md) for details.
 
-- Updated Codex support after its TUI has been updated in a recent version.
+### Fixed
+- Updated Codex support after its TUI was updated in a recent version

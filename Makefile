@@ -46,3 +46,7 @@ lint/ts:
 lint/actions/actionlint:
 	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 --config-file actionlint.yaml
 .PHONY: lint/actions/actionlint
+
+changelog-check:
+	@grep -Fq '## [Unreleased]' CHANGELOG.md || (echo "Missing required header: ## [Unreleased] in CHANGELOG.md" && exit 1)
+.PHONY: changelog-check
