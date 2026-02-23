@@ -1,0 +1,60 @@
+name: Generate All SDKs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/openapi.yaml'
+      - 'internal/**/*.go'
+  workflow_dispatch:
+
+jobs:
+  generate-sdks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install generators
+        run: |
+          npm install @openapitools/openapi-generator-cli -g
+          pip install openapi-python-client
+      
+      - name: Generate Python SDK
+        run: |
+          openapi-generator generate -i api/openapi.yaml -g python -o sdk/python --package-name agentapi
+      
+      - name: Generate TypeScript SDK
+        run: |
+          openapi-generator generate -i api/openapi.yaml -g typescript-fetch -o sdk/typescript
+      
+      - name: Generate Go SDK
+        run: |
+          openapi-generator generate -i api/openapi.yaml -g go -o sdk/go
+      
+      - name: Generate Rust SDK
+        run: |
+          openapi-generator generate -i api/openapi.yaml -g rust -o sdk/rust
+      
+      - name: Commit and push
+        run: |
+          git add sdk/
+          git commit -m "chore: generate all SDKs" || echo "No changes to commit"
+          git push
