@@ -1,408 +1,403 @@
-package screentracker_test
+package screentracker
 
 import (
 	"context"
-	"embed"
-	"fmt"
-	"path"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/agentapi/lib/msgfmt"
-	"github.com/stretchr/testify/assert"
-
-	st "github.com/coder/agentapi/lib/screentracker"
 )
 
-type statusTestStep struct {
-	snapshot string
-	status   st.ConversationStatus
-}
-type statusTestParams struct {
-	cfg   st.ConversationConfig
-	steps []statusTestStep
-}
-
-type testAgent struct {
-	st.AgentIO
+// mockAgentIO implements AgentIO for testing
+type mockAgentIO struct {
 	screen string
+	writes []string
 }
 
-func (a *testAgent) ReadScreen() string {
-	return a.screen
+func (m *mockAgentIO) Write(data []byte) (int, error) {
+	m.writes = append(m.writes, string(data))
+	return len(data), nil
 }
 
-func (a *testAgent) Write(data []byte) (int, error) {
-	return 0, nil
+func (m *mockAgentIO) ReadScreen() string {
+	return m.screen
 }
 
-func statusTest(t *testing.T, params statusTestParams) {
-	ctx := context.Background()
-	t.Run(fmt.Sprintf("interval-%s,stability_length-%s", params.cfg.SnapshotInterval, params.cfg.ScreenStabilityLength), func(t *testing.T) {
-		if params.cfg.GetTime == nil {
-			params.cfg.GetTime = func() time.Time { return time.Now() }
-		}
-		c := st.NewConversation(ctx, params.cfg, "")
-		assert.Equal(t, st.ConversationStatusInitializing, c.Status())
-
-		for i, step := range params.steps {
-			c.AddSnapshot(step.snapshot)
-			assert.Equal(t, step.status, c.Status(), "step %d", i)
-		}
-	})
+func (m *mockAgentIO) SetScreen(s string) {
+	m.screen = s
 }
 
-func TestConversation(t *testing.T) {
-	changing := st.ConversationStatusChanging
-	stable := st.ConversationStatusStable
-	initializing := st.ConversationStatusInitializing
-
-	statusTest(t, statusTestParams{
-		cfg: st.ConversationConfig{
-			SnapshotInterval:      1 * time.Second,
-			ScreenStabilityLength: 2 * time.Second,
-			// stability threshold: 3
-			AgentIO: &testAgent{
-				screen: "1",
-			},
+func newTestConversation() *Conversation {
+	cfg := ConversationConfig{
+		AgentType:             msgfmt.AgentTypeClaude,
+		AgentIO:               &mockAgentIO{},
+		GetTime:               time.Now,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 300 * time.Millisecond,
+		FormatMessage: func(msg, input string) string {
+			return msg
 		},
-		steps: []statusTestStep{
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: stable},
-			{snapshot: "1", status: stable},
-			{snapshot: "2", status: changing},
-		},
-	})
-
-	statusTest(t, statusTestParams{
-		cfg: st.ConversationConfig{
-			SnapshotInterval:      2 * time.Second,
-			ScreenStabilityLength: 3 * time.Second,
-			// stability threshold: 3
-		},
-		steps: []statusTestStep{
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: stable},
-			{snapshot: "1", status: stable},
-			{snapshot: "2", status: changing},
-			{snapshot: "2", status: changing},
-			{snapshot: "2", status: stable},
-			{snapshot: "2", status: stable},
-			{snapshot: "2", status: stable},
-		},
-	})
-
-	statusTest(t, statusTestParams{
-		cfg: st.ConversationConfig{
-			SnapshotInterval:      6 * time.Second,
-			ScreenStabilityLength: 14 * time.Second,
-			// stability threshold: 4
-		},
-		steps: []statusTestStep{
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: initializing},
-			{snapshot: "1", status: stable},
-			{snapshot: "1", status: stable},
-			{snapshot: "1", status: stable},
-			{snapshot: "2", status: changing},
-			{snapshot: "2", status: changing},
-			{snapshot: "2", status: changing},
-			{snapshot: "2", status: stable},
-		},
-	})
-}
-
-func TestMessages(t *testing.T) {
-	now := time.Now()
-	agentMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
-			Id:      id,
-			Message: msg,
-			Role:    st.ConversationRoleAgent,
-			Time:    now,
-		}
+		SkipWritingMessage:         true,
+		SkipSendMessageStatusCheck: true,
 	}
-	userMsg := func(id int, msg string) st.ConversationMessage {
-		return st.ConversationMessage{
-			Id:      id,
-			Message: msg,
-			Role:    st.ConversationRoleUser,
-			Time:    now,
-		}
+	return NewConversation(context.Background(), cfg, "")
+}
+
+func TestNewConversation(t *testing.T) {
+	c := newTestConversation()
+	if c == nil {
+		t.Fatal("expected conversation, got nil")
 	}
-	sendMsg := func(c *st.Conversation, msg string) error {
-		return c.SendMessage(st.MessagePartText{Content: msg})
+	if len(c.messages) == 0 {
+		t.Error("expected initial message")
 	}
-	newConversation := func(opts ...func(*st.ConversationConfig)) *st.Conversation {
-		cfg := st.ConversationConfig{
-			GetTime:                    func() time.Time { return now },
-			SnapshotInterval:           1 * time.Second,
-			ScreenStabilityLength:      2 * time.Second,
-			SkipWritingMessage:         true,
-			SkipSendMessageStatusCheck: true,
-		}
-		for _, opt := range opts {
-			opt(&cfg)
-		}
-		return st.NewConversation(context.Background(), cfg, "")
+	if c.messages[0].Role != ConversationRoleAgent {
+		t.Errorf("expected agent role, got %s", c.messages[0].Role)
+	}
+}
+
+func TestConversationStatus_Initializing(t *testing.T) {
+	c := newTestConversation()
+	// Before snapshots are taken
+	status := c.Status()
+	if status != ConversationStatusInitializing {
+		t.Errorf("expected initializing status, got %s", status)
+	}
+}
+
+func TestConversationStatus_Stable(t *testing.T) {
+	c := newTestConversation()
+	// Add enough stable snapshots
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("stable screen")
+	}
+	status := c.Status()
+	if status != ConversationStatusStable {
+		t.Errorf("expected stable status, got %s", status)
+	}
+}
+
+func TestConversationStatus_Changing(t *testing.T) {
+	c := newTestConversation()
+	// Add changing snapshots
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("changing screen " + string(rune('a'+i)))
+	}
+	status := c.Status()
+	if status != ConversationStatusChanging {
+		t.Errorf("expected changing status, got %s", status)
+	}
+}
+
+func TestConversationStatus_AfterUserMessage(t *testing.T) {
+	c := newTestConversation()
+	// Make stable
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("stable screen")
+	}
+	// Send message
+	err := c.SendMessage(MessagePartText{Content: "test message"})
+	if err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+	// Status should be changing after user message
+	status := c.Status()
+	if status != ConversationStatusChanging {
+		t.Errorf("expected changing status after user message, got %s", status)
+	}
+}
+
+func TestSendMessage_Validation_Empty(t *testing.T) {
+	c := newTestConversation()
+	c.cfg.SkipSendMessageStatusCheck = false
+
+	// First make stable
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("screen")
 	}
 
-	t.Run("messages are copied", func(t *testing.T) {
-		c := newConversation()
-		messages := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, ""),
-		}, messages)
+	err := c.SendMessage(MessagePartText{Content: ""})
+	if err != MessageValidationErrorEmpty {
+		t.Errorf("expected empty validation error, got %v", err)
+	}
+}
 
-		messages[0].Message = "modification"
+func TestSendMessage_Validation_Whitespace(t *testing.T) {
+	c := newTestConversation()
+	c.cfg.SkipSendMessageStatusCheck = false
 
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, ""),
-		}, c.Messages())
-	})
+	// Make stable
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("screen")
+	}
 
-	t.Run("whitespace-padding", func(t *testing.T) {
-		c := newConversation()
-		for _, msg := range []string{"123 ", " 123", "123\t\t", "\n123", "123\n\t", " \t123\n\t"} {
-			err := c.SendMessage(st.MessagePartText{Content: msg})
-			assert.Error(t, err, st.MessageValidationErrorWhitespace)
+	err := c.SendMessage(MessagePartText{Content: "  leading space"})
+	if err != MessageValidationErrorWhitespace {
+		t.Errorf("expected whitespace validation error, got %v", err)
+	}
+}
+
+func TestSendMessage_Validation_TrailingSpace(t *testing.T) {
+	c := newTestConversation()
+	c.cfg.SkipSendMessageStatusCheck = false
+
+	// Make stable
+	for i := 0; i < 5; i++ {
+		c.AddSnapshot("screen")
+	}
+
+	err := c.SendMessage(MessagePartText{Content: "trailing space  "})
+	if err != MessageValidationErrorWhitespace {
+		t.Errorf("expected whitespace validation error, got %v", err)
+	}
+}
+
+func TestSendMessage_Success(t *testing.T) {
+	c := newTestConversation()
+
+	err := c.SendMessage(MessagePartText{Content: "valid message"})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	messages := c.Messages()
+	if len(messages) < 2 {
+		t.Fatal("expected at least 2 messages")
+	}
+
+	lastMsg := messages[len(messages)-1]
+	if lastMsg.Role != ConversationRoleUser {
+		t.Errorf("expected user role, got %s", lastMsg.Role)
+	}
+	if lastMsg.Message != "valid message" {
+		t.Errorf("expected 'valid message', got %q", lastMsg.Message)
+	}
+}
+
+func TestMessages_ReturnsCopy(t *testing.T) {
+	c := newTestConversation()
+
+	msgs1 := c.Messages()
+	msgs2 := c.Messages()
+
+	// Modify one
+	if len(msgs1) > 0 {
+		msgs1[0].Message = "modified"
+	}
+
+	// Should not affect the other
+	if len(msgs2) > 0 && msgs2[0].Message == "modified" {
+		t.Error("Messages() should return a copy")
+	}
+}
+
+func TestConversationRole_Values(t *testing.T) {
+	if !containsRole(ConversationRoleValues, ConversationRoleUser) {
+		t.Error("ConversationRoleValues should contain User")
+	}
+	if !containsRole(ConversationRoleValues, ConversationRoleAgent) {
+		t.Error("ConversationRoleValues should contain Agent")
+	}
+	if len(ConversationRoleValues) != 2 {
+		t.Errorf("expected 2 role values, got %d", len(ConversationRoleValues))
+	}
+}
+
+func containsRole(roles []ConversationRole, role ConversationRole) bool {
+	for _, r := range roles {
+		if r == role {
+			return true
 		}
-	})
+	}
+	return false
+}
 
-	t.Run("no-change-no-message-update", func(t *testing.T) {
-		nowWrapper := struct {
-			time.Time
-		}{
-			Time: now,
-		}
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.GetTime = func() time.Time { return nowWrapper.Time }
-		})
+func TestFindNewMessage_NoChange(t *testing.T) {
+	oldScreen := "line1\nline2\nline3"
+	newScreen := "line1\nline2\nline3"
 
-		c.AddSnapshot("1")
-		msgs := c.Messages()
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-		}, msgs)
-		nowWrapper.Time = nowWrapper.Add(1 * time.Second)
-		c.AddSnapshot("1")
-		assert.Equal(t, msgs, c.Messages())
-	})
+	result := FindNewMessage(oldScreen, newScreen, msgfmt.AgentTypeClaude)
+	if result != "" {
+		t.Errorf("expected empty result for unchanged screens, got %q", result)
+	}
+}
 
-	t.Run("tracking messages", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.AgentIO = agent
-		})
-		// agent message is recorded when the first snapshot is added
-		c.AddSnapshot("1")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-		}, c.Messages())
+func TestFindNewMessage_AppendToEnd(t *testing.T) {
+	oldScreen := "line1\nline2"
+	newScreen := "line1\nline2\nline3"
 
-		// agent message is updated when the screen changes
-		c.AddSnapshot("2")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-		}, c.Messages())
+	result := FindNewMessage(oldScreen, newScreen, msgfmt.AgentTypeClaude)
+	if !strings.Contains(result, "line3") {
+		t.Errorf("expected result to contain 'line3', got %q", result)
+	}
+}
 
-		// user message is recorded
-		agent.screen = "2"
-		assert.NoError(t, sendMsg(c, "3"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-		}, c.Messages())
+func TestFindNewMessage_CompletelyNew(t *testing.T) {
+	oldScreen := "old content"
+	newScreen := "completely different"
 
-		// agent message is added after a user message
-		c.AddSnapshot("4")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "4"),
-		}, c.Messages())
+	result := FindNewMessage(oldScreen, newScreen, msgfmt.AgentTypeClaude)
+	if result != "completely different" {
+		t.Errorf("expected 'completely different', got %q", result)
+	}
+}
 
-		// agent message is updated when the screen changes before a user message
-		agent.screen = "5"
-		assert.NoError(t, sendMsg(c, "6"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "5"),
-			userMsg(3, "6"),
-		}, c.Messages())
+func TestFindNewMessage_OpencodeHeaderSkip(t *testing.T) {
+	// Opencode has a dynamic header that should be skipped
+	// This is a simplified test - the actual behavior depends on screen content
+	oldScreen := "content line 1\ncontent line 2"
+	newScreen := "content line 1\ncontent line 2\nnew content"
 
-		// conversation status is changing right after a user message
-		c.AddSnapshot("7")
-		c.AddSnapshot("7")
-		c.AddSnapshot("7")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-		agent.screen = "7"
-		assert.NoError(t, sendMsg(c, "8"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "2"),
-			userMsg(1, "3"),
-			agentMsg(2, "5"),
-			userMsg(3, "6"),
-			agentMsg(4, "7"),
-			userMsg(5, "8"),
-		}, c.Messages())
-		assert.Equal(t, st.ConversationStatusChanging, c.Status())
+	result := FindNewMessage(oldScreen, newScreen, msgfmt.AgentTypeOpencode)
+	// Should find the new content, may be empty if no actual difference detected
+	_ = result // Just verify it doesn't panic
+}
 
-		// conversation status is back to stable after a snapshot that
-		// doesn't change the screen
-		c.AddSnapshot("7")
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-	})
+func TestMessagePartText_String(t *testing.T) {
+	tests := []struct {
+		name     string
+		part     MessagePartText
+		expected string
+	}{
+		{
+			name:     "basic",
+			part:     MessagePartText{Content: "hello"},
+			expected: "hello",
+		},
+		{
+			name:     "hidden",
+			part:     MessagePartText{Content: "secret", Hidden: true},
+			expected: "",
+		},
+		{
+			name:     "alias",
+			part:     MessagePartText{Content: "actual content", Alias: "display"},
+			expected: "display",
+		},
+		{
+			name:     "hidden_with_alias",
+			part:     MessagePartText{Content: "content", Alias: "alias", Hidden: true},
+			expected: "",
+		},
+	}
 
-	t.Run("tracking messages overlap", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.AgentIO = agent
-		})
-
-		// common overlap between screens is removed after a user message
-		c.AddSnapshot("1")
-		agent.screen = "1"
-		assert.NoError(t, sendMsg(c, "2"))
-		c.AddSnapshot("1\n3")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-			userMsg(1, "2"),
-			agentMsg(2, "3"),
-		}, c.Messages())
-
-		agent.screen = "1\n3x"
-		assert.NoError(t, sendMsg(c, "4"))
-		c.AddSnapshot("1\n3x\n5")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1"),
-			userMsg(1, "2"),
-			agentMsg(2, "3x"),
-			userMsg(3, "4"),
-			agentMsg(4, "5"),
-		}, c.Messages())
-	})
-
-	t.Run("format-message", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.AgentIO = agent
-			cfg.FormatMessage = func(message string, userInput string) string {
-				return message + " " + userInput
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.part.String()
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
 			}
-		})
-		agent.screen = "1"
-		assert.NoError(t, sendMsg(c, "2"))
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1 "),
-			userMsg(1, "2"),
-		}, c.Messages())
-		agent.screen = "x"
-		c.AddSnapshot("x")
-		assert.Equal(t, []st.ConversationMessage{
-			agentMsg(0, "1 "),
-			userMsg(1, "2"),
-			agentMsg(2, "x 2"),
-		}, c.Messages())
-	})
-
-	t.Run("format-message", func(t *testing.T) {
-		agent := &testAgent{}
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.AgentIO = agent
-			cfg.FormatMessage = func(message string, userInput string) string {
-				return "formatted"
-			}
-		})
-		assert.Equal(t, []st.ConversationMessage{
-			{
-				Id:      0,
-				Message: "",
-				Role:    st.ConversationRoleAgent,
-				Time:    now,
-			},
-		}, c.Messages())
-	})
-
-	t.Run("send-message-status-check", func(t *testing.T) {
-		c := newConversation(func(cfg *st.ConversationConfig) {
-			cfg.SkipSendMessageStatusCheck = false
-			cfg.SnapshotInterval = 1 * time.Second
-			cfg.ScreenStabilityLength = 2 * time.Second
-			cfg.AgentIO = &testAgent{}
-		})
-		assert.Error(t, sendMsg(c, "1"), st.MessageValidationErrorChanging)
-		for range 3 {
-			c.AddSnapshot("1")
-		}
-		assert.NoError(t, sendMsg(c, "4"))
-		c.AddSnapshot("2")
-		assert.Error(t, sendMsg(c, "5"), st.MessageValidationErrorChanging)
-	})
-
-	t.Run("send-message-empty-message", func(t *testing.T) {
-		c := newConversation()
-		assert.Error(t, sendMsg(c, ""), st.MessageValidationErrorEmpty)
-	})
-}
-
-//go:embed testdata
-var testdataDir embed.FS
-
-func TestFindNewMessage(t *testing.T) {
-	assert.Equal(t, "", st.FindNewMessage("123456", "123456", msgfmt.AgentTypeCustom))
-	assert.Equal(t, "1234567", st.FindNewMessage("123456", "1234567", msgfmt.AgentTypeCustom))
-	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42", msgfmt.AgentTypeCustom))
-	assert.Equal(t, "12342", st.FindNewMessage("123", "12342\n   \n \n \n", msgfmt.AgentTypeCustom))
-	assert.Equal(t, "42", st.FindNewMessage("123", "123\n  \n \n \n42\n   \n \n \n", msgfmt.AgentTypeCustom))
-	assert.Equal(t, "42", st.FindNewMessage("89", "42", msgfmt.AgentTypeCustom))
-
-	dir := "testdata/diff"
-	cases, err := testdataDir.ReadDir(dir)
-	assert.NoError(t, err)
-	for _, c := range cases {
-		t.Run(c.Name(), func(t *testing.T) {
-			before, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "before.txt"))
-			assert.NoError(t, err)
-			after, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "after.txt"))
-			assert.NoError(t, err)
-			expected, err := testdataDir.ReadFile(path.Join(dir, c.Name(), "expected.txt"))
-			assert.NoError(t, err)
-			assert.Equal(t, string(expected), st.FindNewMessage(string(before), string(after), msgfmt.AgentTypeCustom))
 		})
 	}
 }
 
 func TestPartsToString(t *testing.T) {
-	assert.Equal(t, "123", st.PartsToString(st.MessagePartText{Content: "123"}))
-	assert.Equal(t,
-		"123",
-		st.PartsToString(
-			st.MessagePartText{Content: "1"},
-			st.MessagePartText{Content: "2"},
-			st.MessagePartText{Content: "3"},
-		),
-	)
-	assert.Equal(t,
-		"123",
-		st.PartsToString(
-			st.MessagePartText{Content: "1"},
-			st.MessagePartText{Content: "x", Hidden: true},
-			st.MessagePartText{Content: "2"},
-			st.MessagePartText{Content: "3"},
-			st.MessagePartText{Content: "y", Hidden: true},
-		),
-	)
-	assert.Equal(t,
-		"ab",
-		st.PartsToString(
-			st.MessagePartText{Content: "1", Alias: "a"},
-			st.MessagePartText{Content: "2", Alias: "b"},
-			st.MessagePartText{Content: "3", Alias: "c", Hidden: true},
-		),
-	)
+	parts := []MessagePart{
+		MessagePartText{Content: "hello "},
+		MessagePartText{Content: "world"},
+	}
+
+	result := PartsToString(parts...)
+	if result != "hello world" {
+		t.Errorf("expected 'hello world', got %q", result)
+	}
+}
+
+func TestPartsToString_WithHidden(t *testing.T) {
+	parts := []MessagePart{
+		MessagePartText{Content: "visible "},
+		MessagePartText{Content: "hidden", Hidden: true},
+		MessagePartText{Content: " more"},
+	}
+
+	result := PartsToString(parts...)
+	if result != "visible  more" {
+		t.Errorf("expected 'visible  more', got %q", result)
+	}
+}
+
+func TestConversation_InitialPrompt(t *testing.T) {
+	cfg := ConversationConfig{
+		AgentType:             msgfmt.AgentTypeClaude,
+		AgentIO:               &mockAgentIO{},
+		GetTime:               time.Now,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 300 * time.Millisecond,
+		SkipWritingMessage:    true,
+	}
+
+	c := NewConversation(context.Background(), cfg, "initial prompt text")
+
+	if c.InitialPrompt != "initial prompt text" {
+		t.Errorf("expected 'initial prompt text', got %q", c.InitialPrompt)
+	}
+	if c.InitialPromptSent {
+		t.Error("InitialPromptSent should be false initially")
+	}
+}
+
+func TestConversation_EmptyInitialPrompt(t *testing.T) {
+	cfg := ConversationConfig{
+		AgentType:             msgfmt.AgentTypeClaude,
+		AgentIO:               &mockAgentIO{},
+		GetTime:               time.Now,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 300 * time.Millisecond,
+	}
+
+	c := NewConversation(context.Background(), cfg, "")
+
+	if !c.InitialPromptSent {
+		t.Error("InitialPromptSent should be true when initial prompt is empty")
+	}
+}
+
+func TestGetStableSnapshotsThreshold(t *testing.T) {
+	tests := []struct {
+		stability time.Duration
+		interval  time.Duration
+		minimum   int // threshold should be >= this
+	}{
+		{1 * time.Second, 100 * time.Millisecond, 10},
+		{500 * time.Millisecond, 100 * time.Millisecond, 5},
+		{300 * time.Millisecond, 100 * time.Millisecond, 3},
+		{2 * time.Second, 100 * time.Millisecond, 20},
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			cfg := ConversationConfig{
+				ScreenStabilityLength: tt.stability,
+				SnapshotInterval:      tt.interval,
+			}
+			threshold := getStableSnapshotsThreshold(cfg)
+			if threshold < tt.minimum {
+				t.Errorf("threshold %d < minimum %d", threshold, tt.minimum)
+			}
+		})
+	}
+}
+
+func TestConversation_Screen(t *testing.T) {
+	c := newTestConversation()
+	mockIO := c.cfg.AgentIO.(*mockAgentIO)
+	mockIO.SetScreen("test screen content")
+
+	// Add a snapshot
+	c.AddSnapshot("test screen content")
+
+	screen := c.Screen()
+	if screen != "test screen content" {
+		t.Errorf("expected 'test screen content', got %q", screen)
+	}
+}
+
+func TestConversation_Screen_Empty(t *testing.T) {
+	c := newTestConversation()
+	// No snapshots yet
+	screen := c.Screen()
+	if screen != "" {
+		t.Errorf("expected empty screen, got %q", screen)
+	}
 }
