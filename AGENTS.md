@@ -2,6 +2,99 @@
 
 This file provides guidance to AI agents working with code in this repository.
 
+## Quick Start
+
+```bash
+# Development
+go build -o agentapi ./cmd/agentapi
+
+# Testing
+go test ./...
+
+# Linting
+go fmt ./...
+go vet ./...
+```
+
+## Environment
+
+```bash
+# Required environment variables
+export CLIPROXY_URL="http://localhost:8317"
+export AGENTAPI_PORT="8318"
+```
+
+---
+
+## Development Philosophy
+
+### Extend, Never Duplicate
+
+- NEVER create a v2 file. Refactor the original.
+- NEVER create a new class if an existing one can be made generic.
+- NEVER create custom implementations when an OSS library exists.
+- Before writing ANY new code: search the codebase for existing patterns.
+
+### Primitives First
+
+- Build generic building blocks before application logic.
+- A provider interface + registry is better than N isolated classes.
+- Template strings > hardcoded messages. Config-driven > code-driven.
+
+### Research Before Implementing
+
+- Check pkg.go.dev for existing libraries.
+- Search GitHub for 80%+ implementations to fork/adapt.
+
+---
+
+## Library Preferences (DO NOT REINVENT)
+
+| Need | Use | NOT |
+|------|-----|-----|
+| HTTP router | chi | custom router |
+| Logging | zerolog | fmt.Print |
+| CLI | cobra | manual flag parsing |
+| Config | viper | manual env parsing |
+
+---
+
+## Code Quality Non-Negotiables
+
+- Zero new lint suppressions without inline justification
+- All new code must pass: go fmt, go vet, golint
+- Max function: 40 lines
+- No placeholder TODOs in committed code
+
+---
+
+## Verifiable Constraints
+
+| Metric | Threshold | Enforcement |
+|--------|-----------|-------------|
+| Tests | 80% coverage | CI gate |
+| Lint | 0 errors | golangci-lint |
+
+---
+
+## Supported Agents
+
+| Agent | Type | Status |
+|-------|------|--------|
+| Claude Code | claude | ✅ |
+| Amazon Q | amazon-q | ✅ |
+| Opencode | opencode | ✅ |
+| Goose | goose | ✅ |
+| Aider | aider | ✅ |
+| Gemini CLI | gemini | ✅ |
+| GitHub Copilot | github-copilot | ✅ |
+| Sourcegraph Amp | amp | ✅ |
+| Codex | codex | ✅ |
+| Auggie | auggie | ✅ |
+| Cursor | cursor | ✅ |
+
+---
+
 ## Kush Ecosystem
 
 This project is part of the Kush multi-repo system:
@@ -9,8 +102,7 @@ This project is part of the Kush multi-repo system:
 ```
 kush/
 ├── thegent/         # Agent orchestration
-├── agentapi++/      # HTTP API for coding agents (this repo - CANONICAL)
-├── agentapi/        # DEPRECATED - merged into agentapi++
+├── agentapi++/      # HTTP API for coding agents (this repo)
 ├── cliproxy++/      # LLM proxy with multi-provider support
 ├── tokenledger/     # Token and cost tracking
 ├── 4sgm/           # Python tooling workspace
@@ -18,89 +110,3 @@ kush/
 ├── parpour/        # Spec-first planning
 └── pheno-sdk/       # Python SDK
 ```
-
-> **Important:** The legacy `agentapi/` directory is deprecated. All development
-> should happen in `agentapi++/` (this directory). The agentapi repo has been
-> merged into agentapi++.
-
-## Build Commands
-
-- `make build` - Build the binary to `out/agentapi` (includes chat UI build)
-- `make embed` - Build the chat UI and embed it into Go
-- `go build -o out/agentapi main.go` - Direct Go build without chat UI
-- `go generate ./...` - Generate OpenAPI schema and version info
-
-## Testing
-
-- `go test ./...` - Run all Go tests
-- Tests are located alongside source files (e.g., `lib/httpapi/server_test.go`)
-
-## Development Commands
-
-- `agentapi server -- claude` - Start server with Claude Code agent
-- `agentapi server -- aider --model sonnet` - Start server with Aider agent
-- `agentapi server -- goose` - Start server with Goose agent
-- `agentapi server --type=codex -- codex` - Start server with Codex (requires explicit type)
-- `agentapi server --type=gemini -- gemini` - Start server with Gemini (requires explicit type)
-- `agentapi attach --url localhost:3284` - Attach to running agent terminal
-- Server runs on port 3284 by default
-- Chat UI available at http://localhost:3284/chat
-- API documentation at http://localhost:3284/docs
-
-## Architecture
-
-This is a Go HTTP API server that controls coding agents (Claude Code, Aider, Goose, etc.) through terminal emulation.
-
-**Core Components:**
-- `main.go` - Entry point using cobra CLI framework
-- `cmd/` - CLI command definitions (server, attach)
-- `lib/httpapi/` - HTTP server, routes, and OpenAPI schema
-- `lib/screentracker/` - Terminal output parsing and message splitting
-- `lib/termexec/` - Terminal process execution and management
-- `lib/msgfmt/` - Message formatting for different agent types (claude, goose, aider, codex, gemini, amp, cursor-agent, cursor, auggie, custom)
-- `chat/` - Next.js web UI (embedded into Go binary)
-
-**Key Architecture:**
-- Runs agents in an in-memory terminal emulator
-- Translates API calls to terminal keystrokes
-- Parses terminal output into structured messages
-- Supports multiple agent types with different message formats
-- Embeds Next.js chat UI as static assets in Go binary
-
-**Message Flow:**
-1. User sends message via HTTP API
-2. Server takes terminal snapshot
-3. Message sent to agent as terminal input
-4. Terminal output changes tracked and parsed
-5. New content becomes agent response message
-6. SSE events stream updates to clients
-
-## API Endpoints
-
-- GET `/messages` - Get all messages in conversation
-- POST `/message` - Send message to agent (content, type fields)
-- GET `/status` - Get agent status ("stable" or "running")
-- GET `/events` - SSE stream of agent events
-- GET `/openapi.json` - OpenAPI schema
-- GET `/docs` - API documentation UI
-- GET `/chat` - Web chat interface
-
-## Supported Agents
-
-Agents with explicit type requirement (use `--type=<agent>`):
-- `codex` - OpenAI Codex
-- `gemini` - Google Gemini CLI
-- `amp` - Sourcegraph Amp CLI
-- `cursor` - Cursor CLI
-
-Agents with auto-detection:
-- `claude` - Claude Code (default)
-- `goose` - Goose
-- `aider` - Aider
-
-## Project Structure
-
-- Go module with standard layout
-- Chat UI in `chat/` directory (Next.js + TypeScript)
-- OpenAPI schema auto-generated to `openapi.json`
-- Version managed via `version.sh` script
