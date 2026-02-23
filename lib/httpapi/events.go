@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/quartz"
+
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/util"
@@ -54,9 +56,9 @@ type ScreenUpdateBody struct {
 }
 
 type ErrorBody struct {
-	Message string    `json:"message" doc:"Error message"`
-	Level   string    `json:"level" doc:"Error level: 'warning' or 'error'"`
-	Time    time.Time `json:"time" doc:"Timestamp when the error occurred"`
+	Message string        `json:"message" doc:"Error message"`
+	Level   st.ErrorLevel `json:"level" doc:"Error level"`
+	Time    time.Time     `json:"time" doc:"Timestamp when the error occurred"`
 }
 
 type Event struct {
@@ -74,6 +76,7 @@ type EventEmitter struct {
 	subscriptionBufSize uint
 	screen              string
 	errors              []ErrorBody
+	clock               quartz.Clock
 }
 
 func convertStatus(status st.ConversationStatus) AgentStatus {
@@ -109,6 +112,12 @@ func WithAgentType(agentType mf.AgentType) EventEmitterOption {
 	}
 }
 
+func WithClock(clock quartz.Clock) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.clock = clock
+	}
+}
+
 func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
 	e := &EventEmitter{
 		messages:            make([]st.ConversationMessage, 0),
@@ -118,6 +127,9 @@ func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
 	}
 	for _, opt := range opts {
 		opt(e)
+	}
+	if e.clock == nil {
+		e.clock = quartz.NewReal()
 	}
 	return e
 }
@@ -202,14 +214,14 @@ func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.screen = newScreen
 }
 
-func (e *EventEmitter) EmitError(message string, level string) {
+func (e *EventEmitter) EmitError(message string, level st.ErrorLevel) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	errorBody := ErrorBody{
 		Message: message,
 		Level:   level,
-		Time:    time.Now(),
+		Time:    e.clock.Now(),
 	}
 
 	// Store the error so new subscribers can receive all errors

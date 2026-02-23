@@ -278,7 +278,7 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
 	s := &Server{
 		router:       router,
@@ -292,8 +292,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
 		clock:        config.Clock,
-		shutdownCtx:  ctx,
-		shutdown:     cancel,
+		shutdownCtx:  shutdownCtx,
+		shutdown:     shutdownCancel,
 	}
 
 	// Register API routes

@@ -23,8 +23,8 @@
         "additionalProperties": false,
         "properties": {
           "level": {
-            "description": "Error level: 'warning' or 'error'",
-            "type": "string"
+            "$ref": "#/components/schemas/ErrorLevel",
+            "description": "Error level"
           },
           "message": {
             "description": "Error message",
@@ -59,6 +59,15 @@
           }
         },
         "type": "object"
+      },
+      "ErrorLevel": {
+        "enum": [
+          "error",
+          "warning"
+        ],
+        "example": "warning",
+        "title": "ErrorLevel",
+        "type": "string"
       },
       "ErrorModel": {
         "additionalProperties": false,

@@ -56,7 +56,7 @@ type testEmitter struct{}
 func (testEmitter) EmitMessages([]st.ConversationMessage) {}
 func (testEmitter) EmitStatus(st.ConversationStatus)      {}
 func (testEmitter) EmitScreen(string)                     {}
-func (testEmitter) EmitError(_ string, _ string)          {}
+func (testEmitter) EmitError(_ string, _ st.ErrorLevel)   {}
 
 // advanceFor is a shorthand for advanceUntil with a time-based condition.
 func advanceFor(ctx context.Context, t *testing.T, mClock *quartz.Mock, total time.Duration) {
@@ -798,6 +798,57 @@ func TestStatePersistence(t *testing.T) {
 		messages := c.Messages()
 		assert.Len(t, messages, 1)
 	})
+
+	t.Run("LoadState rejects unsupported version", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/unsupported_version.json"
+
+		// Create state file with unsupported version
+		unsupportedState := map[string]interface{}{
+			"version":             999, // Unsupported version
+			"messages":            []interface{}{},
+			"initial_prompt":      "",
+			"initial_prompt_sent": false,
+		}
+		stateBytes, err := json.Marshal(unsupportedState)
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, stateBytes, 0o644)
+		require.NoError(t, err)
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		// Should not panic - logs error and continues with empty state
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Should have default initial message (version error causes fallback to empty state)
+		messages := c.Messages()
+		assert.Len(t, messages, 1)
+	})
 }
 
 func TestInitialPromptReadiness(t *testing.T) {
@@ -1285,5 +1336,64 @@ func TestInitialPromptSent(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "saved prompt should be sent when no new prompt provided")
+	})
+
+	t.Run("empty prompt from state is not restored", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		// Create state file with empty prompt
+		emptyPromptState := st.AgentState{
+			Version:           1,
+			Messages:          []st.ConversationMessage{},
+			InitialPrompt:     "", // Empty prompt
+			InitialPromptSent: false,
+		}
+		stateBytes, err := json.Marshal(emptyPromptState)
+		require.NoError(t, err)
+		err = os.WriteFile(stateFile, stateBytes, 0o644)
+		require.NoError(t, err)
+
+		mClock := quartz.NewMock(t)
+		agent := &testAgent{screen: "ready"}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                discardLogger,
+			FormatMessage: func(message string, userInput string) string {
+				return message
+			},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "ready"
+			},
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: true,
+				SaveState: false,
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Agent becomes ready
+		agent.setScreen("ready")
+
+		// Advance time to ensure any prompt would be sent
+		advanceFor(ctx, t, mClock, 500*time.Millisecond)
+
+		// Verify no prompt was sent (should only have the initial screen message)
+		messages := c.Messages()
+		for _, msg := range messages {
+			if msg.Role == st.ConversationRoleUser {
+				t.Errorf("Unexpected user message sent: %q (empty prompt should not be restored)", msg.Message)
+			}
+		}
 	})
 }

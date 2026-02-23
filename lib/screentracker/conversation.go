@@ -34,6 +34,22 @@ var ConversationRoleValues = []ConversationRole{
 	ConversationRoleAgent,
 }
 
+type ErrorLevel string
+
+func (e ErrorLevel) Schema(r huma.Registry) *huma.Schema {
+	return util.OpenAPISchema(r, "ErrorLevel", ErrorLevelValues)
+}
+
+const (
+	ErrorLevelWarning ErrorLevel = "warning"
+	ErrorLevelError   ErrorLevel = "error"
+)
+
+var ErrorLevelValues = []ErrorLevel{
+	ErrorLevelWarning,
+	ErrorLevelError,
+}
+
 var (
 	ErrMessageValidationWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
 	ErrMessageValidationEmpty      = xerrors.New("message must not be empty")
@@ -80,14 +96,14 @@ type Emitter interface {
 	EmitMessages([]ConversationMessage)
 	EmitStatus(ConversationStatus)
 	EmitScreen(string)
-	EmitError(message string, level string)
+	EmitError(message string, level ErrorLevel)
 }
 
 type ConversationMessage struct {
-	Id      int
-	Message string
-	Role    ConversationRole
-	Time    time.Time
+	Id      int              `json:"id"`
+	Message string           `json:"message"`
+	Role    ConversationRole `json:"role"`
+	Time    time.Time        `json:"time"`
 }
 
 type StatePersistenceConfig struct {

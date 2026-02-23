@@ -6,6 +6,7 @@ import (
 	"time"
 
 	st "github.com/coder/agentapi/lib/screentracker"
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,5 +97,41 @@ func TestEventEmitter(t *testing.T) {
 		default:
 			t.Fatalf("read should not block")
 		}
+	})
+
+	t.Run("clock-injection", func(t *testing.T) {
+		mockClock := quartz.NewMock(t)
+		fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		mockClock.Set(fixedTime)
+
+		emitter := NewEventEmitter(WithClock(mockClock), WithSubscriptionBufSize(10))
+		_, ch, stateEvents := emitter.Subscribe()
+
+		// Verify initial state events
+		assert.Len(t, stateEvents, 2)
+
+		// Emit an error and verify it uses the mock clock time
+		emitter.EmitError("test error", st.ErrorLevelError)
+
+		event := <-ch
+		assert.Equal(t, EventTypeError, event.Type)
+		errorBody, ok := event.Payload.(ErrorBody)
+		assert.True(t, ok)
+		assert.Equal(t, "test error", errorBody.Message)
+		assert.Equal(t, st.ErrorLevelError, errorBody.Level)
+		assert.Equal(t, fixedTime, errorBody.Time)
+
+		// Advance the clock and emit another error
+		newTime := fixedTime.Add(1 * time.Hour)
+		mockClock.Set(newTime)
+		emitter.EmitError("another error", st.ErrorLevelWarning)
+
+		event = <-ch
+		assert.Equal(t, EventTypeError, event.Type)
+		errorBody, ok = event.Payload.(ErrorBody)
+		assert.True(t, ok)
+		assert.Equal(t, "another error", errorBody.Message)
+		assert.Equal(t, st.ErrorLevelWarning, errorBody.Level)
+		assert.Equal(t, newTime, errorBody.Time)
 	})
 }

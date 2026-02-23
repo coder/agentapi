@@ -152,7 +152,7 @@ type noopEmitter struct{}
 func (noopEmitter) EmitMessages([]ConversationMessage) {}
 func (noopEmitter) EmitStatus(ConversationStatus)      {}
 func (noopEmitter) EmitScreen(string)                  {}
-func (noopEmitter) EmitError(_ string, _ string)       {}
+func (noopEmitter) EmitError(_ string, _ ErrorLevel)   {}
 
 func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PTYConversation {
 	if cfg.Clock == nil {
@@ -207,7 +207,7 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		if c.initialPromptReady && c.loadStateStatus == LoadStatePending && c.cfg.StatePersistenceConfig.LoadState {
 			if err := c.loadStateLocked(); err != nil {
 				c.cfg.Logger.Error("Failed to load state", "error", err)
-				c.emitter.EmitError(fmt.Sprintf("Failed to restore previous session: %v", err), "warning")
+				c.emitter.EmitError(fmt.Sprintf("Failed to restore previous session: %v", err), ErrorLevelWarning)
 				c.loadStateStatus = LoadStateFailed
 			} else {
 				c.loadStateStatus = LoadStateSucceeded
@@ -649,6 +649,11 @@ func (c *PTYConversation) loadStateLocked() error {
 		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
 	}
 
+	// Validate version
+	if agentState.Version != 1 {
+		return xerrors.Errorf("unsupported state file version %d (expected 1)", agentState.Version)
+	}
+
 	// Handle initial prompt restoration:
 	// - If a new initial prompt was provided via flags, check if it differs from the saved one.
 	//   If different, mark as not sent (will be sent). If same, preserve sent status.
@@ -657,7 +662,7 @@ func (c *PTYConversation) loadStateLocked() error {
 	if len(c.cfg.InitialPrompt) > 0 {
 		isDifferent := buildStringFromMessageParts(c.cfg.InitialPrompt) != agentState.InitialPrompt
 		c.initialPromptSent = !isDifferent
-	} else {
+	} else if agentState.InitialPrompt != "" {
 		c.cfg.InitialPrompt = []MessagePart{MessagePartText{
 			Content: agentState.InitialPrompt,
 			Alias:   "",
