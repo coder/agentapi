@@ -52,7 +52,8 @@ func TestEventEmitter(t *testing.T) {
 			Payload: MessageUpdateBody{Id: 2, Message: "What's up?", Role: st.ConversationRoleAgent, Time: now},
 		}, newEvent)
 
-		emitter.UpdateStatusAndEmitChanges(st.ConversationStatusStable, mf.AgentTypeAider)
+		err := emitter.UpdateStatusAndEmitChanges(st.ConversationStatusStable, mf.AgentTypeAider)
+		assert.NoError(t, err)
 		newEvent = <-ch
 		assert.Equal(t, Event{
 			Type:    EventTypeStatusChange,

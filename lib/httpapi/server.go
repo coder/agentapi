@@ -325,7 +325,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 			currentStatus := s.conversation.Status()
 
 			// Send initial prompt when agent becomes stable for the first time
-			if !s.conversation.InitialPromptSent && convertStatus(currentStatus) == AgentStatusStable {
+			agentStatus, err := convertStatus(currentStatus)
+			if err != nil {
+				s.logger.Error("Failed to convert status", "error", err, "status", currentStatus)
+			}
+			if !s.conversation.InitialPromptSent && agentStatus == AgentStatusStable {
 				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
 					s.logger.Error("Failed to send initial prompt", "error", err)
 				} else {
@@ -334,7 +338,9 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 					s.logger.Info("Initial prompt sent successfully")
 				}
 			}
-			s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType)
+			if err := s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType); err != nil {
+				s.logger.Error("Failed to update status and emit changes", "error", err)
+			}
 			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
 			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
 			time.Sleep(snapshotInterval)
@@ -400,7 +406,10 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 	defer s.mu.RUnlock()
 
 	status := s.conversation.Status()
-	agentStatus := convertStatus(status)
+	agentStatus, err := convertStatus(status)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to convert status: %w", err)
+	}
 
 	resp := &StatusResponse{}
 	resp.Body.Status = agentStatus

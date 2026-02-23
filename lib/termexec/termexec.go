@@ -78,12 +78,14 @@ func StartProcess(ctx context.Context, args StartProcessConfig) (*Process, error
 		for {
 			r, _, err := pp.ReadRune()
 			if err != nil {
-				if err != io.EOF {
-					logger.Error("Error reading from pseudo terminal", "error", err)
+				if err == io.EOF {
+					logger.Info("Pseudo terminal reached EOF, stopping read loop")
+				} else {
+					logger.Error("Error reading from pseudo terminal, terminal will stop updating",
+						"error", err,
+						"context", "process output reader goroutine",
+					)
 				}
-				// TODO: handle this error better. if this happens, the terminal
-				// state will never be updated anymore and the process will appear
-				// unresponsive.
 				return
 			}
 			process.screenUpdateLock.Lock()

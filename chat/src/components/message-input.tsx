@@ -209,11 +209,9 @@ export default function MessageInput({
               <div className="flex">
                 {inputMode === "control" && !disabled ? (
                   <div
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    ref={textareaRef as any}
+                    ref={textareaRef as unknown as React.RefObject<HTMLDivElement>}
                     tabIndex={0}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    onKeyDown={handleKeyDown as any}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => handleKeyDown(e as unknown as KeyboardEvent<HTMLTextAreaElement>)}
                     onFocus={() => setControlAreaFocused(true)}
                     onBlur={() => setControlAreaFocused(false)}
                     className="cursor-text p-4 h-20 text-muted-foreground flex items-center justify-center w-full outline-none text-sm"

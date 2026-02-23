@@ -68,16 +68,16 @@ type EventEmitter struct {
 	screen              string
 }
 
-func convertStatus(status st.ConversationStatus) AgentStatus {
+func convertStatus(status st.ConversationStatus) (AgentStatus, error) {
 	switch status {
 	case st.ConversationStatusInitializing:
-		return AgentStatusRunning
+		return AgentStatusRunning, nil
 	case st.ConversationStatusStable:
-		return AgentStatusStable
+		return AgentStatusStable, nil
 	case st.ConversationStatusChanging:
-		return AgentStatusRunning
+		return AgentStatusRunning, nil
 	default:
-		panic(fmt.Sprintf("unknown conversation status: %s", status))
+		return "", fmt.Errorf("unknown conversation status: %s", status)
 	}
 }
 
@@ -137,30 +137,36 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
-			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
-				Id:      newMessages[i].Id,
-				Role:    newMessages[i].Role,
-				Message: newMessages[i].Message,
-				Time:    newMessages[i].Time,
-			})
+			if i < len(newMessages) {
+				e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
+					Id:      newMessages[i].Id,
+					Role:    newMessages[i].Role,
+					Message: newMessages[i].Message,
+					Time:    newMessages[i].Time,
+				})
+			}
 		}
 	}
 
 	e.messages = newMessages
 }
 
-func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) {
+func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	newAgentStatus := convertStatus(newStatus)
+	newAgentStatus, err := convertStatus(newStatus)
+	if err != nil {
+		return err
+	}
 	if e.status == newAgentStatus {
-		return
+		return nil
 	}
 
 	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: agentType})
 	e.status = newAgentStatus
 	e.agentType = agentType
+	return nil
 }
 
 func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {

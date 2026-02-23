@@ -135,16 +135,11 @@ func TestFindUserInputEndIdx(t *testing.T) {
 		assert.Equal(t, suffix, msg[userInputEndIdx+1:])
 	})
 	t.Run("truncated-input-suffix-matching-chars", func(t *testing.T) {
-		t.Skip("this test doesn't work by design. TODO: improve the algorithm to handle this case")
-		// The way the algorithm works is that if it can't find a rune-by-rune match,
-		// it will look ahead in the message for the next matching rune up to 5 runes.
-		// In this case, there's a matching rune (whitespace) in the non-user-supplied suffix,
-		// which makes the algorithm choose the wrong end index. We could improve this
-		// by looking for a couple of consecutive matching runes, but we have to also
-		// handle the case where these matching runes could be broken up by UI elements.
-		// I think we could store a running dictionary of non-matching runes and ignore
-		// them when looking for the next matching rune. The idea being that these
-		// non-matching runes are likely to be part of the UI elements.
+		t.Skip("algorithm improvement in progress - skipping whitespace in lookahead needs refinement")
+		// The algorithm now skips whitespace in user input and message during lookahead,
+		// to avoid false matches with UI element whitespace. However, this needs more
+		// sophistication to handle the edge case where truncated input is followed by
+		// characters that coincidentally match later in the input sequence.
 		prefix := "Hello, World!"
 		userInput := "How are you doing?"
 		suffix := "Good Good"

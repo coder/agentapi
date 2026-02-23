@@ -107,6 +107,7 @@ func findUserInputStartIdx(msg []rune, msgRuneLineLocations []int, userInput []r
 // "```" and instead formats enclosed text as a code block).
 // We're going to see if any of the next 5 runes in the message
 // match any of the next 5 runes in the user input.
+// We skip whitespace characters as matches to avoid false positives from UI elements.
 func findNextMatch(knownMsgMatchIdx int, knownUserInputMatchIdx int, msg []rune, userInput []rune) (int, int) {
 	for i := range 5 {
 		for j := range 5 {
@@ -116,6 +117,20 @@ func findNextMatch(knownMsgMatchIdx int, knownUserInputMatchIdx int, msg []rune,
 			if userInputIdx >= len(userInput) || msgIdx >= len(msg) {
 				return -1, -1
 			}
+
+			// Skip whitespace in user input as it may be dropped during formatting
+			for userInputIdx < len(userInput) && strings.ContainsRune(WhiteSpaceChars, userInput[userInputIdx]) {
+				userInputIdx++
+			}
+			if userInputIdx >= len(userInput) {
+				return -1, -1
+			}
+
+			// Don't match on whitespace characters to avoid UI element false positives
+			if strings.ContainsRune(WhiteSpaceChars, msg[msgIdx]) {
+				continue
+			}
+
 			if userInput[userInputIdx] == msg[msgIdx] {
 				return msgIdx, userInputIdx
 			}
