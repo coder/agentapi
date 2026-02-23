@@ -2,7 +2,7 @@ import React from "react";
 import { useDropzone } from "react-dropzone";
 
 export interface DragDropProps {
-  onFilesAdded: (files: File[]) => void;
+  onFilesAdded: (files: File[]) => void | Promise<void>;
   disabled?: boolean;
   children: React.ReactNode;
   className?: string;

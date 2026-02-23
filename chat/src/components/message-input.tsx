@@ -1,6 +1,6 @@
 "use client";
 
-import {useState, FormEvent, KeyboardEvent, MouseEvent, useEffect, useRef, ChangeEvent} from "react";
+import React, {useState, FormEvent, KeyboardEvent, MouseEvent, useEffect, useRef, ChangeEvent} from "react";
 import {Button} from "./ui/button";
 import {
   ArrowDownIcon,
@@ -225,7 +225,7 @@ export default function MessageInput({
                     autoFocus
                     ref={textareaRef}
                     value={message}
-                    onChange={(e) => setMessage(e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={
                       serverStatus === "running"
