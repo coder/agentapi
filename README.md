@@ -1,6 +1,4 @@
-# AgentAPI (KooshaPari Fork)
-
-HTTP API for controlling AI coding agents (Claude Code, Cursor, Aider, etc.)
+# AgentAPI++ (KooshaPari Fork)
 
 This repository works with Claude and other AI agents as autonomous software engineers.
 
@@ -14,18 +12,76 @@ curl -fsSL "https://github.com/KooshaPari/agentapi/releases/latest/download/agen
 chmod +x agentapi
 
 # Or build from source
-go build -o out/agentapi main.go
+go build -o agentapi main.go
 
-# Run with agent
+# Run with Claude Code
 ./agentapi server -- claude
+
+# Run with Cursor
+./agentapi server -- cursor
 ```
+
+## External CLI Agent Control
+
+Control Claude Code, Cursor, Aider, Codex and other agents via HTTP API:
+
+```bash
+# Send message
+curl -X POST http://localhost:3284/api/v0/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello"}], "agent": "claude"}'
+
+# List agents
+curl http://localhost:3284/api/v0/agents
+
+# Get session
+curl http://localhost:3284/api/v0/sessions/{id}
+```
+
+### Agent Selection
+
+```bash
+# Claude Code (default)
+./agentapi server -- claude
+
+# Cursor
+./agentapi server -- cursor
+
+# Aider
+./agentapi server -- aider
+
+# Codex (requires --type flag)
+./agentapi server --type=codex -- codex
+```
+
+## Supported Agents
+
+| Agent | Flag | Type | Description |
+|-------|------|------|-------------|
+| Claude Code | `claude` | auto | Anthropic's CLI |
+| Cursor | `cursor` | auto | Cursor IDE agent |
+| Aider | `aider` | auto | AI pair programming |
+| Codex | `codex` | explicit | OpenAI's coding agent |
+| Goose | `goose` | auto | Independent agent |
+| Gemini CLI | `gemini` | explicit | Google's CLI |
+| GitHub Copilot | `github-copilot` | explicit | GitHub's CLI |
+| Amazon Q | `amazon-q` | explicit | AWS developer agent |
+| Sourcegraph Amp | `amp` | explicit | Sourcegraph's agent |
+| Auggie | `auggie` | explicit | Augment Code's agent |
+
+## Documentation
+
+- `docs/api/` - API endpoint reference
+- `docs/tutorials/` - Step-by-step guides
+- `docs/how-to/` - Common tasks
+- `docs/explanation/` - Architecture deep dives
 
 ## Environment
 
 ```bash
-# Optional environment variables
 export AGENTAPI_PORT=3284
 export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
+export AGENTAPI_TIMEOUT=300
 ```
 
 ---
@@ -60,6 +116,7 @@ export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
 | CLI | cobra | manual flag parsing |
 | Logging | zerolog | fmt.Print |
 | Terminal emulation | tty | raw os/exec |
+| Testing | testify | manual assertions |
 
 ---
 
@@ -70,6 +127,13 @@ export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
 - Max function: 40 lines
 - No placeholder TODOs in committed code
 
+### Go-Specific Rules
+
+- Use `go fmt` for formatting
+- Use `go vet` for linting
+- Use `golangci-lint` for comprehensive linting
+- All public APIs must have godoc comments
+
 ---
 
 ## Verifiable Constraints
@@ -78,53 +142,59 @@ export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
 |--------|-----------|-------------|
 | Tests | 80% coverage | CI gate |
 | Lint | 0 errors | golangci-lint |
+| Security | 0 critical | trivy scan |
 
 ---
 
-## Supported Agents
+## Domain-Specific Patterns
 
-| Agent | Type | Status |
-|-------|------|--------|
-| Claude Code | claude | ✅ |
-| Amazon Q | amazon-q | ✅ |
-| Opencode | opencode | ✅ |
-| Goose | goose | ✅ |
-| Aider | aider | ✅ |
-| Gemini CLI | gemini | ✅ |
-| GitHub Copilot | github-copilot | ✅ |
-| Sourcegraph Amp | amp | ✅ |
-| Codex | codex | ✅ |
-| Auggie | auggie | ✅ |
-| Cursor | cursor | ✅ |
+### What AgentAPI++ Is
 
----
+AgentAPI++ is an **HTTP API gateway** for controlling CLI-based AI coding agents. The core domain is: provide a unified HTTP interface to spawn, control, and interact with any CLI agent through terminal emulation.
 
-## Integration
+### Key Interfaces
 
-### With thegent
+| Interface | Responsibility | Location |
+|-----------|---------------|----------|
+| **HTTP Server** | REST API for agent control | `lib/httpapi/` |
+| **Terminal Emulator** | PTY management | `lib/termexec/` |
+| **Output Parser** | Agent message extraction | `lib/screentracker/` |
+| **Message Formatter** | Agent-specific formatting | `lib/msgfmt/` |
 
-```python
-# thegent config
-mcp:
-  servers:
-    agentapi:
-      command: agentapi
-      args: ["server", "--", "claude"]
+### Message Flow
+
+```
+1. HTTP Request → API Handler
+2. API Handler → Terminal Input
+3. Terminal Emulator → Agent Process
+4. Output Parser ← Agent Output
+5. SSE/Response ← Formatted Message
 ```
 
-### With cliproxy
+### Common Anti-Patterns to Avoid
 
-The agentapi routes LLM requests through cliproxy for cost optimization and rate limiting.
+- **Blocking on agent output** -- Use streaming/SSE instead
+- **Hardcoded timeouts** -- Use configurable timeouts with env vars
+- **Missing agent type handling** -- Each agent has different output formats
+- **No session state** -- Agents maintain stateful conversations
 
 ---
 
-## Fork Differences
+## Kush Ecosystem
 
-This fork includes:
-- ✅ Custom message formatters for Kush agents
-- ✅ MCP server integration
-- ✅ cliproxy routing integration
-- ✅ Enhanced session management
+This project is part of the Kush multi-repo system:
+
+```
+kush/
+├── thegent/         # Agent orchestration
+├── agentapi++/      # HTTP API for coding agents (this repo)
+├── cliproxy++/      # LLM proxy with multi-provider support
+├── tokenledger/     # Token and cost tracking
+├── 4sgm/           # Python tooling workspace
+├── civ/             # Deterministic simulation
+├── parpour/         # Spec-first planning
+└── pheno-sdk/       # Python SDK
+```
 
 ---
 
