@@ -151,11 +151,8 @@ func TestE2E(t *testing.T) {
 		}, false)
 		defer cleanup2()
 
-		// Give the server a moment to load state
-		time.Sleep(500 * time.Millisecond)
-
-		// Step 4: Verify state was restored by checking messages via API
-		msgResp2, err := apiClient2.GetMessages(ctx)
+		// Step 4: Wait for state to be restored by retrying until we get expected messages
+		msgResp2, err := waitForMessagesWithCount(ctx, t, apiClient2, 3, operationTimeout, "state restore")
 		require.NoError(t, err, "Failed to get messages after state restore")
 		require.Len(t, msgResp2.Messages, 3, "Expected 3 messages after state restore")
 
@@ -199,10 +196,9 @@ func TestE2E(t *testing.T) {
 			scriptFilePath: scriptFilePath,
 		}, false)
 		defer cleanup2()
-		time.Sleep(500 * time.Millisecond)
 
-		// Step 4: Verify initial prompt was NOT sent again (should still have 3 messages)
-		msgResp2, err := apiClient2.GetMessages(ctx)
+		// Step 4: Wait for state to be restored and verify initial prompt was NOT sent again
+		msgResp2, err := waitForMessagesWithCount(ctx, t, apiClient2, 3, operationTimeout, "restart without initial prompt")
 		require.NoError(t, err, "Failed to get messages after restart without initial prompt")
 		require.Len(t, msgResp2.Messages, 3, "Expected 3 messages (initial prompt should not be sent again)")
 		require.Equal(t, initialPrompt1, strings.TrimSpace(msgResp2.Messages[1].Content))
@@ -217,10 +213,9 @@ func TestE2E(t *testing.T) {
 			initialPrompt:  initialPrompt1,
 		}, false)
 		defer cleanup3()
-		time.Sleep(500 * time.Millisecond)
 
-		// Step 7: Verify same initial prompt was NOT sent again (should still have 3 messages)
-		msgResp3, err := apiClient3.GetMessages(ctx)
+		// Step 7: Wait for state to be restored and verify same initial prompt was NOT sent again
+		msgResp3, err := waitForMessagesWithCount(ctx, t, apiClient3, 3, operationTimeout, "restart with same initial prompt")
 		require.NoError(t, err, "Failed to get messages after restart with same initial prompt")
 		require.Len(t, msgResp3.Messages, 3, "Expected 3 messages (same initial prompt should not be sent again)")
 
@@ -262,12 +257,11 @@ func TestE2E(t *testing.T) {
 		}, false)
 		defer cleanup2()
 
-		// Wait for initial prompt to be processed
-		time.Sleep(1 * time.Second)
+		// Wait for initial prompt to be processed and state to stabilize
 		require.NoError(t, waitAgentAPIStable(ctx, t, apiClient2, operationTimeout, "after different initial prompt"))
 
 		// Step 4: Verify new initial prompt WAS sent (5 messages: 3 previous + 2 new)
-		msgResp2, err := apiClient2.GetMessages(ctx)
+		msgResp2, err := waitForMessagesWithCount(ctx, t, apiClient2, 5, operationTimeout, "different initial prompt processed")
 		require.NoError(t, err, "Failed to get messages after different initial prompt")
 		require.Len(t, msgResp2.Messages, 5, "Expected 5 messages after different initial prompt (3 previous + 2 new)")
 		// Verify the new initial prompt and response were added
@@ -474,6 +468,46 @@ func waitAgentAPIStable(ctx context.Context, t testing.TB, apiClient *agentapisd
 			}
 		case err := <-errs:
 			return fmt.Errorf("read events: %w", err)
+		}
+	}
+}
+
+// waitForMessagesWithCount retries GetMessages until it returns the expected number of messages or the timeout is reached.
+func waitForMessagesWithCount(ctx context.Context, t testing.TB, apiClient *agentapisdk.Client, expectedCount int, timeout time.Duration, msg string) (*agentapisdk.GetMessagesResponse, error) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	start := time.Now()
+	var lastErr error
+	var lastCount int
+
+	for {
+		select {
+		case <-waitCtx.Done():
+			if lastErr != nil {
+				return nil, fmt.Errorf("%s: failed to get %d messages after %v (last error: %w, last count: %d)",
+					msg, expectedCount, time.Since(start).Round(100*time.Millisecond), lastErr, lastCount)
+			}
+			return nil, fmt.Errorf("%s: timeout waiting for %d messages after %v (last count: %d)",
+				msg, expectedCount, time.Since(start).Round(100*time.Millisecond), lastCount)
+		case <-ticker.C:
+			resp, err := apiClient.GetMessages(ctx)
+			if err != nil {
+				lastErr = err
+				t.Logf("%s: GetMessages failed (will retry): %v", msg, err)
+				continue
+			}
+			lastCount = len(resp.Messages)
+			if lastCount == expectedCount {
+				elapsed := time.Since(start)
+				t.Logf("%s: got expected %d messages (elapsed: %s)", msg, expectedCount, elapsed.Round(100*time.Millisecond))
+				return resp, nil
+			}
+			t.Logf("%s: got %d messages, expecting %d (will retry)", msg, lastCount, expectedCount)
 		}
 	}
 }

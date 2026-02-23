@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -132,8 +131,6 @@ type PTYConversation struct {
 	toolCallMessageSet map[string]bool
 	// dirty tracks whether the conversation state has changed since the last save
 	dirty bool
-	// firstStableSnapshot is the conversation history rolled out by the agent in case of a resume (given that the agent supports it)
-	firstStableSnapshot string
 	// userSentMessageAfterLoadState tracks if the user has sent their first message after we load the state
 	userSentMessageAfterLoadState bool
 	// loadStateStatus tracks the status of loading conversation state from file.
@@ -178,7 +175,6 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PT
 		stableSignal:                  make(chan struct{}, 1),
 		toolCallMessageSet:            make(map[string]bool),
 		dirty:                         false,
-		firstStableSnapshot:           "",
 		userSentMessageAfterLoadState: false,
 		loadStateStatus:               LoadStatePending,
 	}
@@ -296,8 +292,8 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
 	}
-	if c.loadStateStatus == LoadStateSucceeded {
-		agentMessage = c.adjustScreenAfterStateLoad(agentMessage)
+	if c.loadStateStatus == LoadStateSucceeded && !c.userSentMessageAfterLoadState && len(c.messages) > 0 {
+		agentMessage = c.messages[len(c.messages)-1].Message
 	}
 	if c.cfg.FormatToolCall != nil {
 		agentMessage, toolCalls = c.cfg.FormatToolCall(agentMessage)
@@ -587,15 +583,25 @@ func (c *PTYConversation) SaveState() error {
 		return xerrors.Errorf("failed to create temp state file: %w", err)
 	}
 
+	// Clean up temp file on error (before successful rename)
+	var renamed bool
+	defer func() {
+		if !renamed {
+			if removeErr := os.Remove(tempFile); removeErr != nil && !os.IsNotExist(removeErr) {
+				c.cfg.Logger.Warn("Failed to clean up temp state file", "path", tempFile, "err", removeErr)
+			}
+		}
+	}()
+
 	// Encode directly to file to avoid loading entire JSON into memory
 	encoder := json.NewEncoder(f)
-	encoder.SetIndent("", " ")
 	if err := encoder.Encode(AgentState{
 		Version:           1,
 		Messages:          conversation,
 		InitialPrompt:     initialPromptStr,
 		InitialPromptSent: c.initialPromptSent,
 	}); err != nil {
+		_ = f.Close()
 		return xerrors.Errorf("failed to encode state: %w", err)
 	}
 
@@ -608,6 +614,7 @@ func (c *PTYConversation) SaveState() error {
 	if err := os.Rename(tempFile, stateFile); err != nil {
 		return xerrors.Errorf("failed to rename state file: %w", err)
 	}
+	renamed = true
 
 	// Clear dirty flag after successful save
 	c.dirty = false
@@ -672,32 +679,8 @@ func (c *PTYConversation) loadStateLocked() error {
 
 	c.messages = agentState.Messages
 
-	// Store the first stable snapshot for filtering later
-	snapshots := c.snapshotBuffer.GetAll()
-	if len(snapshots) > 0 && c.cfg.FormatMessage != nil {
-		c.firstStableSnapshot = c.cfg.FormatMessage(strings.TrimSpace(snapshots[len(snapshots)-1].screen), "")
-	}
-
 	c.dirty = false
 
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
 	return nil
-}
-
-func (c *PTYConversation) adjustScreenAfterStateLoad(screen string) string {
-
-	if c.firstStableSnapshot == "" {
-		return screen
-	}
-
-	newScreen := strings.Replace(screen, c.firstStableSnapshot, "", 1)
-
-	// Before the first user message after loading state, return the last message from the loaded state.
-	// This prevents computing incorrect diffs from the restored screen, as the agent's message should
-	// remain stable until the user continues the conversation.
-	if !c.userSentMessageAfterLoadState && len(c.messages) > 0 {
-		newScreen = "\n" + c.messages[len(c.messages)-1].Message
-	}
-
-	return newScreen
 }

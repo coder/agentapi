@@ -498,6 +498,94 @@ func TestStatePersistence(t *testing.T) {
 		assert.NotEmpty(t, agentState.Messages)
 	})
 
+	t.Run("SaveState creates valid JSON", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		tmpDir := t.TempDir()
+		stateFile := tmpDir + "/state.json"
+
+		mClock := quartz.NewMock(t)
+		fixedTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		mClock.Set(fixedTime)
+
+		agent := &testAgent{screen: ""}
+		writeCounter := 0
+		agent.onWrite = func(data []byte) {
+			writeCounter++
+			// Change screen on each write so writeStabilize can detect changes
+			agent.screen = fmt.Sprintf("__write_%d", writeCounter)
+		}
+
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			SnapshotInterval:      100 * time.Millisecond,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			AgentIO:               agent,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+			StatePersistenceConfig: st.StatePersistenceConfig{
+				StateFile: stateFile,
+				LoadState: false,
+				SaveState: true,
+			},
+			InitialPrompt: []st.MessagePart{st.MessagePartText{Content: "test prompt"}},
+			ReadyForInitialPrompt: func(message string) bool {
+				return message == "Hello! Ready to help."
+			},
+		}
+
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Step 1: Agent shows initial greeting
+		agent.setScreen("Hello! Ready to help.")
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Step 2: Wait for initial prompt to be sent (uses advanceUntil like TestInitialPromptReadiness)
+		advanceUntil(ctx, t, mClock, func() bool {
+			return len(c.Messages()) >= 2 // greeting + user prompt
+		})
+
+		// Step 3: Agent shows response
+		agent.setScreen("Response to test prompt")
+		advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+		// Save state - this creates state.json
+		err := c.SaveState()
+		require.NoError(t, err)
+
+		// Read the saved state.json
+		actualData, err := os.ReadFile(stateFile)
+		require.NoError(t, err)
+
+		// Read the expected golden file
+		expectedData, err := os.ReadFile("testdata/expected_saved_state.json")
+		require.NoError(t, err)
+
+		// Parse both JSON files
+		var actualState, expectedState st.AgentState
+		err = json.Unmarshal(actualData, &actualState)
+		require.NoError(t, err)
+		err = json.Unmarshal(expectedData, &expectedState)
+		require.NoError(t, err)
+
+		// Compare the state files field by field
+		assert.Equal(t, expectedState.Version, actualState.Version, "version should match")
+		assert.Equal(t, expectedState.InitialPrompt, actualState.InitialPrompt, "initial_prompt should match")
+		assert.Equal(t, expectedState.InitialPromptSent, actualState.InitialPromptSent, "initial_prompt_sent should match")
+		assert.Equal(t, len(expectedState.Messages), len(actualState.Messages), "message count should match")
+
+		// Compare each message
+		for i := range expectedState.Messages {
+			if i >= len(actualState.Messages) {
+				break
+			}
+			assert.Equal(t, expectedState.Messages[i].Id, actualState.Messages[i].Id, "message %d: id should match", i)
+			assert.Equal(t, expectedState.Messages[i].Message, actualState.Messages[i].Message, "message %d: message should match", i)
+			assert.Equal(t, expectedState.Messages[i].Role, actualState.Messages[i].Role, "message %d: role should match", i)
+		}
+	})
+
 	t.Run("SaveState skips when not configured", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
