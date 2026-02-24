@@ -33,6 +33,14 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
+// ConfigResponse represents the server configuration
+type ConfigResponse struct {
+	Body struct {
+		AgentType string `json:"agent_type" doc:"Type of the agent"`
+		Port      int    `json:"port" doc:"Server port"`
+	}
+}
+
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
