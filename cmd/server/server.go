@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/coder/agentapi/lib/screentracker"
@@ -268,6 +270,19 @@ func writePIDFile(pidFile string, logger *slog.Logger) error {
 		return xerrors.Errorf("failed to create PID file directory: %w", err)
 	}
 
+	// Check if PID file already exists
+	if existingPIDData, err := os.ReadFile(pidFile); err == nil {
+		existingPIDStr := strings.TrimSpace(string(existingPIDData))
+		if existingPID, err := strconv.Atoi(existingPIDStr); err == nil {
+			if isProcessRunning(existingPID) {
+				return xerrors.Errorf("another instance is already running with PID %d (PID file: %s)", existingPID, pidFile)
+			}
+			logger.Warn("Found stale PID file, will overwrite", "pidFile", pidFile, "stalePID", existingPID)
+		}
+	} else if !os.IsNotExist(err) {
+		return xerrors.Errorf("failed to read existing PID file: %w", err)
+	}
+
 	// Write PID file
 	if err := os.WriteFile(pidFile, []byte(pidContent), 0o600); err != nil {
 		return xerrors.Errorf("failed to write PID file: %w", err)
@@ -284,6 +299,16 @@ func cleanupPIDFile(pidFile string, logger *slog.Logger) {
 	} else if err == nil {
 		logger.Info("Removed PID file", "pidFile", pidFile)
 	}
+}
+
+// isProcessRunning checks if a process with the given PID is running
+func isProcessRunning(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = process.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 type flagSpec struct {
