@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 	st "github.com/coder/agentapi/lib/screentracker"
@@ -15,9 +14,6 @@ import (
 
 // Compile-time assertion that ACPAgentIO implements st.AgentIO
 var _ st.AgentIO = (*ACPAgentIO)(nil)
-
-// DefaultPromptTimeout is the maximum time to wait for an agent response.
-const DefaultPromptTimeout = 5 * time.Minute
 
 // ACPAgentIO implements screentracker.AgentIO using the ACP protocol
 type ACPAgentIO struct {
@@ -213,11 +209,8 @@ func (a *ACPAgentIO) Write(data []byte) (int, error) {
 		a.logger.Debug("Aborting write", "error", err)
 		return 0, err
 	}
-	// Use a timeout to prevent hanging indefinitely
-	promptCtx, cancel := context.WithTimeout(a.ctx, DefaultPromptTimeout)
-	defer cancel()
 
-	resp, err := a.conn.Prompt(promptCtx, acp.PromptRequest{
+	resp, err := a.conn.Prompt(a.ctx, acp.PromptRequest{
 		SessionId: a.sessionID,
 		Prompt:    []acp.ContentBlock{acp.TextBlock(text)},
 	})
