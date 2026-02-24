@@ -43,6 +43,15 @@ type StatusResponse struct {
 	}
 }
 
+// InfoResponse represents the server and agent info
+type InfoResponse struct {
+	Body struct {
+		Version   string          `json:"version" doc:"AgentAPI version"`
+		AgentType mf.AgentType   `json:"agent_type" doc:"Type of the agent being used by the server."`
+		Features  map[string]bool `json:"features" doc:"Supported features"`
+	}
+}
+
 // MessagesResponse represents the list of messages
 type MessagesResponse struct {
 	Body struct {

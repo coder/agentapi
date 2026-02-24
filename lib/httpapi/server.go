@@ -354,6 +354,10 @@ func (s *Server) registerRoutes() {
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
 	})
+	// GET /info endpoint - returns agent and server info
+	huma.Get(s.api, "/info", s.getInfo, func(o *huma.Operation) {
+		o.Description = "Returns information about the server and agent."
+	})
 
 	// GET /messages endpoint
 	// Query params: after (int) - return messages after this ID, limit (int) - limit results
@@ -399,6 +403,25 @@ func (s *Server) registerRoutes() {
 
 	// Serve static files for the chat interface under /chat
 	s.registerStaticFileRoutes()
+}
+
+// getInfo handles GET /info
+func (s *Server) getInfo(ctx context.Context, input *struct{}) (*InfoResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	resp := &InfoResponse{}
+	resp.Body.Version = version.Version
+	resp.Body.AgentType = s.agentType
+	resp.Body.Features = map[string]bool{
+		"messages":    true,
+		"events":      true,
+		"upload":      true,
+		"pagination":  true,
+		"slashCmd":    true,
+	}
+
+	return resp, nil
 }
 
 // getStatus handles GET /status
