@@ -207,16 +207,17 @@ func Test_Status_InitiallyStable(t *testing.T) {
 func Test_Send_AddsUserMessage(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	// Set up blocking to synchronize with the goroutine
+	// Set up blocking so we can inspect state mid-flight
 	started, done := mock.BlockWrite()
 
 	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
-	err := conv.Send(screentracker.MessagePartText{Content: "hello"})
-	require.NoError(t, err)
+	// Send blocks until completion, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "hello"}) }()
 
-	// Wait for the write goroutine to start
+	// Wait for the write to start
 	<-started
 
 	messages := conv.Messages()
@@ -226,8 +227,9 @@ func Test_Send_AddsUserMessage(t *testing.T) {
 	assert.Equal(t, "hello", messages[0].Message)
 	assert.Equal(t, screentracker.ConversationRoleAgent, messages[1].Role)
 
-	// Unblock the write to let the test complete cleanly
+	// Unblock the write to let Send complete
 	close(done)
+	require.NoError(t, <-errCh)
 }
 
 func Test_Send_RejectsEmptyMessage(t *testing.T) {
@@ -277,19 +279,20 @@ func Test_Send_RejectsDuplicateSend(t *testing.T) {
 	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
-	// First send should succeed
-	err := conv.Send(screentracker.MessagePartText{Content: "first"})
-	require.NoError(t, err)
+	// First send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "first"}) }()
 
 	// Wait for the write to start (ensuring we're in "prompting" state)
 	<-started
 
 	// Second send while first is processing should fail
-	err = conv.Send(screentracker.MessagePartText{Content: "second"})
+	err := conv.Send(screentracker.MessagePartText{Content: "second"})
 	assert.ErrorIs(t, err, screentracker.ErrMessageValidationChanging)
 
 	// Unblock the write to let the test complete cleanly
 	close(done)
+	require.NoError(t, <-errCh)
 }
 
 func Test_Status_ChangesWhileProcessing(t *testing.T) {
@@ -305,9 +308,9 @@ func Test_Status_ChangesWhileProcessing(t *testing.T) {
 	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
 	conv.Start(ctx)
 
-	// Send a message
-	err := conv.Send(screentracker.MessagePartText{Content: "test"})
-	require.NoError(t, err)
+	// Send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "test"}) }()
 
 	// Wait for write to start
 	<-started
@@ -318,7 +321,8 @@ func Test_Status_ChangesWhileProcessing(t *testing.T) {
 	// Unblock the write
 	close(done)
 
-	// Wait for the goroutine to complete - status should then be stable.
+	// Wait for Send to complete - status should then be stable.
+	require.NoError(t, <-errCh)
 	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
 }
 
@@ -334,9 +338,9 @@ func Test_Text_ReturnsStreamingContent(t *testing.T) {
 	// Initially empty
 	assert.Equal(t, "", conv.Text())
 
-	// Send a message
-	err := conv.Send(screentracker.MessagePartText{Content: "question"})
-	require.NoError(t, err)
+	// Send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "question"}) }()
 
 	// Wait for write to start
 	<-started
@@ -352,8 +356,9 @@ func Test_Text_ReturnsStreamingContent(t *testing.T) {
 	require.Len(t, messages, 2)
 	assert.Equal(t, "Hello world!", messages[1].Message)
 
-	// Unblock the write to let the test complete cleanly
+	// Unblock the write to let Send complete
 	close(done)
+	require.NoError(t, <-errCh)
 }
 
 func Test_Emitter_CalledOnChanges(t *testing.T) {
@@ -370,9 +375,9 @@ func Test_Emitter_CalledOnChanges(t *testing.T) {
 	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
 	conv.Start(ctx)
 
-	// Send a message
-	err := conv.Send(screentracker.MessagePartText{Content: "test"})
-	require.NoError(t, err)
+	// Send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "test"}) }()
 
 	// Wait for write to start
 	<-started
@@ -390,6 +395,7 @@ func Test_Emitter_CalledOnChanges(t *testing.T) {
 
 	// Unblock the write to complete processing
 	close(done)
+	require.NoError(t, <-errCh)
 
 	// Wait for completion emit
 	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
@@ -413,7 +419,7 @@ func Test_InitialPrompt_SentOnStart(t *testing.T) {
 	conv := acpio.NewACPConversation(context.Background(), mock, nil, initialPrompt, nil, mClock)
 	conv.Start(context.Background())
 
-	// Wait for write to start (initial prompt is being sent)
+	// Wait for write to start (initial prompt is being sent via Start's goroutine)
 	<-started
 
 	// Should have user message from initial prompt
@@ -429,14 +435,15 @@ func Test_InitialPrompt_SentOnStart(t *testing.T) {
 func Test_Messages_AreCopied(t *testing.T) {
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	// Set up blocking to synchronize
+	// Set up blocking so we can inspect state mid-flight
 	started, done := mock.BlockWrite()
 
 	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
 	conv.Start(context.Background())
 
-	err := conv.Send(screentracker.MessagePartText{Content: "test"})
-	require.NoError(t, err)
+	// Send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "test"}) }()
 
 	// Wait for write to start
 	<-started
@@ -450,8 +457,9 @@ func Test_Messages_AreCopied(t *testing.T) {
 	originalMessages := conv.Messages()
 	assert.Equal(t, "test", originalMessages[0].Message)
 
-	// Unblock the write to let the test complete cleanly
+	// Unblock the write to let Send complete
 	close(done)
+	require.NoError(t, <-errCh)
 }
 
 func Test_ErrorRemovesPartialMessage(t *testing.T) {
@@ -467,9 +475,9 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
 	conv.Start(ctx)
 
-	// Send a message
-	err := conv.Send(screentracker.MessagePartText{Content: "test"})
-	require.NoError(t, err)
+	// Send blocks, so run in a goroutine
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "test"}) }()
 
 	// Wait for write to start
 	<-started
@@ -494,8 +502,8 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	mock.mu.Unlock()
 	close(done)
 
-	// Wait for the conversation to stabilize after the error
-	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
+	// Send should return the error
+	require.ErrorIs(t, <-errCh, assert.AnError)
 
 	// The partial agent message should be removed on error.
 	// Only the user message should remain.
@@ -506,20 +514,16 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 }
 
 func Test_LateChunkAfterError_DoesNotCorruptUserMessage(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
-	emitter := newMockEmitter()
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
-	conv.Start(ctx)
+	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
+	conv.Start(context.Background())
 
 	// Given: a send that fails with an error, removing the agent placeholder
-	err := conv.Send(screentracker.MessagePartText{Content: "hello"})
-	require.NoError(t, err)
+	errCh := make(chan error, 1)
+	go func() { errCh <- conv.Send(screentracker.MessagePartText{Content: "hello"}) }()
 	<-started
 
 	mock.mu.Lock()
@@ -527,7 +531,7 @@ func Test_LateChunkAfterError_DoesNotCorruptUserMessage(t *testing.T) {
 	mock.mu.Unlock()
 	close(done)
 
-	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
+	require.ErrorIs(t, <-errCh, assert.AnError)
 
 	messages := conv.Messages()
 	require.Len(t, messages, 1, "agent placeholder should be removed after error")

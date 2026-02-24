@@ -16,6 +16,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.11.1
 	github.com/tmaxmax/go-sse v0.10.0
+	go.uber.org/goleak v1.3.0
 	golang.org/x/term v0.30.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 )

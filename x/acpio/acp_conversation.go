@@ -78,10 +78,10 @@ func (c *ACPConversation) Messages() []st.ConversationMessage {
 	return slices.Clone(c.messages)
 }
 
-// Send sends a message to the agent asynchronously.
-// It returns immediately after recording the user message and starts
-// the agent request in a background goroutine. Returns an error if
-// a message is already being processed.
+// Send sends a message to the agent synchronously.
+// It blocks until the agent has finished processing and returns any error
+// from the underlying write. Returns a validation error immediately if
+// the message is invalid or another message is already being processed.
 func (c *ACPConversation) Send(messageParts ...st.MessagePart) error {
 	message := ""
 	for _, part := range messageParts {
@@ -126,10 +126,7 @@ func (c *ACPConversation) Send(messageParts ...st.MessagePart) error {
 
 	c.logger.Debug("ACPConversation sending message", "message", message)
 
-	// Run the blocking write in a goroutine so HTTP returns immediately
-	go c.executePrompt(messageParts)
-
-	return nil
+	return c.executePrompt(messageParts)
 }
 
 // Start sets up chunk handling and sends the initial prompt if provided.
@@ -139,10 +136,14 @@ func (c *ACPConversation) Start(ctx context.Context) {
 
 	// Send initial prompt if provided
 	if len(c.initialPrompt) > 0 {
-		err := c.Send(c.initialPrompt...)
-		if err != nil {
-			c.logger.Error("ACPConversation failed to send initial prompt", "error", err)
-		}
+		// Run in a goroutine because Send blocks until the prompt completes,
+		// and Start must return immediately per the Conversation interface.
+		go func() {
+			err := c.Send(c.initialPrompt...)
+			if err != nil {
+				c.logger.Error("ACPConversation failed to send initial prompt", "error", err)
+			}
+		}()
 	} else {
 		// No initial prompt means we start in stable state
 		c.emitter.EmitStatus(c.Status())
@@ -203,8 +204,8 @@ func (c *ACPConversation) handleChunk(chunk string) {
 	c.emitter.EmitScreen(screen)
 }
 
-// executePrompt runs the actual agent request in background
-func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
+// executePrompt runs the actual agent request and returns any error.
+func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
 	var err error
 	for _, part := range messageParts {
 		if c.ctx.Err() != nil {
@@ -234,7 +235,7 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
 		c.emitter.EmitMessages(messages)
 		c.emitter.EmitStatus(status)
 		c.emitter.EmitScreen(screen)
-		return
+		return err
 	}
 
 	// Final response should already be in the last message via streaming
@@ -253,4 +254,5 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) {
 	c.emitter.EmitScreen(screen)
 
 	c.logger.Debug("ACPConversation message complete", "responseLen", len(response))
+	return nil
 }
