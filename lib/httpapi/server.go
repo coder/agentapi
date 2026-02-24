@@ -356,8 +356,9 @@ func (s *Server) registerRoutes() {
 	})
 
 	// GET /messages endpoint
+	// Query params: after (int) - return messages after this ID, limit (int) - limit results
 	huma.Get(s.api, "/messages", s.getMessages, func(o *huma.Operation) {
-		o.Description = "Returns a list of messages representing the conversation history with the agent."
+		o.Description = "Returns a list of messages representing the conversation history with the agent. Supports ?after=<id> and ?limit=<n> query parameters for pagination."
 	})
 
 	// POST /message endpoint
@@ -419,13 +420,42 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 }
 
 // getMessages handles GET /messages
-func (s *Server) getMessages(ctx context.Context, input *struct{}) (*MessagesResponse, error) {
+//
+//	@param after (query) int "Return messages after this ID"
+//	@param limit (query) int "Limit number of messages returned"
+func (s *Server) getMessages(ctx context.Context, input *struct {
+	After *int `json:"after,optional"`
+	Limit *int `json:"limit,optional"`
+}) (*MessagesResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	allMessages := s.conversation.Messages()
+
+	// Filter by 'after' parameter
+	messages := allMessages
+	if input.After != nil {
+		afterID := *input.After
+		filtered := make([]st.ConversationMessage, 0)
+		for _, msg := range allMessages {
+			if msg.Id > afterID {
+				filtered = append(filtered, msg)
+			}
+		}
+		messages = filtered
+	}
+
+	// Apply limit
+	if input.Limit != nil && *input.Limit > 0 {
+		limit := *input.Limit
+		if len(messages) > limit {
+			messages = messages[:limit]
+		}
+	}
+
 	resp := &MessagesResponse{}
-	resp.Body.Messages = make([]Message, len(s.conversation.Messages()))
-	for i, msg := range s.conversation.Messages() {
+	resp.Body.Messages = make([]Message, len(messages))
+	for i, msg := range messages {
 		resp.Body.Messages[i] = Message{
 			Id:      msg.Id,
 			Role:    msg.Role,
