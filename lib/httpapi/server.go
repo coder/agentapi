@@ -350,18 +350,14 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
-	// GET /api-key endpoint - generate or retrieve API key
-	huma.Post(s.api, "/api-key", s.generateAPIKey, func(o *huma.Operation) {
-		o.Description = "Generate a new API key for authentication."
+	// GET /health endpoint - liveness probe for load balancers
+	huma.Get(s.api, "/health", s.getHealth, func(o *huma.Operation) {
+		o.Description = "Health check endpoint for load balancers."
 	})
 
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
-	})
-	// GET /info endpoint - returns agent and server info
-	huma.Get(s.api, "/info", s.getInfo, func(o *huma.Operation) {
-		o.Description = "Returns information about the server and agent."
 	})
 
 	// GET /messages endpoint
@@ -410,22 +406,10 @@ func (s *Server) registerRoutes() {
 	s.registerStaticFileRoutes()
 }
 
-// getInfo handles GET /info
-func (s *Server) getInfo(ctx context.Context, input *struct{}) (*InfoResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	resp := &InfoResponse{}
-	resp.Body.Version = version.Version
-	resp.Body.AgentType = s.agentType
-	resp.Body.Features = map[string]bool{
-		"messages":    true,
-		"events":      true,
-		"upload":      true,
-		"pagination":  true,
-		"slashCmd":    true,
-	}
-
+// getHealth handles GET /health
+func (s *Server) getHealth(ctx context.Context, input *struct{}) (*HealthResponse, error) {
+	resp := &HealthResponse{}
+	resp.Body.Status = "ok"
 	return resp, nil
 }
 
@@ -508,15 +492,6 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 	case MessageTypeRaw:
 		if _, err := s.agentio.Write([]byte(input.Body.Content)); err != nil {
 			return nil, xerrors.Errorf("failed to send message: %w", err)
-		}
-	case MessageTypeCommand:
-		// Send slash command directly - add enter at the end
-		content := input.Body.Content
-		if !strings.HasSuffix(content, "\n") {
-			content += "\n"
-		}
-		if _, err := s.agentio.Write([]byte(content)); err != nil {
-			return nil, xerrors.Errorf("failed to send command: %w", err)
 		}
 	}
 

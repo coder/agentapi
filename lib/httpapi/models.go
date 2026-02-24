@@ -35,6 +35,13 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Body struct {
+		Status string `json:"status" doc:"Health status"`
+	}
+}
+
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
