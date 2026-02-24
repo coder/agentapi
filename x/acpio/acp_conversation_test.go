@@ -511,6 +511,25 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	require.Len(t, messages, 1, "partial agent message should be removed on error")
 	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
 	assert.Equal(t, "test", messages[0].Message)
+
+	// First exchange allocated IDs 0 (user) and 1 (agent, now removed).
+	assert.Equal(t, 0, messages[0].Id)
+
+	// Send a second message — IDs must not reuse the removed agent message's ID (1).
+	mock.mu.Lock()
+	mock.writeErr = nil
+	mock.writeBlock = nil
+	mock.writeStarted = nil
+	mock.mu.Unlock()
+
+	err := conv.Send(screentracker.MessagePartText{Content: "retry"})
+	require.NoError(t, err)
+
+	messages = conv.Messages()
+	require.Len(t, messages, 3, "first user + second user + second agent")
+	assert.Equal(t, 0, messages[0].Id, "original user message keeps its ID")
+	assert.Equal(t, 2, messages[1].Id, "new user message skips removed ID 1")
+	assert.Equal(t, 3, messages[2].Id, "new agent message continues sequence")
 }
 
 func Test_LateChunkAfterError_DoesNotCorruptUserMessage(t *testing.T) {

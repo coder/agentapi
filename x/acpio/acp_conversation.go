@@ -30,6 +30,7 @@ type ACPConversation struct {
 	cancel            context.CancelFunc
 	agentIO           ChunkableAgentIO
 	messages          []st.ConversationMessage
+	nextID            int  // monotonically increasing message ID
 	prompting         bool // true while agent is processing
 	streamingResponse strings.Builder
 	logger            *slog.Logger
@@ -104,18 +105,20 @@ func (c *ACPConversation) Send(messageParts ...st.MessagePart) error {
 		return st.ErrMessageValidationChanging
 	}
 	c.messages = append(c.messages, st.ConversationMessage{
-		Id:      len(c.messages),
+		Id:      c.nextID,
 		Role:    st.ConversationRoleUser,
 		Message: message,
 		Time:    c.clock.Now(),
 	})
+	c.nextID++
 	// Add placeholder for streaming agent response
 	c.messages = append(c.messages, st.ConversationMessage{
-		Id:      len(c.messages),
+		Id:      c.nextID,
 		Role:    st.ConversationRoleAgent,
 		Message: "",
 		Time:    c.clock.Now(),
 	})
+	c.nextID++
 	c.streamingResponse.Reset()
 	c.prompting = true
 	status := c.statusLocked()
