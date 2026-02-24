@@ -12,15 +12,13 @@ import (
 type MessageType string
 
 const (
-	MessageTypeUser    MessageType = "user"
-	MessageTypeRaw    MessageType = "raw"
-	MessageTypeCommand MessageType = "command"
+	MessageTypeUser MessageType = "user"
+	MessageTypeRaw  MessageType = "raw"
 )
 
 var MessageTypeValues = []MessageType{
 	MessageTypeUser,
 	MessageTypeRaw,
-	MessageTypeCommand,
 }
 
 func (m MessageType) Schema(r huma.Registry) *huma.Schema {
@@ -35,10 +33,11 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
-// HealthResponse represents the health check response
-type HealthResponse struct {
+// ConfigResponse represents the server configuration
+type ConfigResponse struct {
 	Body struct {
-		Status string `json:"status" doc:"Health status"`
+		AgentType string `json:"agent_type" doc:"Type of the agent"`
+		Port      int    `json:"port" doc:"Server port"`
 	}
 }
 
@@ -50,15 +49,6 @@ type StatusResponse struct {
 	}
 }
 
-// InfoResponse represents the server and agent info
-type InfoResponse struct {
-	Body struct {
-		Version   string          `json:"version" doc:"AgentAPI version"`
-		AgentType mf.AgentType   `json:"agent_type" doc:"Type of the agent being used by the server."`
-		Features  map[string]bool `json:"features" doc:"Supported features"`
-	}
-}
-
 // MessagesResponse represents the list of messages
 type MessagesResponse struct {
 	Body struct {
@@ -67,8 +57,8 @@ type MessagesResponse struct {
 }
 
 type MessageRequestBody struct {
-	Content string      `json:"content" example:"/help" doc:"Message content"`
-	Type    MessageType `json:"type" doc:"A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal. A 'command' type message sends a slash command directly to the agent (e.g., /help, /resume, /undo)."`
+	Content string      `json:"content" example:"Hello, agent!" doc:"Message content"`
+	Type    MessageType `json:"type" doc:"A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal."`
 }
 
 // MessageRequest represents a request to create a new message
