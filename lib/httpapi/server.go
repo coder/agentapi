@@ -350,6 +350,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
+	// GET /api-key endpoint - generate or retrieve API key
+	huma.Post(s.api, "/api-key", s.generateAPIKey, func(o *huma.Operation) {
+		o.Description = "Generate a new API key for authentication."
+	})
+
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
