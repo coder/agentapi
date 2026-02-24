@@ -112,7 +112,7 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 			},
 		},
 		InitialPrompt:     initialPrompt,
-		InitialPromptSent: len(initialPrompt) == 0,
+		InitialPromptSent: strings.TrimSpace(initialPrompt) == "",
 	}
 	return c
 }
