@@ -418,22 +418,48 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 	return resp, nil
 }
 
+// MessagesFilter contains pagination options
+type MessagesFilter struct {
+	Offset *int `query:"offset" json:"offset" minimum:"0" doc:"Offset for pagination"`
+	Limit  *int `query:"limit" json:"limit" minimum:"1" maximum:"1000" doc:"Limit for pagination"`
+}
+
 // getMessages handles GET /messages
-func (s *Server) getMessages(ctx context.Context, input *struct{}) (*MessagesResponse, error) {
+func (s *Server) getMessages(ctx context.Context, input *MessagesFilter) (*MessagesResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	allMsgs := s.conversation.Messages()
+	
+	offset, limit := 0, len(allMsgs)
+	if input != nil {
+		if input.Offset != nil && *input.Offset > 0 {
+			offset = *input.Offset
+		}
+		if input.Limit != nil && *input.Limit > 0 {
+			limit = *input.Limit
+		}
+	}
+	
+	if offset > len(allMsgs) {
+		offset = len(allMsgs)
+	}
+	if limit > len(allMsgs)-offset {
+		limit = len(allMsgs) - offset
+	}
+	
 	resp := &MessagesResponse{}
-	resp.Body.Messages = make([]Message, len(s.conversation.Messages()))
-	for i, msg := range s.conversation.Messages() {
-		resp.Body.Messages[i] = Message{
+	resp.Body.Messages = make([]Message, limit)
+	for i := offset; i < offset+limit; i++ {
+		msg := allMsgs[i]
+		resp.Body.Messages[i-offset] = Message{
 			Id:      msg.Id,
 			Role:    msg.Role,
 			Content: msg.Message,
 			Time:    msg.Time,
 		}
 	}
-
+	
 	return resp, nil
 }
 
