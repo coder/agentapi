@@ -242,7 +242,8 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
 	// but ensure it's finalized
 	response := c.streamingResponse.String()
 	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent {
-		c.messages[len(c.messages)-1].Message = strings.TrimSpace(response)
+		// Intentionally not trimming space here.
+		c.messages[len(c.messages)-1].Message = response
 	}
 	messages := slices.Clone(c.messages)
 	status := c.statusLocked()
