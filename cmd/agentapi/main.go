@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/kooshapari/agentapi/internal/routing"
-	"github.com/kooshapari/agentapi/internal/server"
+	"github.com/coder/agentapi/internal/routing"
+	"github.com/coder/agentapi/internal/server"
 )
 
 var (
@@ -27,11 +27,11 @@ func main() {
 
 	// Start the server
 	srv := server.New(*port, router)
-	
+
 	// Handle graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	go func() {
 		<-quit
 		log.Println("Shutting down agentapi...")
@@ -40,7 +40,7 @@ func main() {
 
 	log.Printf("AgentAPI starting on port %d", *port)
 	log.Printf("Connecting to cliproxy+bifrost at %s", *cliproxyURL)
-	
+
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
