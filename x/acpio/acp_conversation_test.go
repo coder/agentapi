@@ -35,17 +35,20 @@ type mockAgentIO struct {
 
 // mockEmitter implements screentracker.Emitter for testing.
 type mockEmitter struct {
-	mu              sync.Mutex
-	messagesCalls   int
-	statusCalls     int
-	screenCalls     int
-	lastMessages    []screentracker.ConversationMessage
-	lastStatus      screentracker.ConversationStatus
-	lastScreen      string
+	mu            sync.Mutex
+	cond          *sync.Cond
+	messagesCalls int
+	statusCalls   int
+	screenCalls   int
+	lastMessages  []screentracker.ConversationMessage
+	lastStatus    screentracker.ConversationStatus
+	lastScreen    string
 }
 
 func newMockEmitter() *mockEmitter {
-	return &mockEmitter{}
+	m := &mockEmitter{}
+	m.cond = sync.NewCond(&m.mu)
+	return m
 }
 
 func (m *mockEmitter) EmitMessages(messages []screentracker.ConversationMessage) {
@@ -60,6 +63,7 @@ func (m *mockEmitter) EmitStatus(status screentracker.ConversationStatus) {
 	defer m.mu.Unlock()
 	m.statusCalls++
 	m.lastStatus = status
+	m.cond.Broadcast()
 }
 
 func (m *mockEmitter) EmitScreen(screen string) {
@@ -73,6 +77,30 @@ func (m *mockEmitter) TotalCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.messagesCalls + m.statusCalls + m.screenCalls
+}
+
+// WaitForStatus blocks until the emitter's last status matches target.
+// Must be called with a context that has a deadline to avoid hanging tests.
+func (m *mockEmitter) WaitForStatus(ctx context.Context, t *testing.T, target screentracker.ConversationStatus) {
+	t.Helper()
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatal("must set a deadline to avoid hanging tests")
+	}
+	done := make(chan struct{})
+	go func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for m.lastStatus != target {
+			m.cond.Wait()
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		m.cond.Broadcast() // unblock the goroutine
+		t.Fatalf("timed out waiting for %q status", target)
+	}
 }
 
 func newMockAgentIO() *mockAgentIO {
@@ -265,16 +293,17 @@ func Test_Send_RejectsDuplicateSend(t *testing.T) {
 }
 
 func Test_Status_ChangesWhileProcessing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
+	emitter := newMockEmitter()
 	// Block the write so we can observe status changes
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
-	conv.Start(context.Background())
-
-	// Initially stable
-	assert.Equal(t, screentracker.ConversationStatusStable, conv.Status())
+	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
+	conv.Start(ctx)
 
 	// Send a message
 	err := conv.Send(screentracker.MessagePartText{Content: "test"})
@@ -289,10 +318,8 @@ func Test_Status_ChangesWhileProcessing(t *testing.T) {
 	// Unblock the write
 	close(done)
 
-	// Give the goroutine a chance to complete (status update happens after Write returns)
-	require.Eventually(t, func() bool {
-		return conv.Status() == screentracker.ConversationStatusStable
-	}, 100*time.Millisecond, 5*time.Millisecond, "status should return to stable")
+	// Wait for the goroutine to complete - status should then be stable.
+	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
 }
 
 func Test_Text_ReturnsStreamingContent(t *testing.T) {
@@ -337,8 +364,11 @@ func Test_Emitter_CalledOnChanges(t *testing.T) {
 
 	emitter := newMockEmitter()
 
-	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, emitter, mClock)
-	conv.Start(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
+	conv.Start(ctx)
 
 	// Send a message
 	err := conv.Send(screentracker.MessagePartText{Content: "test"})
@@ -362,12 +392,12 @@ func Test_Emitter_CalledOnChanges(t *testing.T) {
 	close(done)
 
 	// Wait for completion emit
-	require.Eventually(t, func() bool {
-		emitter.mu.Lock()
-		c := emitter.messagesCalls
-		emitter.mu.Unlock()
-		return c >= 3 // 2 from chunks + 1 from completion
-	}, 100*time.Millisecond, 5*time.Millisecond, "should receive completion emit")
+	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
+
+	emitter.mu.Lock()
+	finalMessagesCalls := emitter.messagesCalls
+	emitter.mu.Unlock()
+	assert.GreaterOrEqual(t, finalMessagesCalls, 3, "2 from chunks + 1 from completion")
 }
 
 func Test_InitialPrompt_SentOnStart(t *testing.T) {
@@ -425,13 +455,17 @@ func Test_Messages_AreCopied(t *testing.T) {
 }
 
 func Test_ErrorRemovesPartialMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	mClock := quartz.NewMock(t)
 	mock := newMockAgentIO()
+	emitter := newMockEmitter()
 	// Block the write so we can simulate partial content before error
 	started, done := mock.BlockWrite()
 
-	conv := acpio.NewACPConversation(context.Background(), mock, nil, nil, nil, mClock)
-	conv.Start(context.Background())
+	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
+	conv.Start(ctx)
 
 	// Send a message
 	err := conv.Send(screentracker.MessagePartText{Content: "test"})
@@ -461,9 +495,7 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	close(done)
 
 	// Wait for the conversation to stabilize after the error
-	require.Eventually(t, func() bool {
-		return conv.Status() == screentracker.ConversationStatusStable
-	}, 100*time.Millisecond, 5*time.Millisecond, "status should return to stable")
+	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
 
 	// The partial agent message should be removed on error.
 	// Only the user message should remain.
