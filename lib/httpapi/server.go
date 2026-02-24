@@ -481,6 +481,15 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 		if _, err := s.agentio.Write([]byte(input.Body.Content)); err != nil {
 			return nil, xerrors.Errorf("failed to send message: %w", err)
 		}
+	case MessageTypeCommand:
+		// Send slash command directly - add enter at the end
+		content := input.Body.Content
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if _, err := s.agentio.Write([]byte(content)); err != nil {
+			return nil, xerrors.Errorf("failed to send command: %w", err)
+		}
 	}
 
 	resp := &MessageResponse{}
