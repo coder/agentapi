@@ -179,9 +179,18 @@ func (c *ACPConversation) Text() string {
 // handleChunk is called for each streaming chunk from the agent.
 func (c *ACPConversation) handleChunk(chunk string) {
 	c.mu.Lock()
+	// Log and discard chunks that arrive after the prompt has completed or errored.
+	// This should not happen under normal operation — if it does, it indicates a
+	// bug in the ACP SDK or a race in the connection teardown.
+	if !c.prompting {
+		c.mu.Unlock()
+		c.logger.Error("received chunk while not prompting (late/unexpected chunk discarded)",
+			"chunkLen", len(chunk))
+		return
+	}
 	c.streamingResponse.WriteString(chunk)
-	// Update the last message (the streaming agent response)
-	if len(c.messages) > 0 {
+	// Only update the last message if it's the agent placeholder (defense-in-depth)
+	if len(c.messages) > 0 && c.messages[len(c.messages)-1].Role == st.ConversationRoleAgent {
 		c.messages[len(c.messages)-1].Message = c.streamingResponse.String()
 	}
 	messages := slices.Clone(c.messages)

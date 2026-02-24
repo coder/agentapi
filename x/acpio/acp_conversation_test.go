@@ -504,3 +504,41 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
 	assert.Equal(t, "test", messages[0].Message)
 }
+
+func Test_LateChunkAfterError_DoesNotCorruptUserMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	mClock := quartz.NewMock(t)
+	mock := newMockAgentIO()
+	emitter := newMockEmitter()
+	started, done := mock.BlockWrite()
+
+	conv := acpio.NewACPConversation(ctx, mock, nil, nil, emitter, mClock)
+	conv.Start(ctx)
+
+	// Given: a send that fails with an error, removing the agent placeholder
+	err := conv.Send(screentracker.MessagePartText{Content: "hello"})
+	require.NoError(t, err)
+	<-started
+
+	mock.mu.Lock()
+	mock.writeErr = assert.AnError
+	mock.mu.Unlock()
+	close(done)
+
+	emitter.WaitForStatus(ctx, t, screentracker.ConversationStatusStable)
+
+	messages := conv.Messages()
+	require.Len(t, messages, 1, "agent placeholder should be removed after error")
+	assert.Equal(t, "hello", messages[0].Message)
+
+	// When: a late chunk arrives after the prompt has already errored
+	mock.SimulateChunks("late response data")
+
+	// Then: the user message is not corrupted
+	messages = conv.Messages()
+	require.Len(t, messages, 1, "no new messages should appear from a late chunk")
+	assert.Equal(t, "hello", messages[0].Message)
+	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
+}
