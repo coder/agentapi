@@ -350,9 +350,9 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
-	// GET /config endpoint
-	huma.Get(s.api, "/config", s.getConfig, func(o *huma.Operation) {
-		o.Description = "Returns the server configuration."
+	// GET /version endpoint
+	huma.Get(s.api, "/version", s.getVersion, func(o *huma.Operation) {
+		o.Description = "Returns the server version."
 	})
 
 	// GET /status endpoint
@@ -406,11 +406,10 @@ func (s *Server) registerRoutes() {
 	s.registerStaticFileRoutes()
 }
 
-// getConfig handles GET /config
-func (s *Server) getConfig(ctx context.Context, input *struct{}) (*ConfigResponse, error) {
-	resp := &ConfigResponse{}
-	resp.Body.AgentType = string(s.agentType)
-	resp.Body.Port = s.port
+// getVersion handles GET /version
+func (s *Server) getVersion(ctx context.Context, input *struct{}) (*VersionResponse, error) {
+	resp := &VersionResponse{}
+	resp.Body.Version = version.Version
 	return resp, nil
 }
 
