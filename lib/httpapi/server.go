@@ -350,11 +350,6 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
-	// GET /logs endpoint
-	huma.Get(s.api, "/logs", s.getLogs, func(o *huma.Operation) {
-		o.Description = "Returns server logs."
-	})
-
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
@@ -364,6 +359,11 @@ func (s *Server) registerRoutes() {
 	// Query params: after (int) - return messages after this ID, limit (int) - limit results
 	huma.Get(s.api, "/messages", s.getMessages, func(o *huma.Operation) {
 		o.Description = "Returns a list of messages representing the conversation history with the agent. Supports ?after=<id> and ?limit=<n> query parameters for pagination."
+	})
+
+	// DELETE /messages endpoint - clear all messages
+	huma.Delete(s.api, "/messages", s.clearMessages, func(o *huma.Operation) {
+		o.Description = "Clear all messages from conversation history."
 	})
 
 	// POST /message endpoint
@@ -404,13 +404,6 @@ func (s *Server) registerRoutes() {
 
 	// Serve static files for the chat interface under /chat
 	s.registerStaticFileRoutes()
-}
-
-// getLogs handles GET /logs
-func (s *Server) getLogs(ctx context.Context, input *struct{}) (*LogsResponse, error) {
-	resp := &LogsResponse{}
-	resp.Body.Logs = []string{}
-	return resp, nil
 }
 
 // getStatus handles GET /status
@@ -476,6 +469,19 @@ func (s *Server) getMessages(ctx context.Context, input *struct {
 		}
 	}
 
+	return resp, nil
+}
+
+// clearMessages handles DELETE /messages
+func (s *Server) clearMessages(ctx context.Context, input *struct{}) (*MessagesClearResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	resp := &MessagesClearResponse{}
+	count := len(s.conversation.Messages())
+	s.conversation.ClearMessages()
+	resp.Body.Ok = true
+	resp.Body.Count = count
 	return resp, nil
 }
 
