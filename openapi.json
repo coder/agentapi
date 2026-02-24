@@ -269,21 +269,30 @@
             "description": "Type of the agent being used by the server.",
             "type": "string"
           },
-          "backend": {
-            "description": "Backend transport being used ('acp' or 'pty').",
-            "type": "string"
-          },
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
+          },
+          "transport": {
+            "$ref": "#/components/schemas/Transport",
+            "description": "Backend transport being used ('acp' or 'pty')."
           }
         },
         "required": [
           "agent_type",
-          "backend",
-          "status"
+          "status",
+          "transport"
         ],
         "type": "object"
+      },
+      "Transport": {
+        "enum": [
+          "acp",
+          "pty"
+        ],
+        "example": "pty",
+        "title": "Transport",
+        "type": "string"
       },
       "UploadResponseBody": {
         "additionalProperties": false,

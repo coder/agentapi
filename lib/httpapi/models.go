@@ -25,6 +25,22 @@ func (m MessageType) Schema(r huma.Registry) *huma.Schema {
 	return util.OpenAPISchema(r, "MessageType", MessageTypeValues)
 }
 
+type Transport string
+
+const (
+	TransportPTY Transport = "pty"
+	TransportACP Transport = "acp"
+)
+
+var TransportValues = []Transport{
+	TransportPTY,
+	TransportACP,
+}
+
+func (tr Transport) Schema(r huma.Registry) *huma.Schema {
+	return util.OpenAPISchema(r, "Transport", TransportValues)
+}
+
 // Message represents a message
 type Message struct {
 	Id      int                 `json:"id" doc:"Unique identifier for the message. This identifier also represents the order of the message in the conversation history."`
@@ -38,7 +54,7 @@ type StatusResponse struct {
 	Body struct {
 		Status    AgentStatus  `json:"status" doc:"Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."`
 		AgentType mf.AgentType `json:"agent_type" doc:"Type of the agent being used by the server."`
-		Backend   string       `json:"backend" doc:"Backend transport being used ('acp' or 'pty')."`
+		Transport Transport    `json:"transport" doc:"Backend transport being used ('acp' or 'pty')."`
 	}
 }
 

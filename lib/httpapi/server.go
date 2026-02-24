@@ -49,7 +49,7 @@ type Server struct {
 	chatBasePath string
 	tempDir      string
 	clock        quartz.Clock
-	transport    string
+	transport    Transport
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -101,7 +101,7 @@ const snapshotInterval = 25 * time.Millisecond
 type ServerConfig struct {
 	AgentType      mf.AgentType
 	AgentIO        st.AgentIO
-	Transport      string
+	Transport      Transport
 	Port           int
 	ChatBasePath   string
 	AllowedHosts   []string
@@ -437,7 +437,7 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 	resp := &StatusResponse{}
 	resp.Body.Status = agentStatus
 	resp.Body.AgentType = s.agentType
-	resp.Body.Backend = s.transport
+	resp.Body.Transport = s.transport
 
 	return resp, nil
 }

@@ -129,40 +129,31 @@ func WriteRawInputOverHTTP(ctx context.Context, url string, msg string) error {
 	return nil
 }
 
-// statusResponse is used to parse the /status endpoint response.
-type statusResponse struct {
-	Status    string `json:"status"`
-	AgentType string `json:"agent_type"`
-	Backend   string `json:"backend"`
-}
-
-func checkACPMode(remoteUrl string) error {
-	resp, err := http.Get(remoteUrl + "/status")
+func checkACPMode(remoteURL string) (bool, error) {
+	resp, err := http.Get(remoteURL + "/status")
 	if err != nil {
-		return xerrors.Errorf("failed to check server status: %w", err)
+		return false, xerrors.Errorf("failed to check server status: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return xerrors.Errorf("unexpected %d response from server: %s", resp.StatusCode, resp.Status)
+		return false, xerrors.Errorf("unexpected %d response from server: %s", resp.StatusCode, resp.Status)
 	}
 
-	var status statusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return xerrors.Errorf("failed to decode server status: %w", err)
+	var status httpapi.StatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status.Body); err != nil {
+		return false, xerrors.Errorf("failed to decode server status: %w", err)
 	}
 
-	if status.Backend == "acp" {
-		return xerrors.New("attach is not supported in ACP mode. The server is running with --experimental-acp which uses JSON-RPC instead of terminal emulation.")
-	}
-
-	return nil
+	return status.Body.Transport == httpapi.TransportACP, nil
 }
 
-func runAttach(remoteUrl string) error {
+func runAttach(remoteURL string) error {
 	// Check if server is running in ACP mode (attach not supported)
-	if err := checkACPMode(remoteUrl); err != nil {
-		return err
+	if isACP, err := checkACPMode(remoteURL); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "WARN: Unable to check server: %s", err.Error())
+	} else if isACP {
+		return xerrors.New("attach is not yet supported in ACP mode")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -187,7 +178,7 @@ func runAttach(remoteUrl string) error {
 	readScreenErrCh := make(chan error, 1)
 	go func() {
 		defer close(readScreenErrCh)
-		if err := ReadScreenOverHTTP(ctx, remoteUrl+"/internal/screen", screenCh); err != nil {
+		if err := ReadScreenOverHTTP(ctx, remoteURL+"/internal/screen", screenCh); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -210,7 +201,7 @@ func runAttach(remoteUrl string) error {
 				if input == "\x03" {
 					continue
 				}
-				if err := WriteRawInputOverHTTP(ctx, remoteUrl+"/message", input); err != nil {
+				if err := WriteRawInputOverHTTP(ctx, remoteURL+"/message", input); err != nil {
 					writeRawInputErrCh <- xerrors.Errorf("failed to write raw input: %w", err)
 					return
 				}

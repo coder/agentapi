@@ -112,7 +112,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	var agentIO st.AgentIO
-	var transport = "pty"
+	transport := "pty"
 	var process *termexec.Process
 	var acpResult *httpapi.SetupACPResult
 
@@ -148,7 +148,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
 		AgentIO:        agentIO,
-		Transport:      transport,
+		Transport:      httpapi.Transport(transport),
 		Port:           port,
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
