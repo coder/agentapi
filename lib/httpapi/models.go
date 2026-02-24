@@ -33,10 +33,11 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
-// ReadyResponse represents the readiness check response
-type ReadyResponse struct {
+// RateLimitResponse represents rate limit status
+type RateLimitResponse struct {
 	Body struct {
-		Ready bool `json:"ready" doc:"Whether the server is ready"`
+		Enabled  bool `json:"enabled" doc:"Whether rate limiting is enabled"`
+		Requests int  `json:"requests" doc:"Requests per minute limit"`
 	}
 }
 

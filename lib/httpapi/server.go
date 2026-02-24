@@ -350,9 +350,9 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
-	// GET /ready endpoint - readiness probe
-	huma.Get(s.api, "/ready", s.getReady, func(o *huma.Operation) {
-		o.Description = " Readiness probe for Kubernetes."
+	// GET /rate-limit endpoint
+	huma.Get(s.api, "/rate-limit", s.getRateLimit, func(o *huma.Operation) {
+		o.Description = "Returns rate limit status."
 	})
 
 	// GET /status endpoint
@@ -406,10 +406,11 @@ func (s *Server) registerRoutes() {
 	s.registerStaticFileRoutes()
 }
 
-// getReady handles GET /ready
-func (s *Server) getReady(ctx context.Context, input *struct{}) (*ReadyResponse, error) {
-	resp := &ReadyResponse{}
-	resp.Body.Ready = true
+// getRateLimit handles GET /rate-limit
+func (s *Server) getRateLimit(ctx context.Context, input *struct{}) (*RateLimitResponse, error) {
+	resp := &RateLimitResponse{}
+	resp.Body.Enabled = false
+	resp.Body.Requests = 100
 	return resp, nil
 }
 
