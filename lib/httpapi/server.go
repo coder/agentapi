@@ -255,9 +255,8 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
 	}
 
-	// Create appropriate conversation based on transport type
 	var conversation st.Conversation
-	if config.Transport == "acp" {
+	if config.Transport == TransportACP {
 		// For ACP, cast AgentIO to *acpio.ACPAgentIO
 		acpIO, ok := config.AgentIO.(*acpio.ACPAgentIO)
 		if !ok {
@@ -265,7 +264,6 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		}
 		conversation = acpio.NewACPConversation(ctx, acpIO, logger, initialPrompt, emitter, config.Clock)
 	} else {
-		// Default to PTY transport
 		proc, ok := config.AgentIO.(*termexec.Process)
 		if !ok && config.AgentIO != nil {
 			return nil, fmt.Errorf("PTY transport requires termexec.Process")
