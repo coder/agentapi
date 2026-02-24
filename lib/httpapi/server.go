@@ -350,9 +350,9 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
-	// GET /rate-limit endpoint
-	huma.Get(s.api, "/rate-limit", s.getRateLimit, func(o *huma.Operation) {
-		o.Description = "Returns rate limit status."
+	// GET /logs endpoint
+	huma.Get(s.api, "/logs", s.getLogs, func(o *huma.Operation) {
+		o.Description = "Returns server logs."
 	})
 
 	// GET /status endpoint
@@ -406,11 +406,10 @@ func (s *Server) registerRoutes() {
 	s.registerStaticFileRoutes()
 }
 
-// getRateLimit handles GET /rate-limit
-func (s *Server) getRateLimit(ctx context.Context, input *struct{}) (*RateLimitResponse, error) {
-	resp := &RateLimitResponse{}
-	resp.Body.Enabled = false
-	resp.Body.Requests = 100
+// getLogs handles GET /logs
+func (s *Server) getLogs(ctx context.Context, input *struct{}) (*LogsResponse, error) {
+	resp := &LogsResponse{}
+	resp.Body.Logs = []string{}
 	return resp, nil
 }
 

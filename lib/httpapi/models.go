@@ -33,11 +33,10 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
-// RateLimitResponse represents rate limit status
-type RateLimitResponse struct {
+// LogsResponse represents server logs
+type LogsResponse struct {
 	Body struct {
-		Enabled  bool `json:"enabled" doc:"Whether rate limiting is enabled"`
-		Requests int  `json:"requests" doc:"Requests per minute limit"`
+		Logs []string `json:"logs" doc:"Server logs"`
 	}
 }
 
