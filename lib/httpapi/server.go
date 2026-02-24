@@ -350,6 +350,11 @@ func (s *Server) StartSnapshotLoop(ctx context.Context) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
+	// GET /rate-limit endpoint
+	huma.Get(s.api, "/rate-limit", s.getRateLimit, func(o *huma.Operation) {
+		o.Description = "Returns rate limit status."
+	})
+
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
@@ -399,6 +404,14 @@ func (s *Server) registerRoutes() {
 
 	// Serve static files for the chat interface under /chat
 	s.registerStaticFileRoutes()
+}
+
+// getRateLimit handles GET /rate-limit
+func (s *Server) getRateLimit(ctx context.Context, input *struct{}) (*RateLimitResponse, error) {
+	resp := &RateLimitResponse{}
+	resp.Body.Enabled = false
+	resp.Body.Requests = 100
+	return resp, nil
 }
 
 // getStatus handles GET /status
