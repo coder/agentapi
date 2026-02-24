@@ -33,6 +33,13 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
+// LogsResponse represents server logs
+type LogsResponse struct {
+	Body struct {
+		Logs []string `json:"logs" doc:"Server logs"`
+	}
+}
+
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
