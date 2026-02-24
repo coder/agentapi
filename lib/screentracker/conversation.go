@@ -343,11 +343,22 @@ var MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of l
 var MessageValidationErrorEmpty = xerrors.New("message must not be empty")
 var MessageValidationErrorChanging = xerrors.New("message can only be sent when the agent is waiting for user input")
 
+// isAskUserQuestionPrompt detects if the screen contains an AskUserQuestion TUI prompt
+// by checking for the "Enter to select" indicator that appears in interactive menus.
+func isAskUserQuestionPrompt(screen string) bool {
+	return strings.Contains(screen, "Enter to select")
+}
+
 func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusInner() != ConversationStatusStable {
+	// Auto-skip status check for AskUserQuestion prompts
+	// These interactive TUI menus never stabilize because the cursor keeps blinking
+	currentScreen := c.cfg.AgentIO.ReadScreen()
+	skipCheck := c.cfg.SkipSendMessageStatusCheck || isAskUserQuestionPrompt(currentScreen)
+
+	if !skipCheck && c.statusInner() != ConversationStatusStable {
 		return MessageValidationErrorChanging
 	}
 
