@@ -9,4 +9,11 @@ out
 
 
 #IDEs
-.idea
+.idea__pycache__/
+*.pyc
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
