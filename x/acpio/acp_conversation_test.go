@@ -227,6 +227,9 @@ func Test_Send_AddsUserMessage(t *testing.T) {
 	assert.Equal(t, "hello", messages[0].Message)
 	assert.Equal(t, screentracker.ConversationRoleAgent, messages[1].Role)
 
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("hello response")
+
 	// Unblock the write to let Send complete
 	close(done)
 	require.NoError(t, <-errCh)
@@ -290,6 +293,9 @@ func Test_Send_RejectsDuplicateSend(t *testing.T) {
 	err := conv.Send(screentracker.MessagePartText{Content: "second"})
 	assert.ErrorIs(t, err, screentracker.ErrMessageValidationChanging)
 
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("first response")
+
 	// Unblock the write to let the test complete cleanly
 	close(done)
 	require.NoError(t, <-errCh)
@@ -317,6 +323,9 @@ func Test_Status_ChangesWhileProcessing(t *testing.T) {
 
 	// Status should be changing while processing
 	assert.Equal(t, screentracker.ConversationStatusChanging, conv.Status())
+
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("test response")
 
 	// Unblock the write
 	close(done)
@@ -428,6 +437,9 @@ func Test_InitialPrompt_SentOnStart(t *testing.T) {
 	assert.Equal(t, screentracker.ConversationRoleUser, messages[0].Role)
 	assert.Equal(t, "initial prompt", messages[0].Message)
 
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("initial response")
+
 	// Unblock the write to let the test complete cleanly
 	close(done)
 }
@@ -456,6 +468,9 @@ func Test_Messages_AreCopied(t *testing.T) {
 	// Original should be unchanged
 	originalMessages := conv.Messages()
 	assert.Equal(t, "test", originalMessages[0].Message)
+
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("test response")
 
 	// Unblock the write to let Send complete
 	close(done)
@@ -518,12 +533,15 @@ func Test_ErrorRemovesPartialMessage(t *testing.T) {
 	// Send a second message — IDs must not reuse the removed agent message's ID (1).
 	mock.mu.Lock()
 	mock.writeErr = nil
-	mock.writeBlock = nil
-	mock.writeStarted = nil
 	mock.mu.Unlock()
-
-	err := conv.Send(screentracker.MessagePartText{Content: "retry"})
-	require.NoError(t, err)
+	started2, done2 := mock.BlockWrite()
+	errCh2 := make(chan error, 1)
+	go func() { errCh2 <- conv.Send(screentracker.MessagePartText{Content: "retry"}) }()
+	<-started2
+	// Signal a chunk so executePrompt's timer wait doesn't hang on the mock clock.
+	mock.SimulateChunks("retry response")
+	close(done2)
+	require.NoError(t, <-errCh2)
 
 	messages = conv.Messages()
 	require.Len(t, messages, 3, "first user + second user + second agent")
@@ -548,6 +566,10 @@ func Test_LateChunkAfterError_DoesNotCorruptUserMessage(t *testing.T) {
 	mock.mu.Lock()
 	mock.writeErr = assert.AnError
 	mock.mu.Unlock()
+
+	// Signal a chunk before unblocking; the error path still waits on chunkReceived
+	// or the timer, so pre-signaling avoids a hang on the mock clock.
+	mock.SimulateChunks("unexpected chunk")
 	close(done)
 
 	require.ErrorIs(t, <-errCh, assert.AnError)

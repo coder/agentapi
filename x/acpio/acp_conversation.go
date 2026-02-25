@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/quartz"
@@ -31,7 +32,8 @@ type ACPConversation struct {
 	agentIO           ChunkableAgentIO
 	messages          []st.ConversationMessage
 	nextID            int  // monotonically increasing message ID
-	prompting         bool // true while agent is processing
+	prompting         bool          // true while agent is processing
+	chunkReceived     chan struct{}  // signals that handleChunk has accumulated a chunk
 	streamingResponse strings.Builder
 	logger            *slog.Logger
 	emitter           st.Emitter
@@ -68,6 +70,7 @@ func NewACPConversation(ctx context.Context, agentIO ChunkableAgentIO, logger *s
 		initialPrompt: initialPrompt,
 		emitter:       emitter,
 		clock:         clock,
+		chunkReceived: make(chan struct{}, 1),
 	}
 	return c
 }
@@ -202,6 +205,12 @@ func (c *ACPConversation) handleChunk(chunk string) {
 	screen := c.streamingResponse.String()
 	c.mu.Unlock()
 
+	// Signal that a chunk has been received (non-blocking; a pending signal is sufficient).
+	select {
+	case c.chunkReceived <- struct{}{}:
+	default:
+	}
+
 	c.emitter.EmitMessages(messages)
 	c.emitter.EmitStatus(status)
 	c.emitter.EmitScreen(screen)
@@ -209,6 +218,12 @@ func (c *ACPConversation) handleChunk(chunk string) {
 
 // executePrompt runs the actual agent request and returns any error.
 func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
+	// Drain any stale signal before sending the prompt.
+	select {
+	case <-c.chunkReceived:
+	default:
+	}
+
 	var err error
 	for _, part := range messageParts {
 		if c.ctx.Err() != nil {
@@ -220,6 +235,15 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
 			break
 		}
 	}
+
+	// The ACP SDK dispatches SessionUpdate notifications as goroutines, so
+	// the chunk may arrive after conn.Prompt() returns. Wait up to 100ms.
+	timer := c.clock.NewTimer(100 * time.Millisecond)
+	select {
+	case <-c.chunkReceived:
+	case <-timer.C:
+	}
+	timer.Stop()
 
 	c.mu.Lock()
 	c.prompting = false
