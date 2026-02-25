@@ -238,10 +238,12 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
 
 	// The ACP SDK dispatches SessionUpdate notifications as goroutines, so
 	// the chunk may arrive after conn.Prompt() returns. Wait up to 100ms.
+	timer := c.clock.NewTimer(100 * time.Millisecond)
 	select {
 	case <-c.chunkReceived:
-	case <-time.After(100 * time.Millisecond):
+	case <-timer.C:
 	}
+	timer.Stop()
 
 	c.mu.Lock()
 	c.prompting = false
