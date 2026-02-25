@@ -436,6 +436,13 @@ func (c *Conversation) Messages() []ConversationMessage {
 	return result
 }
 
+// ClearMessages removes all messages from the conversation
+func (c *Conversation) ClearMessages() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.messages = []ConversationMessage{}
+}
+
 func (c *Conversation) Screen() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
