@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitepress'
 
+// Import shared base config helpers
+import { resolveDocsBase, resolveFavicon } from "../../../docs-hub/.vitepress/base.config"
+
 // Supported locales: en, zh-CN, zh-TW, fa, fa-Latn
 const locales = {
   root: {
@@ -34,10 +37,12 @@ const locales = {
   }
 };
 
+const docsBase = resolveDocsBase()
+
 export default defineConfig({
   title: 'agentapi++',
   description: 'Agent API server docs',
-  base: '/agentapi-plusplus/',
+  base: docsBase,
   locales,
   themeConfig: {
     nav: [
