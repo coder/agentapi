@@ -360,6 +360,11 @@ func (s *Server) registerRoutes() {
 		o.Description = "Returns rate limit status."
 	})
 
+	// GET /config endpoint
+	huma.Get(s.api, "/config", s.getConfig, func(o *huma.Operation) {
+		o.Description = "Returns the server configuration."
+	})
+
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
@@ -428,6 +433,14 @@ func (s *Server) getRateLimit(ctx context.Context, input *struct{}) (*RateLimitR
 	resp := &RateLimitResponse{}
 	resp.Body.Enabled = false
 	resp.Body.Requests = 100
+	return resp, nil
+}
+
+// getConfig handles GET /config
+func (s *Server) getConfig(ctx context.Context, input *struct{}) (*ConfigResponse, error) {
+	resp := &ConfigResponse{}
+	resp.Body.AgentType = string(s.agentType)
+	resp.Body.Port = s.port
 	return resp, nil
 }
 
