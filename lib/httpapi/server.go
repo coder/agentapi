@@ -24,6 +24,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -40,12 +41,13 @@ type Server struct {
 	srv          *http.Server
 	mu           sync.RWMutex
 	logger       *slog.Logger
-	conversation *st.Conversation
+	conversation st.Conversation
 	agentio      *termexec.Process
 	agentType    mf.AgentType
 	emitter      *EventEmitter
 	chatBasePath string
 	tempDir      string
+	clock        quartz.Clock
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -102,6 +104,7 @@ type ServerConfig struct {
 	AllowedHosts   []string
 	AllowedOrigins []string
 	InitialPrompt  string
+	Clock          quartz.Clock
 }
 
 // Validate allowed hosts don't contain whitespace, commas, schemes, or ports.
@@ -194,6 +197,10 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 
 	logger := logctx.From(ctx)
 
+	if config.Clock == nil {
+		config.Clock = quartz.NewReal()
+	}
+
 	allowedHosts, err := parseAllowedHosts(config.AllowedHosts)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to parse allowed hosts: %w", err)
@@ -228,17 +235,35 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	formatMessage := func(message string, userInput string) string {
 		return mf.FormatAgentMessage(config.AgentType, message, userInput)
 	}
-	conversation := st.NewConversation(ctx, st.ConversationConfig{
-		AgentType: config.AgentType,
-		AgentIO:   config.Process,
-		GetTime: func() time.Time {
-			return time.Now()
-		},
+
+	isAgentReadyForInitialPrompt := func(message string) bool {
+		return mf.IsAgentReadyForInitialPrompt(config.AgentType, message)
+	}
+
+	formatToolCall := func(message string) (string, []string) {
+		return mf.FormatToolCall(config.AgentType, message)
+	}
+
+	emitter := NewEventEmitter(WithAgentType(config.AgentType))
+
+	// Format initial prompt into message parts if provided
+	var initialPrompt []st.MessagePart
+	if config.InitialPrompt != "" {
+		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
+	}
+
+	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
+		AgentType:             config.AgentType,
+		AgentIO:               config.Process,
+		Clock:                 config.Clock,
 		SnapshotInterval:      snapshotInterval,
 		ScreenStabilityLength: 2 * time.Second,
 		FormatMessage:         formatMessage,
-	}, config.InitialPrompt)
-	emitter := NewEventEmitter(1024)
+		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
+		FormatToolCall:        formatToolCall,
+		InitialPrompt:         initialPrompt,
+		Logger:                logger,
+	}, emitter)
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -258,10 +283,21 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
+		clock:        config.Clock,
 	}
 
 	// Register API routes
 	s.registerRoutes()
+
+	// Start the conversation polling loop if we have a process.
+	// Process is nil only when --print-openapi is used (no agent runs).
+	// The process is already running at this point - termexec.StartProcess()
+	// blocks until the PTY is created and the process is active. Agent
+	// readiness (waiting for the prompt) is handled asynchronously inside
+	// conversation.Start() via ReadyForInitialPrompt.
+	if config.Process != nil {
+		s.conversation.Start(ctx)
+	}
 
 	return s, nil
 }
@@ -316,36 +352,6 @@ func sseMiddleware(ctx huma.Context, next func(huma.Context)) {
 	ctx.SetHeader("Connection", "keep-alive")
 
 	next(ctx)
-}
-
-func (s *Server) StartSnapshotLoop(ctx context.Context) {
-	s.conversation.StartSnapshotLoop(ctx)
-	go func() {
-		for {
-			currentStatus := s.conversation.Status()
-
-			// Send initial prompt when agent becomes stable for the first time
-			agentStatus, err := convertStatus(currentStatus)
-			if err != nil {
-				s.logger.Error("Failed to convert status", "error", err, "status", currentStatus)
-			}
-			if !s.conversation.InitialPromptSent && agentStatus == AgentStatusStable {
-				if err := s.conversation.SendMessage(FormatMessage(s.agentType, s.conversation.InitialPrompt)...); err != nil {
-					s.logger.Error("Failed to send initial prompt", "error", err)
-				} else {
-					s.conversation.InitialPromptSent = true
-					currentStatus = st.ConversationStatusChanging
-					s.logger.Info("Initial prompt sent successfully")
-				}
-			}
-			if err := s.emitter.UpdateStatusAndEmitChanges(currentStatus, s.agentType); err != nil {
-				s.logger.Error("Failed to update status and emit changes", "error", err)
-			}
-			s.emitter.UpdateMessagesAndEmitChanges(s.conversation.Messages())
-			s.emitter.UpdateScreenAndEmitChanges(s.conversation.Screen())
-			time.Sleep(snapshotInterval)
-		}
-	}()
 }
 
 // registerRoutes sets up all API endpoints
@@ -530,7 +536,7 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 
 	switch input.Body.Type {
 	case MessageTypeUser:
-		if err := s.conversation.SendMessage(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
+		if err := s.conversation.Send(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
 			return nil, xerrors.Errorf("failed to send message: %w", err)
 		}
 	case MessageTypeRaw:
@@ -548,7 +554,8 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 // uploadFiles handles POST /upload
 func (s *Server) uploadFiles(ctx context.Context, input *struct {
 	RawBody huma.MultipartFormFiles[UploadRequest]
-}) (*UploadResponse, error) {
+},
+) (*UploadResponse, error) {
 	formData := input.RawBody.Data()
 
 	file := formData.File.File
@@ -569,7 +576,7 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 
 	// Create checksum-based subdirectory in tempDir
 	uploadDir := filepath.Join(s.tempDir, checksum)
-	err = os.MkdirAll(uploadDir, 0755)
+	err = os.MkdirAll(uploadDir, 0o755)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create upload directory: %w", err)
 	}
@@ -578,7 +585,7 @@ func (s *Server) uploadFiles(ctx context.Context, input *struct {
 	filename := filepath.Base(formData.File.Filename)
 
 	outPath := filepath.Join(uploadDir, filename)
-	err = os.WriteFile(outPath, buf, 0644)
+	err = os.WriteFile(outPath, buf, 0o644)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to write file: %w", err)
 	}

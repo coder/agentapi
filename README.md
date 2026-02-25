@@ -1,6 +1,6 @@
 # AgentAPI++ (KooshaPari Fork)
 
-**Forked from [coder/agentapi](https://github.com/coder/agentapi)** - HTTP API for controlling AI coding agents.
+Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [GitHub Copilot](https://github.com/github/copilot-cli), [Sourcegraph Amp](https://ampcode.com/), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
 
 ---
 
@@ -35,7 +35,25 @@ curl -fsSL "https://github.com/KooshaPari/agentapi/releases/latest/download/agen
 chmod +x agentapi
 ```
 
-### Build from Source
+> [!NOTE]
+> When using Claude, Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+
+An OpenAPI schema is available in [openapi.json](openapi.json).
+
+By default, the server runs on port 3284. Additionally, the server exposes the same OpenAPI schema at http://localhost:3284/openapi.json and the available endpoints in a documentation UI at http://localhost:3284/docs.
+
+There are 4 endpoints:
+
+- GET `/messages` - returns a list of all messages in the conversation with the agent
+- POST `/message` - sends a message to the agent. When a 200 response is returned, AgentAPI has detected that the agent started processing the message
+- GET `/status` - returns the current status of the agent, either "stable" or "running"
+- GET `/events` - an SSE stream of events from the agent: message and status updates
+
+#### Allowed hosts
+
+By default, the server only allows requests with the host header set to `localhost`. If you'd like to host AgentAPI elsewhere, you can change this by using the `AGENTAPI_ALLOWED_HOSTS` environment variable or the `--allowed-hosts` flag. Hosts must be hostnames only (no ports); the server ignores the port portion of incoming requests when authorizing.
+
+To allow requests from any host, use `*` as the allowed host.
 
 ```bash
 go build -o agentapi main.go

@@ -28,7 +28,7 @@ func findGreaterThanMessageBox(lines []string) int {
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
 		if strings.Contains(lines[i], "───────────────") &&
-			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│")) &&
+			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│") || strings.Contains(lines[i+1], "❯")) &&
 			strings.Contains(lines[i+2], "───────────────") {
 			return i
 		}
@@ -63,19 +63,40 @@ func removeCodexInputBox(msg string) string {
 
 func removeOpencodeMessageBox(msg string) string {
 	lines := strings.Split(msg, "\n")
-	// Check the last 3 lines for
 	//
-	//  ┃                                                                      ┃
-	//  ┃ >                                                                    ┃
-	//  ┃                                                                      ┃
-	// We only check for the first ┃ and then an empty line above it - as sometimes the full input block does not load within a snapshot,
-	// this leads to displaying a bunch of newlines.
-	for i := len(lines) - 1; i >= 1; i-- {
-		if strings.TrimSpace(lines[i-1]) == "" &&
-			strings.ReplaceAll(lines[i], " ", "") == "┃┃" {
-			lines = lines[:i-1]
+	//  ┃
+	//  ┃
+	//  ┃
+	//  ┃  Build  Anthropic Claude Sonnet 4
+	//  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+	//                                tab switch agent  ctrl+p commands
+	//
+	for i := len(lines) - 1; i >= 4; i-- {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀") {
+			lines = lines[:i-4]
 			break
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func removeAmpMessageBox(msg string) string {
+	lines := strings.Split(msg, "\n")
+	msgBoxEndFound := false
+	msgBoxStartIdx := len(lines)
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !msgBoxEndFound && strings.HasPrefix(line, "╰") && strings.HasSuffix(line, "╯") {
+			msgBoxEndFound = true
+		}
+		if msgBoxEndFound && strings.HasPrefix(line, "╭") && strings.HasSuffix(line, "╮") {
+			msgBoxStartIdx = i
+			break
+		}
+	}
+	formattedMsg := strings.Join(lines[:msgBoxStartIdx], "\n")
+	if len(formattedMsg) == 0 {
+		return "Welcome to Amp"
+	}
+	return formattedMsg
 }

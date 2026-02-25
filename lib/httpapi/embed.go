@@ -45,10 +45,8 @@ func createModifiedFS(baseFS fs.FS, oldBasePath string, newBasePath string) (*af
 			contents = strings.ReplaceAll(contents, oldBasePath+"/", newBasePath)
 		}
 		contents = strings.ReplaceAll(contents, oldBasePath, newBasePath)
-		// Use forward slashes for the overlay path
-		overlayPath := strings.ReplaceAll(path, "\\", "/")
-		if err := afero.WriteFile(overlay, overlayPath, []byte(contents), 0644); err != nil {
-			return xerrors.Errorf("failed to write file %s: %w", overlayPath, err)
+		if err := afero.WriteFile(overlay, path, []byte(contents), 0o644); err != nil {
+			return xerrors.Errorf("failed to write file: %w", err)
 		}
 		return nil
 	})

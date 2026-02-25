@@ -1,12 +1,10 @@
-                    █▀▀█ █▀▀█ █▀▀ █▀▀▄ █▀▀ █▀▀█ █▀▀▄ █▀▀
-                    █░░█ █░░█ █▀▀ █░░█ █░░ █░░█ █░░█ █▀▀
-                    ▀▀▀▀ █▀▀▀ ▀▀▀ ▀  ▀ ▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀
-                                                  v0.6.8
+                                                                                                                                        ▄
+                                                                                                       █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+                                                                                                       █░░█ █░░█ █▀▀▀ █░░█ █░░░ █░░█ █░░█ █▀▀▀
+                                                                                                       ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+                                                                                                                                        1.0.98
 
-                     /new      new session     ctrl+x n
-                     /help     show help       ctrl+x h
-                     /share    share session   ctrl+x s
-                     /models   list models     ctrl+x m
-
-
-                    Grok Code is free for a limited time
+                                                                                                       Commands                         ctrl+p
+                                                                                                       List sessions                  ctrl+x l
+                                                                                                       Switch model                   ctrl+x m
+                                                                                                       Switch agent                        tab

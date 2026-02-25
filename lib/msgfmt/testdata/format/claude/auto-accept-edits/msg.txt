@@ -13,8 +13,8 @@
  3. Use Claude to help with file analysis, editing, bash commands and git       
  4. Be as specific as you would with another engineer for the best results      
                                                                                 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ >                                                                            │
-╰──────────────────────────────────────────────────────────────────────────────╯
+───────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────
   ⏵⏵ auto-accept edits on (shift+tab to       ✓ Update installed • Restart to   
   toggle)                                     apply                             

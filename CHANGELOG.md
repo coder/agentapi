@@ -1,6 +1,67 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## v0.11.8
+
+### Fix
+- Update message box formatting detection for Claude
+
+## v0.11.7
+
+### Features
+- format codex messages to skip the coder_report_task tool call
+
+## v0.11.6
+
+### Features
+- Bump Next.js to 15.4.10
+
+## v0.11.5
+
+### Features
+- Add tool call logging.
+- Improve parsing/detection of tool call messages.
+
+## v0.11.4
+
+### Features
+- Temporarily remove coder report_task tool-call logs
+
+## v0.11.3
+
+### Features
+- format claude messages to skip the coder_report_task tool call
+
+## v0.11.2
+
+### Features
+- Improved handling of initial prompt
+
+## v0.11.1
+
+### Features
+- Add tooltips for buttons
+- Autofocus message box on user's turn
+- Add msgfmt logic for amp module
+- Update msgfmt for latest version in opencode
+
+## v0.11.0
+
+### Features
+- Support sending initial prompt via stdin
+
+## v0.10.2
+
+### Features
+- Improve autoscroll UX
+
+## v0.10.1
+
+### Features
+- Visual indicator for agent name in the UI (not in embed)
+- Downgrade openapi version to v3.0.3
+- Add CLI installation instructions in README.md
+
+## v0.10.0
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/xerrors"
 )
@@ -15,13 +16,21 @@ type WaitTimeout struct {
 	MinInterval time.Duration
 	MaxInterval time.Duration
 	InitialWait bool
+	Clock       quartz.Clock
 }
 
 var WaitTimedOut = xerrors.New("timeout waiting for condition")
 
 // WaitFor waits for a condition to be true or the timeout to expire.
 // It will wait for the condition to be true with exponential backoff.
+// A single sleep timer is reused across iterations via Reset so that
+// mock-clock tests always have a pending timer to advance.
 func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, error)) error {
+	clock := timeout.Clock
+	if clock == nil {
+		clock = quartz.NewReal()
+	}
+
 	minInterval := timeout.MinInterval
 	maxInterval := timeout.MaxInterval
 	timeoutDuration := timeout.Timeout
@@ -34,33 +43,46 @@ func WaitFor(ctx context.Context, timeout WaitTimeout, condition func() (bool, e
 	if timeoutDuration == 0 {
 		timeoutDuration = 10 * time.Second
 	}
-	timeoutAfter := time.After(timeoutDuration)
-
 	if minInterval > maxInterval {
 		return xerrors.Errorf("minInterval is greater than maxInterval")
 	}
 
+	timeoutTimer := clock.NewTimer(timeoutDuration)
+	defer timeoutTimer.Stop()
+
 	interval := minInterval
-	if timeout.InitialWait {
-		time.Sleep(interval)
-	}
+	sleepTimer := clock.NewTimer(interval)
+	defer sleepTimer.Stop()
+
+	waitForTimer := timeout.InitialWait
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeoutAfter:
-			return WaitTimedOut
-		default:
-			ok, err := condition()
-			if err != nil {
-				return err
+		if waitForTimer {
+			select {
+			case <-sleepTimer.C:
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timeoutTimer.C:
+				return WaitTimedOut
 			}
-			if ok {
-				return nil
-			}
-			time.Sleep(interval)
-			interval = min(interval*2, maxInterval)
 		}
+		waitForTimer = true
+
+		ok, err := condition()
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+
+		interval = min(interval*2, maxInterval)
+		if !sleepTimer.Stop() {
+			select {
+			case <-sleepTimer.C:
+			default:
+			}
+		}
+		sleepTimer.Reset(interval)
 	}
 }
 
@@ -76,4 +98,23 @@ func OpenAPISchema[T ~string](r huma.Registry, enumName string, values []T) *hum
 		r.Map()[enumName] = schemaRef
 	}
 	return &huma.Schema{Ref: fmt.Sprintf("#/components/schemas/%s", enumName)}
+}
+
+// After is a convenience function that returns a channel that will send the
+// time after the given duration has elapsed using the provided clock.
+// If clk is nil, a real clock will be used by default.
+// Note that this function spawns a goroutine that will remain alive until the
+// timer fires.
+func After(clk quartz.Clock, d time.Duration) <-chan time.Time {
+	if clk == nil {
+		clk = quartz.NewReal()
+	}
+	timer := clk.NewTimer(d)
+	ch := make(chan time.Time)
+	go func() {
+		defer timer.Stop()
+		defer close(ch)
+		ch <- <-timer.C
+	}()
+	return ch
 }

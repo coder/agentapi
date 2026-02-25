@@ -89,11 +89,10 @@ func runEchoAgent(scriptPath string) {
 			if entry.ThinkDurationMS > 0 {
 				redrawTerminal(messages, true)
 				spinnerCtx, spinnerCancel := context.WithCancel(ctx)
-				go runSpinner(spinnerCtx)
+				spinnerDone := runSpinner(spinnerCtx)
 				time.Sleep(time.Duration(entry.ThinkDurationMS) * time.Millisecond)
-				if spinnerCancel != nil {
-					spinnerCancel()
-				}
+				spinnerCancel()
+				<-spinnerDone
 			}
 
 			messages = append(messages, st.ConversationMessage{
@@ -133,9 +132,10 @@ func runEchoAgent(scriptPath string) {
 		if entry.ThinkDurationMS > 0 {
 			redrawTerminal(messages, true)
 			spinnerCtx, spinnerCancel := context.WithCancel(ctx)
-			go runSpinner(spinnerCtx)
+			spinnerDone := runSpinner(spinnerCtx)
 			time.Sleep(time.Duration(entry.ThinkDurationMS) * time.Millisecond)
 			spinnerCancel()
+			<-spinnerDone
 		}
 
 		messages = append(messages, st.ConversationMessage{
@@ -190,21 +190,26 @@ func cleanTerminalInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
-func runSpinner(ctx context.Context) {
-	spinnerChars := []string{"|", "/", "-", "\\"}
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	i := 0
+func runSpinner(ctx context.Context) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		spinnerChars := []string{"|", "/", "-", "\\"}
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		i := 0
 
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Printf("\rThinking %s", spinnerChars[i%len(spinnerChars)])
-			i++
-		case <-ctx.Done():
-			// Clear spinner on cancellation
-			fmt.Print("\r" + strings.Repeat(" ", 20) + "\r")
-			return
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Printf("\rThinking %s", spinnerChars[i%len(spinnerChars)])
+				i++
+			case <-ctx.Done():
+				// Clear spinner on cancellation
+				fmt.Print("\r" + strings.Repeat(" ", 20) + "\r")
+				return
+			}
 		}
-	}
+	}()
+	return done
 }

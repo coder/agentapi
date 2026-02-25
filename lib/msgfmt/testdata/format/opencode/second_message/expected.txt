@@ -1,14 +1,15 @@
-  ┃
-  ┃  Shell Check git remote URLs to identify repository
-  ┃
-  ┃  $ git remote -v
-  ┃  origin    https://github.com/35C4n0r/agentapi (fetch)
-  ┃  origin    https://github.com/35C4n0r/agentapi (push)
-  ┃  upstream    https://github.com/coder/agentapi.git (fetch)
-  ┃  upstream    https://github.com/coder/agentapi.git (push)
-  ┃
+     This is the agentapi repository. Based on the codebase structure and documentation, it's a Go HTTP API server that controls various coding agents (like Claude Code, Aider, Goose, etc.) through
+     terminal emulation.
 
+     The main purpose of this repository is to:
 
-     This is the 35C4n0r/agentapi repository, which is a fork of
-     coder/agentapi.
-     Build claude-sonnet-4-20250514 (09:19 PM)
+     - Run coding agents in an in-memory terminal emulator
+     - Provide a unified HTTP API to interact with different agent types
+     - Parse terminal output into structured messages
+     - Include a Next.js web chat UI for interacting with agents
+     - Support multiple agent types with different message formats
+
+     The project supports agents like Claude Code, Aider, Goose, Codex, Gemini, and others, providing a standardized interface to communicate with them through HTTP endpoints and a web-based chat
+     interface.
+
+     Build claude-sonnet-4-20250514

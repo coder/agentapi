@@ -14,6 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coder/agentapi/lib/httpapi"
+	"github.com/coder/agentapi/lib/util"
+	"github.com/coder/quartz"
 	"github.com/spf13/cobra"
 	sse "github.com/tmaxmax/go-sse"
 	"golang.org/x/term"
@@ -213,7 +215,7 @@ func runAttach(remoteUrl string) error {
 	p.Send(finishMsg{})
 	select {
 	case <-pErrCh:
-	case <-time.After(1 * time.Second):
+	case <-util.After(quartz.NewReal(), 1*time.Second):
 	}
 
 	return err
