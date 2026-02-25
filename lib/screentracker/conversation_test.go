@@ -353,6 +353,44 @@ func TestConversation_EmptyInitialPrompt(t *testing.T) {
 	}
 }
 
+func TestConversation_InitialPrompt_MultiLine(t *testing.T) {
+	cfg := ConversationConfig{
+		AgentType:             msgfmt.AgentTypeClaude,
+		AgentIO:               &mockAgentIO{},
+		GetTime:               time.Now,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 300 * time.Millisecond,
+	}
+
+	multiLinePrompt := "Line 1\nLine 2\nLine 3"
+	c := NewConversation(context.Background(), cfg, multiLinePrompt)
+
+	if c.InitialPrompt != multiLinePrompt {
+		t.Errorf("expected multi-line prompt, got %q", c.InitialPrompt)
+	}
+	if c.InitialPromptSent {
+		t.Error("InitialPromptSent should be false for non-empty prompt")
+	}
+}
+
+func TestConversation_InitialPrompt_WhitespaceOnly(t *testing.T) {
+	cfg := ConversationConfig{
+		AgentType:             msgfmt.AgentTypeClaude,
+		AgentIO:               &mockAgentIO{},
+		GetTime:               time.Now,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 300 * time.Millisecond,
+	}
+
+	// Whitespace-only should be treated as empty
+	c := NewConversation(context.Background(), cfg, "   \n\t\n  ")
+
+	// InitialPromptSent should be true because the prompt is effectively empty
+	if !c.InitialPromptSent {
+		t.Error("InitialPromptSent should be true for whitespace-only prompt")
+	}
+}
+
 func TestGetStableSnapshotsThreshold(t *testing.T) {
 	tests := []struct {
 		stability time.Duration

@@ -112,7 +112,7 @@ func NewConversation(ctx context.Context, cfg ConversationConfig, initialPrompt 
 			},
 		},
 		InitialPrompt:     initialPrompt,
-		InitialPromptSent: len(initialPrompt) == 0,
+		InitialPromptSent: strings.TrimSpace(initialPrompt) == "",
 	}
 	return c
 }
@@ -162,8 +162,13 @@ func FindNewMessage(oldScreen, newScreen string, agentType msgfmt.AgentType) str
 		oldLinesMap[line] = true
 	}
 	firstNonMatchingLine := len(newLines)
-	for i, line := range newLines[dynamicHeaderEnd+1:] {
-		if !oldLinesMap[line] {
+	// Start from dynamicHeaderEnd+1 to skip header
+	startIdx := dynamicHeaderEnd + 1
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	for i := startIdx; i < len(newLines); i++ {
+		if !oldLinesMap[newLines[i]] {
 			firstNonMatchingLine = i
 			break
 		}
@@ -338,11 +343,22 @@ var MessageValidationErrorWhitespace = xerrors.New("message must be trimmed of l
 var MessageValidationErrorEmpty = xerrors.New("message must not be empty")
 var MessageValidationErrorChanging = xerrors.New("message can only be sent when the agent is waiting for user input")
 
+// isAskUserQuestionPrompt detects if the screen contains an AskUserQuestion TUI prompt
+// by checking for the "Enter to select" indicator that appears in interactive menus.
+func isAskUserQuestionPrompt(screen string) bool {
+	return strings.Contains(screen, "Enter to select")
+}
+
 func (c *Conversation) SendMessage(messageParts ...MessagePart) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if !c.cfg.SkipSendMessageStatusCheck && c.statusInner() != ConversationStatusStable {
+	// Auto-skip status check for AskUserQuestion prompts
+	// These interactive TUI menus never stabilize because the cursor keeps blinking
+	currentScreen := c.cfg.AgentIO.ReadScreen()
+	skipCheck := c.cfg.SkipSendMessageStatusCheck || isAskUserQuestionPrompt(currentScreen)
+
+	if !skipCheck && c.statusInner() != ConversationStatusStable {
 		return MessageValidationErrorChanging
 	}
 
@@ -418,6 +434,13 @@ func (c *Conversation) Messages() []ConversationMessage {
 	result := make([]ConversationMessage, len(c.messages))
 	copy(result, c.messages)
 	return result
+}
+
+// ClearMessages removes all messages from the conversation
+func (c *Conversation) ClearMessages() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.messages = []ConversationMessage{}
 }
 
 func (c *Conversation) Screen() string {

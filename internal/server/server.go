@@ -2,55 +2,65 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/kooshapari/agentapi/internal/routing"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/coder/agentapi/internal/routing"
 )
 
 // Server represents the agentapi HTTP server
 type Server struct {
-	port   int
-	router *routing.AgentBifrost
-	server *http.Server
+	port         int
+	router       *routing.AgentBifrost
+	agentHandler *AgentHandler
+	server       *http.Server
 }
 
 // New creates a new agentapi server
 func New(port int, router *routing.AgentBifrost) *Server {
-	return &Server{
+	s := &Server{
 		port:   port,
 		router: router,
 	}
+	s.agentHandler = NewAgentHandler(router)
+	return s
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
-	
+	r := chi.NewRouter()
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Logger)
+
 	// Health check
-	r.GET("/health", s.health)
-	
+	r.Get("/health", s.health)
+
+	// Agent lifecycle endpoints
+	s.agentHandler.RegisterRoutes(r)
+
 	// Agent routing endpoints
-	r.POST("/v1/chat/completions", s.chatCompletions)
-	
+	r.Post("/v1/chat/completions", s.chatCompletions)
+
 	// Management endpoints
-	r.GET("/admin/rules", s.listRules)
-	r.POST("/admin/rules", s.setRule)
-	r.GET("/admin/sessions", s.listSessions)
-	
+	r.Route("/admin", func(r chi.Router) {
+		r.Get("/rules", s.listRules)
+		r.Post("/rules", s.setRule)
+		r.Get("/sessions", s.listSessions)
+	})
+
 	// Connect to cliproxy+bifrost
-	r.Any("/proxy/*path", s.proxy)
-	
+	r.HandleFunc("/proxy/*", s.proxy)
+
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
 		Handler: r,
 	}
-	
+
 	return s.server.ListenAndServe()
 }
 
@@ -63,68 +73,69 @@ func (s *Server) Shutdown() {
 	}
 }
 
-func (s *Server) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status": "ok",
-	})
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func (s *Server) chatCompletions(c *gin.Context) {
+func (s *Server) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Agent  string `json:"agent"`
 		Model  string `json:"model"`
 		Prompt string `json:"prompt"`
 	}
-	
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	// Use "default" if no agent specified
 	agent := req.Agent
 	if agent == "" {
 		agent = "default"
 	}
-	
-	resp, err := s.router.RouteRequest(c.Request.Context(), agent, req.Prompt)
+
+	resp, err := s.router.RouteRequest(r.Context(), agent, req.Prompt)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
-	c.JSON(http.StatusOK, resp)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) listRules(c *gin.Context) {
-	// Return configured rules
-	c.JSON(http.StatusOK, gin.H{"rules": "configured"})
+func (s *Server) listRules(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"rules": "configured"})
 }
 
-func (s *Server) setRule(c *gin.Context) {
+func (s *Server) setRule(w http.ResponseWriter, r *http.Request) {
 	var rule routing.RoutingRule
-	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	s.router.SetRule(rule)
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func (s *Server) listSessions(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"sessions": "active"})
+func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"sessions": "active"})
 }
 
-func (s *Server) proxy(c *gin.Context) {
+func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	// Proxy requests to cliproxy+bifrost
-	path := c.Param("path")
-	
+	path := chi.URLParam(r, "*")
 	log.Printf("Proxying request to: %s", path)
-	
-	// Simple proxy - just forward the request
-	c.JSON(http.StatusOK, gin.H{
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
 		"proxied": path,
-		"method":  c.Request.Method,
+		"method":  r.Method,
 	})
 }

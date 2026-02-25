@@ -1,82 +1,177 @@
 # AgentAPI++ (KooshaPari Fork)
 
-This repository works with Claude and other AI agents as autonomous software engineers.
+**Forked from [coder/agentapi](https://github.com/coder/agentapi)** - HTTP API for controlling AI coding agents.
+
+---
+
+## What is AgentAPI++?
+
+AgentAPI++ provides an HTTP API to programmatically control CLI-based AI coding agents:
+
+```
+HTTP Request → AgentAPI++ → Terminal Emulator → Claude Code, Cursor, Aider, etc.
+```
+
+### Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **Multi-Agent Control** | Claude Code, Cursor, Aider, Codex, Goose, Gemini, Copilot, and more |
+| **HTTP Interface** | REST API for any language/platform |
+| **Terminal Emulation** | In-memory PTY for agent interaction |
+| **Message Parsing** | Structured responses from agent output |
+| **Session Management** | Persistent conversations with state |
+
+---
 
 ## Quick Start
 
+### Install Binary
+
 ```bash
-# Install binary
 OS=$(uname -s | tr "[:upper:]" "[:lower:]")
 ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
 curl -fsSL "https://github.com/KooshaPari/agentapi/releases/latest/download/agentapi-${OS}-${ARCH}" -o agentapi
 chmod +x agentapi
+```
 
-# Or build from source
+### Build from Source
+
+```bash
 go build -o agentapi main.go
-
-# Run with Claude Code
-./agentapi server -- claude
-
-# Run with Cursor
-./agentapi server -- cursor
 ```
 
-## External CLI Agent Control
-
-Control Claude Code, Cursor, Aider, Codex and other agents via HTTP API:
+### Run
 
 ```bash
-# Send message
-curl -X POST http://localhost:3284/api/v0/chat \
-  -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "Hello"}], "agent": "claude"}'
-
-# List agents
-curl http://localhost:3284/api/v0/agents
-
-# Get session
-curl http://localhost:3284/api/v0/sessions/{id}
-```
-
-### Agent Selection
-
-```bash
-# Claude Code (default)
+# Start with Claude Code
 ./agentapi server -- claude
 
-# Cursor
+# Start with specific agent
 ./agentapi server -- cursor
-
-# Aider
-./agentapi server -- aider
-
-# Codex (requires --type flag)
-./agentapi server --type=codex -- codex
+./agentapi server -- aider --model sonnet
 ```
+
+Server runs on port 3284 with chat UI at http://localhost:3284/chat
+
+---
 
 ## Supported Agents
 
-| Agent | Flag | Type | Description |
-|-------|------|------|-------------|
-| Claude Code | `claude` | auto | Anthropic's CLI |
-| Cursor | `cursor` | auto | Cursor IDE agent |
-| Aider | `aider` | auto | AI pair programming |
-| Codex | `codex` | explicit | OpenAI's coding agent |
-| Goose | `goose` | auto | Independent agent |
-| Gemini CLI | `gemini` | explicit | Google's CLI |
-| GitHub Copilot | `github-copilot` | explicit | GitHub's CLI |
-| Amazon Q | `amazon-q` | explicit | AWS developer agent |
-| Sourcegraph Amp | `amp` | explicit | Sourcegraph's agent |
-| Auggie | `auggie` | explicit | Augment Code's agent |
+| Agent | Type Flag | Description |
+|-------|-----------|-------------|
+| Claude Code | `claude` | Anthropic's CLI (default) |
+| Cursor | `cursor` | Cursor IDE agent |
+| Aider | `aider` | AI pair programming |
+| Goose | `goose` | Independent agent |
+| Codex | `codex` | OpenAI's coding agent |
+| Gemini CLI | `gemini` | Google's CLI |
+| GitHub Copilot | `github-copilot` | GitHub's CLI |
+| Sourcegraph Amp | `amp` | Sourcegraph's agent |
+| Amazon Q | `amazon-q` | AWS's developer agent |
+| Auggie | `auggie` | Augment Code's agent |
 
-## Documentation
+---
 
-- `docs/api/` - API endpoint reference
-- `docs/tutorials/` - Step-by-step guides
-- `docs/how-to/` - Common tasks
-- `docs/explanation/` - Architecture deep dives
+## API Endpoints
 
-## Environment
+### Core
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v0/chat` | POST | Send message, get response |
+| `/api/v0/agents` | GET | List supported agents |
+| `/api/v0/sessions` | GET | List active sessions |
+| `/api/v0/sessions/{id}` | GET | Get session details |
+
+### Streaming
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v0/chat/stream` | POST | Streaming responses |
+
+### Health
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
+
+---
+
+## Python Client
+
+```python
+import requests
+
+url = "http://localhost:3284/api/v0/chat"
+payload = {
+    "messages": [
+        {"role": "user", "content": "Hello, help me with Python"}
+    ],
+    "agent": "claude"
+}
+
+response = requests.post(url, json=payload)
+print(response.json())
+```
+
+### With Streaming
+
+```python
+import sseclient
+import requests
+
+url = "http://localhost:3284/api/v0/chat/stream"
+payload = {
+    "messages": [{"role": "user", "content": "Write a hello world"}],
+    "agent": "claude"
+}
+
+response = requests.post(url, json=payload, stream=True)
+client = sseclient.SSEClient(response)
+
+for event in client.events():
+    if event.data:
+        print(event.data)
+```
+
+---
+
+## Architecture
+
+```
+┌──────────────┐     ┌─────────────────┐     ┌────────────┐
+│   HTTP API   │────▶│    AgentAPI     │────▶│    Agent   │
+│  (this repo) │     │ (terminal emu)  │     │ (claude,   │
+│              │     │                 │     │  cursor)   │
+└──────────────┘     └─────────────────┘     └────────────┘
+                            │
+                            ▼
+                     ┌─────────────────┐
+                     │   Message       │
+                     │   Formatter     │
+                     │ (claude,goose,  │
+                     │  aider, etc)    │
+                     └─────────────────┘
+```
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| `cmd/` | CLI commands (server, attach) |
+| `lib/httpapi/` | HTTP server and routes |
+| `lib/termexec/` | Terminal process execution |
+| `lib/screentracker/` | Output parsing |
+| `lib/msgfmt/` | Agent-specific message formatting |
+| `chat/` | Next.js web UI |
+
+---
+
+## Configuration
+
+### Environment Variables
 
 ```bash
 export AGENTAPI_PORT=3284
@@ -84,117 +179,68 @@ export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
 export AGENTAPI_TIMEOUT=300
 ```
 
+### Config File
+
+```yaml
+server:
+  port: 3284
+  timeout: 300
+
+agents:
+  claude:
+    model: claude-3-5-sonnet-20241022
+    tools_enabled: true
+  cursor:
+    model: gpt-4o
+```
+
+---
+
+## Integration
+
+### With thegent (MCP)
+
+```yaml
+mcp:
+  servers:
+    agentapi:
+      command: agentapi
+      args: ["server", "--", "claude"]
+```
+
+### With cliproxy++
+
+Route LLM requests through cliproxy++ for cost optimization:
+
+```bash
+./agentapi server -- claude --llm-provider http://localhost:8317
+```
+
+---
+
+## Documentation
+
+- [API Reference](docs/api/) - Full API documentation
+- [Tutorials](docs/tutorials/) - Step-by-step guides
+- [How-to Guides](docs/how-to/) - Common tasks
+- [Architecture](docs/explanation/) - Deep dives
+
 ---
 
 ## Development Philosophy
 
 ### Extend, Never Duplicate
-
 - NEVER create a v2 file. Refactor the original.
 - NEVER create a new class if an existing one can be made generic.
 - NEVER create custom implementations when an OSS library exists.
-- Before writing ANY new code: search the codebase for existing patterns.
 
 ### Primitives First
-
 - Build generic building blocks before application logic.
 - A provider interface + registry is better than N isolated classes.
-- Template strings > hardcoded messages. Config-driven > code-driven.
 
 ### Research Before Implementing
-
 - Check pkg.go.dev for existing libraries.
 - Search GitHub for 80%+ implementations to fork/adapt.
-
----
-
-## Library Preferences (DO NOT REINVENT)
-
-| Need | Use | NOT |
-|------|-----|-----|
-| HTTP router | chi | custom router |
-| CLI | cobra | manual flag parsing |
-| Logging | zerolog | fmt.Print |
-| Terminal emulation | tty | raw os/exec |
-| Testing | testify | manual assertions |
-
----
-
-## Code Quality Non-Negotiables
-
-- Zero new lint suppressions without inline justification
-- All new code must pass: go fmt, go vet, golint
-- Max function: 40 lines
-- No placeholder TODOs in committed code
-
-### Go-Specific Rules
-
-- Use `go fmt` for formatting
-- Use `go vet` for linting
-- Use `golangci-lint` for comprehensive linting
-- All public APIs must have godoc comments
-
----
-
-## Verifiable Constraints
-
-| Metric | Threshold | Enforcement |
-|--------|-----------|-------------|
-| Tests | 80% coverage | CI gate |
-| Lint | 0 errors | golangci-lint |
-| Security | 0 critical | trivy scan |
-
----
-
-## Domain-Specific Patterns
-
-### What AgentAPI++ Is
-
-AgentAPI++ is an **HTTP API gateway** for controlling CLI-based AI coding agents. The core domain is: provide a unified HTTP interface to spawn, control, and interact with any CLI agent through terminal emulation.
-
-### Key Interfaces
-
-| Interface | Responsibility | Location |
-|-----------|---------------|----------|
-| **HTTP Server** | REST API for agent control | `lib/httpapi/` |
-| **Terminal Emulator** | PTY management | `lib/termexec/` |
-| **Output Parser** | Agent message extraction | `lib/screentracker/` |
-| **Message Formatter** | Agent-specific formatting | `lib/msgfmt/` |
-
-### Message Flow
-
-```
-1. HTTP Request → API Handler
-2. API Handler → Terminal Input
-3. Terminal Emulator → Agent Process
-4. Output Parser ← Agent Output
-5. SSE/Response ← Formatted Message
-```
-
-### Common Anti-Patterns to Avoid
-
-- **Blocking on agent output** -- Use streaming/SSE instead
-- **Hardcoded timeouts** -- Use configurable timeouts with env vars
-- **Missing agent type handling** -- Each agent has different output formats
-- **No session state** -- Agents maintain stateful conversations
-
----
-
-## Kush Ecosystem
-
-This project is part of the Kush multi-repo system:
-
-```
-kush/
-├── thegent/         # Agent orchestration
-├── agentapi++/      # HTTP API for coding agents (this repo)
-├── cliproxy++/      # LLM proxy with multi-provider support
-├── tokenledger/     # Token and cost tracking
-├── 4sgm/           # Python tooling workspace
-├── civ/             # Deterministic simulation
-├── parpour/         # Spec-first planning
-└── pheno-sdk/       # Python SDK
-```
 
 ---
 

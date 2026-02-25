@@ -33,6 +33,29 @@ type Message struct {
 	Time    time.Time           `json:"time" doc:"Timestamp of the message"`
 }
 
+// LogsResponse represents server logs
+type LogsResponse struct {
+	Body struct {
+		Logs []string `json:"logs" doc:"Server logs"`
+	}
+}
+
+// RateLimitResponse represents rate limit status
+type RateLimitResponse struct {
+	Body struct {
+		Enabled  bool `json:"enabled" doc:"Whether rate limiting is enabled"`
+		Requests int  `json:"requests" doc:"Requests per minute limit"`
+	}
+}
+
+// ConfigResponse represents the server configuration
+type ConfigResponse struct {
+	Body struct {
+		AgentType string `json:"agent_type" doc:"Type of the agent"`
+		Port      int    `json:"port" doc:"Server port"`
+	}
+}
+
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
@@ -45,6 +68,14 @@ type StatusResponse struct {
 type MessagesResponse struct {
 	Body struct {
 		Messages []Message `json:"messages" nullable:"false" doc:"List of messages"`
+	}
+}
+
+// MessagesClearResponse represents the response after clearing messages
+type MessagesClearResponse struct {
+	Body struct {
+		Ok    bool `json:"ok" doc:"Whether messages were cleared"`
+		Count int  `json:"count" doc:"Number of messages cleared"`
 	}
 }
 

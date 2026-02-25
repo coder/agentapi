@@ -1,0 +1,1 @@
+import{_ as r,o as e,c as a,ae as o}from"./chunks/framework.DdTkHido.js";const h=JSON.parse('{"title":"Worklog","description":"","frontmatter":{},"headers":[],"relativePath":"WORKLOG.md","filePath":"WORKLOG.md"}'),n={name:"WORKLOG.md"};function s(d,t,i,l,c,p){return e(),a("div",null,[...t[0]||(t[0]=[o("",7)])])}const u=r(n,[["render",s]]);export{h as __pageData,u as default};
