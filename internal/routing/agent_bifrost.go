@@ -10,23 +10,29 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/coder/agentapi/internal/benchmarks"
 )
 // AgentBifrost is the Bifrost extension for agent-specific routing
 // It sits between thegent and cliproxy+bifrost, providing:
 // - Custom routing rules per agent
 // - Session-aware load balancing
 // - Agent-specific governance
+// - Dynamic benchmark data from tokenledger
 type AgentBifrost struct {
 	cliproxyURL string
 	client     *http.Client
-	
+
 	// Session management
 	sessions    map[string]*AgentSession
 	sessionsMut sync.RWMutex
-	
+
 	// Agent-specific routing rules
 	rules      map[string]RoutingRule
 	rulesMut   sync.RWMutex
+
+	// Benchmark data for routing decisions
+	benchmarks *benchmarks.Store
 }
 
 // AgentSession represents a session with routing metadata
@@ -54,8 +60,9 @@ func NewAgentBifrost(cliproxyURL string) (*AgentBifrost, error) {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		sessions: make(map[string]*AgentSession),
-		rules:    make(map[string]RoutingRule),
+		sessions:   make(map[string]*AgentSession),
+		rules:      make(map[string]RoutingRule),
+		benchmarks: benchmarks.NewStore(),
 	}, nil
 }
 
@@ -188,4 +195,26 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens     int `json:"total_tokens"`
+}
+
+// ModelMetrics represents benchmark metrics for a model
+type ModelMetrics struct {
+	ModelID      string  `json:"model_id"`
+	QualityScore float64 `json:"quality_score"`
+	CostPer1K    float64 `json:"cost_per_1k"`
+	LatencyMs    int     `json:"latency_ms"`
+}
+
+// GetModelMetrics returns benchmark metrics for a model
+func (a *AgentBifrost) GetModelMetrics(modelID string) *ModelMetrics {
+	if a.benchmarks == nil {
+		return nil
+	}
+
+	return &ModelMetrics{
+		ModelID:      modelID,
+		QualityScore: a.benchmarks.GetQuality(modelID),
+		CostPer1K:    a.benchmarks.GetCost(modelID),
+		LatencyMs:    a.benchmarks.GetLatency(modelID),
+	}
 }
