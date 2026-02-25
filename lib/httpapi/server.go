@@ -371,6 +371,11 @@ func (s *Server) registerRoutes() {
 		o.Description = "Returns a list of messages representing the conversation history with the agent. Supports ?after=<id> and ?limit=<n> query parameters for pagination."
 	})
 
+	// DELETE /messages endpoint - clear all messages
+	huma.Delete(s.api, "/messages", s.clearMessages, func(o *huma.Operation) {
+		o.Description = "Clear all messages from conversation history."
+	})
+
 	// POST /message endpoint
 	huma.Post(s.api, "/message", s.createMessage, func(o *huma.Operation) {
 		o.Description = "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error."
@@ -489,6 +494,19 @@ func (s *Server) getMessages(ctx context.Context, input *struct {
 		}
 	}
 
+	return resp, nil
+}
+
+// clearMessages handles DELETE /messages
+func (s *Server) clearMessages(ctx context.Context, input *struct{}) (*MessagesClearResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	resp := &MessagesClearResponse{}
+	count := len(s.conversation.Messages())
+	s.conversation.ClearMessages()
+	resp.Body.Ok = true
+	resp.Body.Count = count
 	return resp, nil
 }
 
