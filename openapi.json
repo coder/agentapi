@@ -272,13 +272,27 @@
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
+          },
+          "transport": {
+            "$ref": "#/components/schemas/Transport",
+            "description": "Backend transport being used ('acp' or 'pty')."
           }
         },
         "required": [
           "agent_type",
-          "status"
+          "status",
+          "transport"
         ],
         "type": "object"
+      },
+      "Transport": {
+        "enum": [
+          "acp",
+          "pty"
+        ],
+        "example": "pty",
+        "title": "Transport",
+        "type": "string"
       },
       "UploadResponseBody": {
         "additionalProperties": false,
