@@ -212,6 +212,9 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 
 		if c.initialPromptReady && len(c.cfg.InitialPrompt) > 0 && !c.initialPromptSent {
+			// Safe to send under lock: the queue is guaranteed empty here because
+			// statusLocked blocks Send until the snapshot buffer fills, which
+			// cannot happen before this first enqueue completes.
 			c.outboundQueue <- outboundMessage{parts: c.cfg.InitialPrompt, errCh: nil}
 			c.initialPromptSent = true
 			c.dirty = true
