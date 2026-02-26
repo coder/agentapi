@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/coder/agentapi/lib/screentracker"
@@ -299,16 +298,6 @@ func cleanupPIDFile(pidFile string, logger *slog.Logger) {
 	} else if err == nil {
 		logger.Info("Removed PID file", "pidFile", pidFile)
 	}
-}
-
-// isProcessRunning checks if a process with the given PID is running
-func isProcessRunning(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = process.Signal(syscall.Signal(0))
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 type flagSpec struct {
