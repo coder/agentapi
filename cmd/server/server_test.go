@@ -675,8 +675,8 @@ func TestPIDFileOperations(t *testing.T) {
 		tmpDir := t.TempDir()
 		pidFile := tmpDir + "/test.pid"
 
-		// Create PID file
-		err := os.WriteFile(pidFile, []byte("12345\n"), 0o644)
+		// Create PID file with current process PID so ownership check passes
+		err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 		require.NoError(t, err)
 
 		// Cleanup

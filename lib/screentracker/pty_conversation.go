@@ -610,6 +610,12 @@ func (c *PTYConversation) SaveState() error {
 		return xerrors.Errorf("failed to encode state: %w", err)
 	}
 
+	// Flush to disk before rename for crash safety
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return xerrors.Errorf("failed to sync state file: %w", err)
+	}
+
 	// Close file before rename
 	if err := f.Close(); err != nil {
 		return xerrors.Errorf("failed to close temp state file: %w", err)
