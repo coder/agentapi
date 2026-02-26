@@ -328,10 +328,9 @@ export function ChatProvider({ children }: PropsWithChildren) {
         description: message,
       });
     } finally {
+      // Remove optimistic draft message if still present (may have been replaced by server response via SSE).
+      setMessages((prev) => prev.filter((m) => !isDraftMessage(m)));
       if (type === "user") {
-        setMessages((prevMessages) =>
-          prevMessages.filter((m) => !isDraftMessage(m))
-        );
         setLoading(false);
       }
     }

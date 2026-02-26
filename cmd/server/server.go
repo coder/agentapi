@@ -23,6 +23,7 @@ import (
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
 	"github.com/coder/agentapi/lib/msgfmt"
+	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
 )
 
@@ -145,11 +146,33 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
+	experimentalACP := viper.GetBool(FlagExperimentalACP)
+
+	if printOpenAPI && experimentalACP {
+		return xerrors.Errorf("flags --%s and --%s are mutually exclusive", FlagPrintOpenAPI, FlagExperimentalACP)
+	}
+
+	var agentIO st.AgentIO
+	transport := "pty"
 	var process *termexec.Process
+	var acpResult *httpapi.SetupACPResult
+
 	if printOpenAPI {
-		process = nil
+		agentIO = nil
+	} else if experimentalACP {
+		var err error
+		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
+			Program:     agent,
+			ProgramArgs: argsToPass[1:],
+		})
+		if err != nil {
+			return xerrors.Errorf("failed to setup ACP: %w", err)
+		}
+		acpIO := acpResult.AgentIO
+		agentIO = acpIO
+		transport = "acp"
 	} else {
-		process, err = httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
+		proc, err := httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
 			Program:        agent,
 			ProgramArgs:    argsToPass[1:],
 			TerminalWidth:  termWidth,
@@ -159,11 +182,14 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
 		}
+		process = proc
+		agentIO = proc
 	}
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
-		Process:        process,
+		AgentIO:        agentIO,
+		Transport:      httpapi.Transport(transport),
 		Port:           port,
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
@@ -195,6 +221,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 
 	// Monitor process exit
 	processExitCh := make(chan error, 1)
+	if process != nil {
 	go func() {
 		defer close(processExitCh)
 		defer gracefulCancel()
@@ -206,6 +233,19 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 			}
 		}
 	}()
+	}
+	if acpResult != nil {
+		go func() {
+			defer close(processExitCh)
+			defer close(acpResult.Done) // Signal cleanup goroutine to exit
+			if err := acpResult.Wait(); err != nil {
+				processExitCh <- xerrors.Errorf("ACP process exited: %w", err)
+			}
+			if err := srv.Stop(ctx); err != nil {
+				logger.Error("Failed to stop server", "error", err)
+			}
+		}()
+	}
 
 	// Start the server
 	serverErrCh := make(chan error, 1)
@@ -336,6 +376,7 @@ const (
 	FlagLoadState      = "load-state"
 	FlagSaveState      = "save-state"
 	FlagPidFile        = "pid-file"
+	FlagExperimentalACP = "experimental-acp"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -378,6 +419,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagLoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
 		{FlagSaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
 		{FlagPidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
+		{FlagExperimentalACP, "", false, "Use experimental ACP transport instead of PTY", "bool"},
 	}
 
 	for _, spec := range flagSpecs {
