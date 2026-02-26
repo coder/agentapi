@@ -135,6 +135,12 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		}
 	}
 
+	experimentalACP := viper.GetBool(FlagExperimentalACP)
+
+	if experimentalACP && (saveState || loadState) {
+		return xerrors.Errorf("ACP mode doesn't support state persistence")
+	}
+
 	pidFile := viper.GetString(FlagPidFile)
 
 	// Write PID file if configured
@@ -146,7 +152,6 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
-	experimentalACP := viper.GetBool(FlagExperimentalACP)
 
 	if printOpenAPI && experimentalACP {
 		return xerrors.Errorf("flags --%s and --%s are mutually exclusive", FlagPrintOpenAPI, FlagExperimentalACP)
@@ -222,17 +227,17 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	// Monitor process exit
 	processExitCh := make(chan error, 1)
 	if process != nil {
-	go func() {
-		defer close(processExitCh)
-		defer gracefulCancel()
-		if err := process.Wait(); err != nil {
-			if errors.Is(err, termexec.ErrNonZeroExitCode) {
-				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
-			} else {
-				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+		go func() {
+			defer close(processExitCh)
+			defer gracefulCancel()
+			if err := process.Wait(); err != nil {
+				if errors.Is(err, termexec.ErrNonZeroExitCode) {
+					processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
+				} else {
+					processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+				}
 			}
-		}
-	}()
+		}()
 	}
 	if acpResult != nil {
 		go func() {
@@ -362,20 +367,20 @@ type flagSpec struct {
 }
 
 const (
-	FlagType           = "type"
-	FlagPort           = "port"
-	FlagPrintOpenAPI   = "print-openapi"
-	FlagChatBasePath   = "chat-base-path"
-	FlagTermWidth      = "term-width"
-	FlagTermHeight     = "term-height"
-	FlagAllowedHosts   = "allowed-hosts"
-	FlagAllowedOrigins = "allowed-origins"
-	FlagExit           = "exit"
-	FlagInitialPrompt  = "initial-prompt"
-	FlagStateFile      = "state-file"
-	FlagLoadState      = "load-state"
-	FlagSaveState      = "save-state"
-	FlagPidFile        = "pid-file"
+	FlagType            = "type"
+	FlagPort            = "port"
+	FlagPrintOpenAPI    = "print-openapi"
+	FlagChatBasePath    = "chat-base-path"
+	FlagTermWidth       = "term-width"
+	FlagTermHeight      = "term-height"
+	FlagAllowedHosts    = "allowed-hosts"
+	FlagAllowedOrigins  = "allowed-origins"
+	FlagExit            = "exit"
+	FlagInitialPrompt   = "initial-prompt"
+	FlagStateFile       = "state-file"
+	FlagLoadState       = "load-state"
+	FlagSaveState       = "save-state"
+	FlagPidFile         = "pid-file"
 	FlagExperimentalACP = "experimental-acp"
 )
 
