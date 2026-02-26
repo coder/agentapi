@@ -202,10 +202,12 @@ func (c *PTYConversation) Start(ctx context.Context) {
 
 		var loadErr string
 		if c.initialPromptReady && c.loadStateStatus == LoadStatePending && c.cfg.StatePersistenceConfig.LoadState {
-			if err := c.loadStateLocked(); err != nil {
-				c.cfg.Logger.Error("Failed to load state", "error", err)
-				loadErr = fmt.Sprintf("Failed to restore previous session: %v", err)
+			if err, shouldEmit := c.loadStateLocked(); err != nil {
 				c.loadStateStatus = LoadStateFailed
+				if shouldEmit {
+					c.cfg.Logger.Error("Failed to load state", "error", err)
+					loadErr = fmt.Sprintf("Failed to restore previous session: %v", err)
+				}
 			} else {
 				c.loadStateStatus = LoadStateSucceeded
 			}
@@ -638,25 +640,26 @@ func (c *PTYConversation) SaveState() error {
 	return nil
 }
 
-// loadStateLocked loads the state, this method assumes that caller holds the Lock
-func (c *PTYConversation) loadStateLocked() error {
+// loadStateLocked loads the state, this method assumes that caller holds the Lock.
+// Returns (error, shouldEmit) where shouldEmit indicates if the error should be emitted to the user.
+func (c *PTYConversation) loadStateLocked() (error, bool) {
 	stateFile := c.cfg.StatePersistenceConfig.StateFile
 	loadState := c.cfg.StatePersistenceConfig.LoadState
 
 	if !loadState || c.loadStateStatus != LoadStatePending {
-		return nil
+		return nil, false
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		c.cfg.Logger.Info("No previous state to load (file does not exist)", "path", stateFile)
-		return xerrors.Errorf("No previous state to load (file does not exist)")
+		return xerrors.Errorf("No previous state to load (file does not exist)"), false
 	}
 
 	// Open state file
 	f, err := os.Open(stateFile)
 	if err != nil {
-		return xerrors.Errorf("failed to open state file: %w", err)
+		return xerrors.Errorf("failed to open state file: %w", err), true
 	}
 	defer func() {
 		if closeErr := f.Close(); closeErr != nil {
@@ -667,12 +670,12 @@ func (c *PTYConversation) loadStateLocked() error {
 	var agentState AgentState
 	decoder := json.NewDecoder(f)
 	if err := decoder.Decode(&agentState); err != nil {
-		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err)
+		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err), true
 	}
 
 	// Validate version
 	if agentState.Version != 1 {
-		return xerrors.Errorf("unsupported state file version %d (expected 1)", agentState.Version)
+		return xerrors.Errorf("unsupported state file version %d (expected 1)", agentState.Version), true
 	}
 
 	// Handle initial prompt restoration:
@@ -699,5 +702,5 @@ func (c *PTYConversation) loadStateLocked() error {
 	c.dirty = false
 
 	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
-	return nil
+	return nil, false
 }
