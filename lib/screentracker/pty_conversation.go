@@ -650,7 +650,7 @@ func (c *PTYConversation) loadStateLocked() error {
 	// Check if file exists
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		c.cfg.Logger.Info("No previous state to load (file does not exist)", "path", stateFile)
-		return nil
+		return xerrors.Errorf("No previous state to load (file does not exist)")
 	}
 
 	// Open state file
