@@ -94,6 +94,9 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 
 const defaultSubscriptionBufSize uint = 1024
 
+// maxStoredErrors caps the number of errors retained for late subscribers.
+const maxStoredErrors = 100
+
 type EventEmitterOption func(*EventEmitter)
 
 func WithSubscriptionBufSize(size uint) EventEmitterOption {
@@ -224,8 +227,11 @@ func (e *EventEmitter) EmitError(message string, level st.ErrorLevel) {
 		Time:    e.clock.Now(),
 	}
 
-	// Store the error so new subscribers can receive all errors
+	// Store the error so new subscribers can receive recent errors.
 	e.errors = append(e.errors, errorBody)
+	if len(e.errors) > maxStoredErrors {
+		e.errors = e.errors[len(e.errors)-maxStoredErrors:]
+	}
 
 	e.notifyChannels(EventTypeError, errorBody)
 }

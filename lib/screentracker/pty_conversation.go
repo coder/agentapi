@@ -200,10 +200,11 @@ func (c *PTYConversation) Start(ctx context.Context) {
 			c.initialPromptReady = true
 		}
 
+		var loadErr string
 		if c.initialPromptReady && c.loadStateStatus == LoadStatePending && c.cfg.StatePersistenceConfig.LoadState {
 			if err := c.loadStateLocked(); err != nil {
 				c.cfg.Logger.Error("Failed to load state", "error", err)
-				c.emitter.EmitError(fmt.Sprintf("Failed to restore previous session: %v", err), ErrorLevelWarning)
+				loadErr = fmt.Sprintf("Failed to restore previous session: %v", err)
 				c.loadStateStatus = LoadStateFailed
 			} else {
 				c.loadStateStatus = LoadStateSucceeded
@@ -211,6 +212,9 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 
 		if c.initialPromptReady && len(c.cfg.InitialPrompt) > 0 && !c.initialPromptSent {
+			// Safe to send under lock: the queue is guaranteed empty here because
+			// statusLocked blocks Send until the snapshot buffer fills, which
+			// cannot happen before this first enqueue completes.
 			c.outboundQueue <- outboundMessage{parts: c.cfg.InitialPrompt, errCh: nil}
 			c.initialPromptSent = true
 			c.dirty = true
@@ -226,6 +230,9 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 		c.lock.Unlock()
 
+		if loadErr != "" {
+			c.emitter.EmitError(loadErr, ErrorLevelWarning)
+		}
 		c.emitter.EmitStatus(status)
 		c.emitter.EmitMessages(messages)
 		c.emitter.EmitScreen(screen)
@@ -292,7 +299,8 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
 	}
-	if c.loadStateStatus == LoadStateSucceeded && !c.userSentMessageAfterLoadState && len(c.messages) > 0 {
+	if c.loadStateStatus == LoadStateSucceeded && !c.userSentMessageAfterLoadState && len(c.messages) > 0 &&
+		c.messages[len(c.messages)-1].Role == ConversationRoleAgent {
 		agentMessage = c.messages[len(c.messages)-1].Message
 	}
 	if c.cfg.FormatToolCall != nil {
@@ -605,6 +613,12 @@ func (c *PTYConversation) SaveState() error {
 		return xerrors.Errorf("failed to encode state: %w", err)
 	}
 
+	// Flush to disk before rename for crash safety
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return xerrors.Errorf("failed to sync state file: %w", err)
+	}
+
 	// Close file before rename
 	if err := f.Close(); err != nil {
 		return xerrors.Errorf("failed to close temp state file: %w", err)
@@ -668,7 +682,10 @@ func (c *PTYConversation) loadStateLocked() error {
 	c.initialPromptSent = agentState.InitialPromptSent
 	if len(c.cfg.InitialPrompt) > 0 {
 		isDifferent := buildStringFromMessageParts(c.cfg.InitialPrompt) != agentState.InitialPrompt
-		c.initialPromptSent = !isDifferent
+		if isDifferent {
+			c.initialPromptSent = false
+		}
+		// If same prompt, keep agentState.InitialPromptSent
 	} else if agentState.InitialPrompt != "" {
 		c.cfg.InitialPrompt = []MessagePart{MessagePartText{
 			Content: agentState.InitialPrompt,

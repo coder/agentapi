@@ -641,8 +641,9 @@ func TestPIDFileOperations(t *testing.T) {
 		tmpDir := t.TempDir()
 		pidFile := tmpDir + "/test.pid"
 
-		// Write initial PID file
-		err := os.WriteFile(pidFile, []byte("12345\n"), 0o644)
+		// Write a non-numeric PID so strconv.Atoi fails and the liveness
+		// check is skipped, avoiding flakes when a real PID matches.
+		err := os.WriteFile(pidFile, []byte("not-a-pid\n"), 0o644)
 		require.NoError(t, err)
 
 		// Overwrite with current PID
@@ -657,12 +658,25 @@ func TestPIDFileOperations(t *testing.T) {
 		assert.Equal(t, expectedPID, string(data))
 	})
 
+	t.Run("writePIDFile detects running process", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pidFile := tmpDir + "/test.pid"
+
+		// Write the current process PID so isProcessRunning returns true.
+		err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
+		require.NoError(t, err)
+
+		err = writePIDFile(pidFile, discardLogger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "another instance is already running")
+	})
+
 	t.Run("cleanupPIDFile removes file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		pidFile := tmpDir + "/test.pid"
 
-		// Create PID file
-		err := os.WriteFile(pidFile, []byte("12345\n"), 0o644)
+		// Create PID file with current process PID so ownership check passes
+		err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 		require.NoError(t, err)
 
 		// Cleanup

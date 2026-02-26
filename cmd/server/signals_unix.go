@@ -18,7 +18,7 @@ import (
 func handleSignals(ctx context.Context, cancel context.CancelFunc, logger *slog.Logger, srv *httpapi.Server) {
 	// Handle shutdown signals (SIGTERM, SIGINT, SIGHUP)
 	shutdownCh := make(chan os.Signal, 1)
-	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		defer signal.Stop(shutdownCh)
 		sig := <-shutdownCh

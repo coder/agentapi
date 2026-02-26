@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/coder/agentapi/lib/screentracker"
@@ -292,23 +291,26 @@ func writePIDFile(pidFile string, logger *slog.Logger) error {
 	return nil
 }
 
-// cleanupPIDFile removes the PID file if it exists
+// cleanupPIDFile removes the PID file if it was written by this process.
 func cleanupPIDFile(pidFile string, logger *slog.Logger) {
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Error("Failed to read PID file for cleanup", "pidFile", pidFile, "error", err)
+		}
+		return
+	}
+	pidStr := strings.TrimSpace(string(data))
+	filePID, err := strconv.Atoi(pidStr)
+	if err != nil || filePID != os.Getpid() {
+		logger.Info("PID file belongs to another process, skipping cleanup", "pidFile", pidFile, "filePID", pidStr)
+		return
+	}
 	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
 		logger.Error("Failed to remove PID file", "pidFile", pidFile, "error", err)
 	} else if err == nil {
 		logger.Info("Removed PID file", "pidFile", pidFile)
 	}
-}
-
-// isProcessRunning checks if a process with the given PID is running
-func isProcessRunning(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = process.Signal(syscall.Signal(0))
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 type flagSpec struct {
