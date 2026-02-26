@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/coder/agentapi/lib/logctx"
 	mf "github.com/coder/agentapi/lib/msgfmt"

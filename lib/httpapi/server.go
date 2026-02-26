@@ -104,8 +104,8 @@ const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
 	AgentType              mf.AgentType
-	AgentIO        st.AgentIO
-	Transport      Transport
+	AgentIO                st.AgentIO
+	Transport              Transport
 	Port                   int
 	ChatBasePath           string
 	AllowedHosts           []string
@@ -274,18 +274,19 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 			return nil, fmt.Errorf("PTY transport requires termexec.Process")
 		}
 		conversation = st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType:              config.AgentType,
-		AgentIO:                proc,
-		Clock:                  config.Clock,
-		SnapshotInterval:       snapshotInterval,
-		ScreenStabilityLength:  2 * time.Second,
-		FormatMessage:          formatMessage,
-		ReadyForInitialPrompt:  isAgentReadyForInitialPrompt,
-		FormatToolCall:         formatToolCall,
-		InitialPrompt:          initialPrompt,
-		Logger:                 logger,
-		StatePersistenceConfig: config.StatePersistenceConfig,
-	}, emitter)}
+			AgentType:              config.AgentType,
+			AgentIO:                proc,
+			Clock:                  config.Clock,
+			SnapshotInterval:       snapshotInterval,
+			ScreenStabilityLength:  2 * time.Second,
+			FormatMessage:          formatMessage,
+			ReadyForInitialPrompt:  isAgentReadyForInitialPrompt,
+			FormatToolCall:         formatToolCall,
+			InitialPrompt:          initialPrompt,
+			Logger:                 logger,
+			StatePersistenceConfig: config.StatePersistenceConfig,
+		}, emitter)
+	}
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")

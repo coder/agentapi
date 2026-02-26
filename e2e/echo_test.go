@@ -274,7 +274,7 @@ func TestE2E(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		script, apiClient := setup(ctx, t, &params{
+		script, apiClient, cleanup := setup(ctx, t, &params{
 			cmdFn: func(ctx context.Context, t testing.TB, serverPort int, binaryPath, cwd, scriptFilePath string) (string, []string) {
 				return binaryPath, []string{
 					"server",
@@ -283,7 +283,8 @@ func TestE2E(t *testing.T) {
 					"--", "go", "run", filepath.Join(cwd, "acp_echo.go"), scriptFilePath,
 				}
 			},
-		})
+		}, true)
+		defer cleanup()
 		messageReq := agentapisdk.PostMessageParams{
 			Content: "This is a test message.",
 			Type:    agentapisdk.MessageTypeUser,

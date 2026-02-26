@@ -964,7 +964,7 @@ func TestServer_Stop_Idempotency(t *testing.T) {
 
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
-		Process:        nil,
+		AgentIO:        nil,
 		Port:           0,
 		ChatBasePath:   "/chat",
 		AllowedHosts:   []string{"*"},
