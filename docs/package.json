@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "docs:index": "bash scripts/generate-doc-index.sh",
     "docs:dev": "vitepress dev .",
-    "docs:build": "vitepress build .",
+    "docs:build": "bash scripts/generate-doc-index.sh && vitepress build .",
     "docs:preview": "vitepress preview ."
   },
   "devDependencies": {

@@ -1,3 +1,3 @@
-# Api
+# Development Guide
 
 <CategorySwitcher />
