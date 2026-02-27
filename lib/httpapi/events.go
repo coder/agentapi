@@ -175,10 +175,10 @@ func (e *EventEmitter) EmitStatus(newStatus st.ConversationStatus) {
 
 	newAgentStatus, err := convertStatus(newStatus)
 	if err != nil {
-		return err
+		return
 	}
 	if e.status == newAgentStatus {
-		return nil
+		return
 	}
 
 	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: e.agentType})

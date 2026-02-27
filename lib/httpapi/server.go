@@ -523,7 +523,9 @@ func (s *Server) clearMessages(ctx context.Context, input *struct{}) (*MessagesC
 
 	resp := &MessagesClearResponse{}
 	count := len(s.conversation.Messages())
-	s.conversation.ClearMessages()
+	if clearer, ok := any(s.conversation).(interface{ ClearMessages() }); ok {
+		clearer.ClearMessages()
+	}
 	resp.Body.Ok = true
 	resp.Body.Count = count
 	return resp, nil
