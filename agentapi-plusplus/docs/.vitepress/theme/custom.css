@@ -1,0 +1,65 @@
+/* VitePress Custom Theme Styles */
+
+/* Brand Colors */
+:root {
+  --vp-c-brand-1: #646cff;
+  --vp-c-brand-2: #747bff;
+  --vp-c-brand-3: #535bf2;
+  --vp-c-brand-soft: rgba(100, 108, 255, 0.14);
+}
+
+/* Dark mode brand colors */
+.dark {
+  --vp-c-brand-1: #818cf8;
+  --vp-c-brand-2: #a5b4fc;
+  --vp-c-brand-3: #6366f1;
+  --vp-c-brand-soft: rgba(129, 140, 248, 0.14);
+}
+
+/* Custom callout styles */
+.callout {
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  border-left: 4px solid;
+}
+
+.callout.tip {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: #22c55e;
+}
+
+.callout.warning {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: #eab308;
+}
+
+.callout.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+.callout.note {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #3b82f6;
+}
+
+/* Smooth transitions */
+.VPNav, .VPContent, .VPFooter {
+  transition: background-color 0.3s ease;
+}
+
+/* Enhanced code blocks */
+.vp-doc div[class*='language-'] {
+  border-radius: 8px;
+}
+
+/* Custom link styles */
+.vp-doc a {
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.vp-doc a:hover {
+  text-decoration: underline;
+}

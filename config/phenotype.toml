@@ -1,0 +1,8 @@
+[phenotype]
+repo = "agentapi-plusplus"
+
+[flags]
+# Default feature flags - all disabled initially
+
+[config]
+# Default config values

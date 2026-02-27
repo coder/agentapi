@@ -1,0 +1,14 @@
+  ┃
+  ┃  Shell Check git remote URLs to identify repository
+  ┃
+  ┃  $ git remote -v
+  ┃  origin    https://github.com/35C4n0r/agentapi (fetch)
+  ┃  origin    https://github.com/35C4n0r/agentapi (push)
+  ┃  upstream    https://github.com/coder/agentapi.git (fetch)
+  ┃  upstream    https://github.com/coder/agentapi.git (push)
+  ┃
+
+
+     This is the 35C4n0r/agentapi repository, which is a fork of
+     coder/agentapi.
+     Build claude-sonnet-4-20250514 (09:19 PM)

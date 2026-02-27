@@ -1,0 +1,12 @@
+✓ coder loaded in 0.03 s
+
+Welcome to Amazon Q!
+
+💡 Run /prompts to learn how to build & run repeatable workflows
+
+/help all commands
+ctrl + j new lines
+ctrl + s fuzzy search
+
+
+🤖 You are chatting with claude-sonnet-4

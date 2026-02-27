@@ -1,0 +1,9 @@
+Based on the code snippet you shared, this appears to be from the               
+ChatInterface.tsx component in your project. The code shows a React useEffect   
+hook that sets up polling for messages and server status.                       
+                                                                                
+To confirm and make any changes to this file, I'll need you to add it to the    
+chat:                                                                           
+                                                                                
+Please add chat/src/components/ChatInterface.tsx to the chat so I can see the   
+full context and make any necessary changes.

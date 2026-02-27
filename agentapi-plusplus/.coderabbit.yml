@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+inheritance: true
+
+# Optional central policy source (populate in the central repo when ready):
+remote_config:
+  url: "https://raw.githubusercontent.com/0xquinto/bcherny-claude/main/.coderabbit.yml"
+
+tone_instructions: |
+  You are running a cloud-first, iterative review gate before merge.
+  Enforce a review loop of 5-10 rounds when suggestions/revisions are needed: keep reviewing
+  on each pushed commit until implementation is stable, then only approve when checks remain green.
+  Focus review on correctness, security, and versioning consistency (alpha, beta, release,
+  production branch flow).
+  Require explicit branch hygiene: never merge directly to main without passing the
+  configured review checkpoint(s) and version path checks.
+
+chat:
+  auto_reply: true
+
+reviews:
+  profile: "assertive"
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  review_status: true
+  commit_status: true
+  changed_files_summary: true
+  review_details: true
+  poem: false
+  request_changes_workflow: true
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+    base_branches:
+      - main
+      - develop
+      - development
+      - alpha
+      - beta
+      - canary
+      - staging
+      - production
+      - release/*
+  pre_merge_checks:
+    description:
+      mode: error
+    conventional_titles:
+      mode: warning
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/.next/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/target/**"
+    - "!**/.venv/**"
+  path_instructions:
+    - path: "**/Cargo.toml"
+      instructions: |
+        Validate crate dependency/version alignment and branch versioning strategy when branch changes are made.
+    - path: "**/package.json"
+      instructions: |
+        Enforce modern tool policy defaults: uv over pip, bun over npm, and equivalent modern alternatives.

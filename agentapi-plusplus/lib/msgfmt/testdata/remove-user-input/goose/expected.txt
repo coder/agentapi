@@ -1,0 +1,12 @@
+                                                                                
+Let me search for this code snippet using ripgrep.                              
+─── shell | developer ──────────────────────────                                
+command: rg "const messageInterval = setInterval\(fetchMessages, 1000\);" -l    
+                                                                                
+                                                                                
+bash: line 1: rg: command not found                                             
+                                                                                
+I apologize for the error. It seems ripgrep isn't installed. Let me try using gr
+ep instead:                                                                     
+─── shell | developer ──────────────────────────                                
+command: grep -r "const messageInterval = setInterval(fetchMessages, 1000);" .  

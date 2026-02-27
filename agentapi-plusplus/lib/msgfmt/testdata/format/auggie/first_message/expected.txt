@@ -1,0 +1,7 @@
+  Getting started with Auggie by Augment Code
+  1. You can ask questions, edit files, or run commands
+  2. Your workspace is automatically indexed for best results
+  3. Commands will run automatically
+
+
+  💡 For automation, use 'auggie --print "your task"'

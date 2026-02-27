@@ -1,0 +1,59 @@
+version: '3'
+
+tasks:
+  # Quality gate - runs strict lint, type check, tests, and security
+  quality:
+    desc: "Run full strict quality pipeline (lint/test/security)"
+    cmds:
+      - task: lint
+      - task: test
+      - task: lint:security
+      - task: fmt
+
+  quality:strict:
+    desc: "Run strict quality with extra checks"
+    cmds:
+      - golangci-lint run ./... --timeout 5m
+      - go test ./... -race -covermode=atomic
+      - go vet ./...
+      - staticcheck ./... || true
+      - gosec -fs ./... || true
+
+  lint:
+    cmds:
+      - golangci-lint run ./...
+
+  lint:security:
+    cmds:
+      - go vet ./...
+      - staticcheck ./... || true
+      - gosec -fs ./... || true
+
+  fmt:
+    cmds:
+      - gofmt -l -w -s .
+      - goimports -l -w -s .
+
+  test:
+    cmds:
+      - go test ./...
+
+  build:
+    cmds:
+      - make build
+
+  docs:install:
+    dir: docs
+    cmds:
+      - npm install
+
+  docs:build:
+    dir: docs
+    cmds:
+      - npm run docs:build
+
+  quality:
+    cmds:
+      - task lint
+      - task test
+      - task docs:build

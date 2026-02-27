@@ -1,0 +1,10 @@
+[
+  {
+    "expectMessage": "",
+    "responseMessage": "Hello! I'm ready to help you. Please send me a message to echo back."
+  },
+  {
+    "expectMessage": "This is a test message.",
+    "responseMessage": "Echo: This is a test message."
+  }
+]

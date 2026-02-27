@@ -1,0 +1,9 @@
+────────────────────────────────────────────────────────────────────────────────
+Aider v0.81.1                                                                   
+Main model: anthropic/claude-3-7-sonnet-20250219 with diff edit format, infinite
+output                                                                          
+Weak model: anthropic/claude-3-5-haiku-20241022                                 
+Git repo: .git with 47 files                                                    
+Repo-map: using 4096 tokens, auto refresh                                       
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               

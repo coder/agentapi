@@ -1,0 +1,14 @@
+╭────────────────────────────────────────────╮                                  
+│ ✻ Welcome to Claude Code research preview! │                                  
+│                                            │                                  
+│   /help for help                           │                                  
+│                                            │                                  
+│   cwd: /Users/hugodutka/dev/agentapi      │                                  
+╰────────────────────────────────────────────╯                                  
+                                                                                
+ Tips for getting started:                                                      
+                                                                                
+ 1. Run /init to create a CLAUDE.md file with instructions for Claude           
+ 2. Run /terminal-setup to set up terminal integration                          
+ 3. Use Claude to help with file analysis, editing, bash commands and git       
+ 4. Be as specific as you would with another engineer for the best results      
