@@ -1,0 +1,14 @@
+vcs:
+  type: git
+agents:
+  available:
+  - copilot
+  - claude
+  - gemini
+  - cursor
+  - codex
+  - kilocode
+  selection:
+    strategy: preferred
+    preferred_implementer: codex
+    preferred_reviewer: codex

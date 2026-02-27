@@ -11,9 +11,9 @@ func TestParseRecording(t *testing.T) {
 		"width": 80,
 		"height": 24,
 		"lines": [
-			[0.0, "o", [["Hello world"]],
-			[0.5, "o", [["Thinking..."]],
-			[1.0, "o", [["Response here"]]
+			[0.0, "o", [["Hello world"]]],
+			[0.5, "o", [["Thinking..."]]],
+			[1.0, "o", [["Response here"]]]
 		]
 	}`
 

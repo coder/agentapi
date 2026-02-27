@@ -25,9 +25,34 @@ type Recording struct {
 
 // Event represents a single asciinema event
 type Event struct {
-	Time float64       `json:"time"`
-	Type string        `json:"type"`
-	Data interface{}  `json:"data"`
+	Time float64
+	Type string
+	Data interface{}
+}
+
+// UnmarshalJSON implements custom unmarshaling for asciinema v2 event array [time, type, data]
+func (e *Event) UnmarshalJSON(data []byte) error {
+	var arr []interface{}
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	if len(arr) < 3 {
+		return fmt.Errorf("invalid event array length: %d", len(arr))
+	}
+
+	var ok bool
+	e.Time, ok = arr[0].(float64)
+	if !ok {
+		return fmt.Errorf("invalid time format in event")
+	}
+
+	e.Type, ok = arr[1].(string)
+	if !ok {
+		return fmt.Errorf("invalid type format in event")
+	}
+
+	e.Data = arr[2]
+	return nil
 }
 
 // ParseRecording parses an asciinema recording file
