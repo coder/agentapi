@@ -9,6 +9,8 @@ import {
   ArrowUpIcon,
   CornerDownLeftIcon,
   DeleteIcon,
+  Mic,
+  MicOff,
   SendIcon,
   Upload,
   Square,
@@ -20,6 +22,14 @@ import {useChat} from "./chat-provider";
 import {DragDrop} from "./drag-drop";
 import {toast} from "sonner";
 import {getErrorMessage} from "@/lib/error-utils";
+
+// TypeScript declarations for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
 
 interface MessageInputProps {
   onSendMessage: (message: string, type: "user" | "raw") => void;
@@ -63,6 +73,54 @@ export default function MessageInput({
   const [controlAreaFocused, setControlAreaFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {uploadFiles} = useChat();
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  // Voice input handler
+  const handleVoiceInput = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("Voice input not supported in this browser");
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      
+      recognition.onresult = (event: any) => {
+        let finalTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setMessage((prev) => prev + " " + finalTranscript);
+        }
+      };
+      
+      recognition.onerror = (event: any) => {
+        console.error("Voice input error:", event.error);
+        setIsListening(false);
+        toast.error("Voice input failed");
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+      
+      recognitionRef.current = recognition;
+      recognition.start();
+      setIsListening(true);
+    }
+  };
 
   const handleFilesAdded = async (files: File[]) => {
     for (const file of files) {
@@ -284,16 +342,31 @@ export default function MessageInput({
                   }
 
                   {inputMode === "text" && serverStatus !== "running" && (
-                    <Button
-                      type="submit"
-                      disabled={disabled || !message.trim()}
-                      size="icon"
-                      className="rounded-full"
-                      title={"Send Message"}
-                    >
-                      <SendIcon/>
-                      <span className="sr-only">Send</span>
-                    </Button>
+                  {inputMode === "text" && serverStatus !== "running" && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant={isListening ? "destructive" : "ghost"}
+                        onClick={handleVoiceInput}
+                        disabled={disabled}
+                        className="rounded-full"
+                        title={isListening ? "Stop recording" : "Voice input"}
+                      >
+                        {isListening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={disabled || !message.trim()}
+                        size="icon"
+                        className="rounded-full"
+                        title={"Send Message"}
+                      >
+                        <SendIcon/>
+                        <span className="sr-only">Send</span>
+                      </Button>
+                    </div>
+                  )}
                   )}
 
                   {inputMode === "text" && serverStatus === "running" && (

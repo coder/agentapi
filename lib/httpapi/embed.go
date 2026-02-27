@@ -24,7 +24,7 @@ func createModifiedFS(baseFS fs.FS, oldBasePath string, newBasePath string) (*af
 	newFS := afero.NewCopyOnWriteFs(ro, overlay)
 
 	// Use fs.WalkDir instead of afero.Walk for better embed.FS compatibility
-	err := fs.WalkDir(baseFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
+	if err := fs.WalkDir(baseFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			// Skip files that can't be accessed (e.g., due to path issues)
 			if os.IsNotExist(walkErr) || os.IsPermission(walkErr) {
@@ -45,12 +45,14 @@ func createModifiedFS(baseFS fs.FS, oldBasePath string, newBasePath string) (*af
 			contents = strings.ReplaceAll(contents, oldBasePath+"/", newBasePath)
 		}
 		contents = strings.ReplaceAll(contents, oldBasePath, newBasePath)
-		if err := afero.WriteFile(overlay, path, []byte(contents), 0o644); err != nil {
-			return xerrors.Errorf("failed to write file: %w", err)
+
+		// Use forward slashes for the overlay path
+		overlayPath := strings.ReplaceAll(path, "\\", "/")
+		if err := afero.WriteFile(overlay, overlayPath, []byte(contents), 0644); err != nil {
+			return xerrors.Errorf("failed to write file %s: %w", overlayPath, err)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, xerrors.Errorf("fs.WalkDir: %w", err)
 	}
 

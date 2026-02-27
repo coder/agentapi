@@ -59,6 +59,7 @@ type MessagePart interface {
 //   - Returning a textual representation of the conversation "screen" (used for notifying subscribers of updates to the conversation).
 type Conversation interface {
 	Messages() []ConversationMessage
+	ClearMessages()
 	Send(...MessagePart) error
 	Start(context.Context)
 	Status() ConversationStatus

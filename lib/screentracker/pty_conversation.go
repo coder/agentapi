@@ -286,6 +286,12 @@ func (c *PTYConversation) snapshotLocked(screen string) {
 	c.updateLastAgentMessageLocked(screen, snapshot.timestamp)
 }
 
+// isAskUserQuestionPrompt detects if the screen contains an AskUserQuestion TUI prompt
+// by checking for the "Enter to select" indicator that appears in interactive menus.
+func isAskUserQuestionPrompt(screen string) bool {
+	return strings.Contains(screen, "Enter to select")
+}
+
 func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	// Validate message content before enqueueing
 	var sb strings.Builder
@@ -301,7 +307,12 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	}
 
 	c.lock.Lock()
-	if c.statusLocked() != ConversationStatusStable {
+	// Auto-skip status check for AskUserQuestion prompts
+	// These interactive TUI menus never stabilize because the cursor keeps blinking
+	currentScreen := c.cfg.AgentIO.ReadScreen()
+	skipCheck := isAskUserQuestionPrompt(currentScreen)
+
+	if !skipCheck && c.statusLocked() != ConversationStatusStable {
 		c.lock.Unlock()
 		return ErrMessageValidationChanging
 	}
@@ -478,6 +489,19 @@ func (c *PTYConversation) Messages() []ConversationMessage {
 	defer c.lock.Unlock()
 
 	return c.messagesLocked()
+}
+
+func (c *PTYConversation) ClearMessages() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.messages = []ConversationMessage{
+		{
+			Message: "",
+			Role:    ConversationRoleAgent,
+			Time:    c.cfg.Clock.Now(),
+		},
+	}
 }
 
 // messagesLocked returns a copy of messages. Caller MUST hold c.lock.

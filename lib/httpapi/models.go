@@ -12,17 +12,26 @@ import (
 type MessageType string
 
 const (
-	MessageTypeUser MessageType = "user"
-	MessageTypeRaw  MessageType = "raw"
+	MessageTypeUser    MessageType = "user"
+	MessageTypeRaw    MessageType = "raw"
+	MessageTypeCommand MessageType = "command"
 )
 
 var MessageTypeValues = []MessageType{
 	MessageTypeUser,
 	MessageTypeRaw,
+	MessageTypeCommand,
 }
 
 func (m MessageType) Schema(r huma.Registry) *huma.Schema {
 	return util.OpenAPISchema(r, "MessageType", MessageTypeValues)
+}
+
+// VersionResponse represents the version info
+type VersionResponse struct {
+	Body struct {
+		Version string `json:"version" doc:"AgentAPI version"`
+	}
 }
 
 // Message represents a message
@@ -56,6 +65,13 @@ type ConfigResponse struct {
 	}
 }
 
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Body struct {
+		Status string `json:"status" doc:"Health status"`
+	}
+}
+
 // StatusResponse represents the server status
 type StatusResponse struct {
 	Body struct {
@@ -64,10 +80,26 @@ type StatusResponse struct {
 	}
 }
 
+// InfoResponse represents the server and agent info
+type InfoResponse struct {
+	Body struct {
+		Version   string          `json:"version" doc:"AgentAPI version"`
+		AgentType mf.AgentType   `json:"agent_type" doc:"Type of the agent being used by the server."`
+		Features  map[string]bool `json:"features" doc:"Supported features"`
+	}
+}
+
 // MessagesResponse represents the list of messages
 type MessagesResponse struct {
 	Body struct {
 		Messages []Message `json:"messages" nullable:"false" doc:"List of messages"`
+	}
+}
+
+// MessagesCountResponse represents the count of messages
+type MessagesCountResponse struct {
+	Body struct {
+		Count int `json:"count" doc:"Number of messages in the conversation history"`
 	}
 }
 
@@ -80,8 +112,8 @@ type MessagesClearResponse struct {
 }
 
 type MessageRequestBody struct {
-	Content string      `json:"content" example:"Hello, agent!" doc:"Message content"`
-	Type    MessageType `json:"type" doc:"A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal."`
+	Content string      `json:"content" example:"/help" doc:"Message content"`
+	Type    MessageType `json:"type" doc:"A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal. A 'command' type message sends a slash command directly to the agent (e.g., /help, /resume, /undo)."`
 }
 
 // MessageRequest represents a request to create a new message

@@ -371,9 +371,22 @@ func (s *Server) registerRoutes() {
 		o.Description = "Returns the server configuration."
 	})
 
+	// GET /health endpoint - liveness probe for load balancers
+	huma.Get(s.api, "/health", s.getHealth, func(o *huma.Operation) {
+		o.Description = "Health check endpoint for load balancers."
+	})
+	// GET /version endpoint
+	huma.Get(s.api, "/version", s.getVersion, func(o *huma.Operation) {
+		o.Description = "Returns the server version."
+	})
+
 	// GET /status endpoint
 	huma.Get(s.api, "/status", s.getStatus, func(o *huma.Operation) {
 		o.Description = "Returns the current status of the agent."
+	})
+	// GET /info endpoint - returns agent and server info
+	huma.Get(s.api, "/info", s.getInfo, func(o *huma.Operation) {
+		o.Description = "Returns information about the server and agent."
 	})
 
 	// GET /messages endpoint
@@ -386,6 +399,11 @@ func (s *Server) registerRoutes() {
 	huma.Delete(s.api, "/messages", s.clearMessages, func(o *huma.Operation) {
 		o.Description = "Clear all messages from conversation history."
 	})
+	// GET /messages/count endpoint
+	huma.Get(s.api, "/messages/count", s.getMessagesCount, func(o *huma.Operation) {
+		o.Description = "Returns the count of messages in the conversation."
+	})
+
 
 	// POST /message endpoint
 	huma.Post(s.api, "/message", s.createMessage, func(o *huma.Operation) {
@@ -447,6 +465,38 @@ func (s *Server) getConfig(ctx context.Context, input *struct{}) (*ConfigRespons
 	resp := &ConfigResponse{}
 	resp.Body.AgentType = string(s.agentType)
 	resp.Body.Port = s.port
+	return resp, nil
+}
+
+// getHealth handles GET /health
+func (s *Server) getHealth(ctx context.Context, input *struct{}) (*HealthResponse, error) {
+	resp := &HealthResponse{}
+	resp.Body.Status = "ok"
+	return resp, nil
+}
+
+// getVersion handles GET /version
+func (s *Server) getVersion(ctx context.Context, input *struct{}) (*VersionResponse, error) {
+	resp := &VersionResponse{}
+	resp.Body.Version = version.Version
+	return resp, nil
+}
+
+// getInfo handles GET /info
+func (s *Server) getInfo(ctx context.Context, input *struct{}) (*InfoResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	resp := &InfoResponse{}
+	resp.Body.Version = version.Version
+	resp.Body.AgentType = s.agentType
+	resp.Body.Features = map[string]bool{
+		"messages":    true,
+		"events":      true,
+		"upload":      true,
+		"pagination":  true,
+		"slashCmd":    true,
+	}
 	return resp, nil
 }
 
@@ -531,6 +581,16 @@ func (s *Server) clearMessages(ctx context.Context, input *struct{}) (*MessagesC
 	return resp, nil
 }
 
+// getMessagesCount handles GET /messages/count
+func (s *Server) getMessagesCount(ctx context.Context, input *struct{}) (*MessagesCountResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	resp := &MessagesCountResponse{}
+	resp.Body.Count = len(s.conversation.Messages())
+	return resp, nil
+}
+
 // createMessage handles POST /message
 func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*MessageResponse, error) {
 	s.mu.Lock()
@@ -544,6 +604,15 @@ func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*Mes
 	case MessageTypeRaw:
 		if _, err := s.agentio.Write([]byte(input.Body.Content)); err != nil {
 			return nil, xerrors.Errorf("failed to send message: %w", err)
+		}
+	case MessageTypeCommand:
+		// Send slash command directly - add enter at the end
+		content := input.Body.Content
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if _, err := s.agentio.Write([]byte(content)); err != nil {
+			return nil, xerrors.Errorf("failed to send command: %w", err)
 		}
 	}
 
