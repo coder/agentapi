@@ -1,0 +1,55 @@
+name: Policy Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy-gate:
+    name: policy-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce layered fix PR policy
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+
+          echo "HEAD_REF=$HEAD_REF"
+          echo "BASE_REF=$BASE_REF"
+          echo "PR_LABELS=$PR_LABELS"
+
+          # 1) Fix branches must be layered; direct fix/* -> main/master is blocked unless explicitly overridden.
+          if [[ "$HEAD_REF" == fix/* ]]; then
+            if [[ "$BASE_REF" == "main" || "$BASE_REF" == "master" ]]; then
+              if [[ "$PR_LABELS" != *"layered-pr-exception"* ]]; then
+                echo "ERROR: fix/* PRs must target a layered branch, not main/master."
+                echo "Use stack/*, layer/*, release/*, or add label layered-pr-exception."
+                exit 1
+              fi
+            fi
+          fi
+
+          # 2) Prevent merge commits in PR branch diff range.
+          git fetch origin "$BASE_REF" --depth=1 || true
+          MERGES=$(git rev-list --merges "origin/$BASE_REF..HEAD" || true)
+          if [[ -n "$MERGES" ]]; then
+            echo "ERROR: merge commits detected in PR diff range:"
+            echo "$MERGES"
+            exit 1
+          fi
+
+          # 3) Local --no-verify cannot be detected directly; this server-side gate exists to prevent bypass outcomes.
+          echo "Policy gate passed."
