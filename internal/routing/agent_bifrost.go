@@ -155,15 +155,25 @@ func (a *AgentBifrost) SetRule(rule RoutingRule) {
 func (a *AgentBifrost) getOrCreateSession(agent string) string {
 	a.sessionsMut.Lock()
 	defer a.sessionsMut.Unlock()
-	
+
 	for id, sess := range a.sessions {
-		if sess.Agent == agent && time.Since(sess.Started) < time.Hour {
+		if sess.Agent != agent {
+			continue
+		}
+		if time.Since(sess.Started) < time.Hour {
 			return id
 		}
+		delete(a.sessions, id)
 	}
-	
+
 	// Create new session
-	id := fmt.Sprintf("sess_%d", time.Now().UnixNano())
+	var id string
+	for {
+		id = fmt.Sprintf("sess_%d_%d", time.Now().UnixNano(), len(a.sessions)+1)
+		if _, exists := a.sessions[id]; !exists {
+			break
+		}
+	}
 	a.sessions[id] = &AgentSession{
 		ID:        id,
 		Agent:    agent,
