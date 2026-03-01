@@ -1,0 +1,50 @@
+{
+  "contract_name": "openapi-agent-client",
+  "module": "sdk/openapi_agent_client_v1",
+  "versioning": {
+    "policy": "semver",
+    "initial_version": "1.0.0",
+    "major_bump_required_for": [
+      "openapi breaking change in request/response schema",
+      "sse event type rename or removal",
+      "sse payload shape incompatibility"
+    ],
+    "minor_bump_required_for": [
+      "additive endpoints",
+      "additive fields in responses",
+      "new optional sse event types"
+    ],
+    "patch_bump_required_for": [
+      "documentation-only updates",
+      "non-breaking clarifications"
+    ]
+  },
+  "openapi_schema_source": {
+    "type": "file",
+    "path": "openapi.json",
+    "format": "openapi-3.x",
+    "description": "Repository canonical OpenAPI schema for agentapi++"
+  },
+  "sse_event_contract_assumptions": {
+    "transport": "text/event-stream",
+    "event_framing": "SSE events use event and data fields per frame",
+    "required_event_types": [
+      "message",
+      "error",
+      "done"
+    ],
+    "ordering_assumption": "Events are delivered in stream order for a single connection",
+    "terminal_assumption": "Stream ends after terminal done event or explicit transport close",
+    "error_contract": "error events include a machine-readable code and human-readable message"
+  },
+  "validation": {
+    "required_artifacts": [
+      "docs/changes/shared-modules/openapi-agent-client-v1/proposal.md",
+      "docs/changes/shared-modules/openapi-agent-client-v1/tasks.md",
+      "docs/contracts/openapi-agent-client.contract.json",
+      "sdk/openapi_agent_client_v1/README.md",
+      "scripts/validate_openapi_agent_client_module.sh"
+    ],
+    "enforced_by": "scripts/validate_openapi_agent_client_module.sh"
+  }
+}
