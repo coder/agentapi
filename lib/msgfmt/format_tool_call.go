@@ -1,8 +1,15 @@
 package msgfmt
 
 import (
+	"fmt"
 	"strings"
 )
+
+type toolCallRange struct {
+	start     int
+	end       int
+	malformed bool
+}
 
 func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 	msg = "\n" + msg // This handles the case where the message starts with a tool call
@@ -11,23 +18,38 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 	lines := strings.Split(msg, "\n")
 
 	toolCallStartIdx := -1
+	newLineAfterToolCall := -1
 
 	// Store all tool call start and end indices [[start, end], ...]
-	var toolCallIdxs [][]int
+	var toolCallIdxs []toolCallRange
 
 	for i := 1; i < len(lines)-1; i++ {
 		prevLine := strings.TrimSpace(lines[i-1])
-		line := strings.TrimSpace(lines[i])
+		line := strings.Trim(strings.TrimSpace(lines[i]), "\n")
 		nextLine := strings.TrimSpace(lines[i+1])
 
 		if strings.Contains(line, "coder - coder_report_task (MCP)") {
 			toolCallStartIdx = i
-		} else if toolCallStartIdx != -1 && line == "\"message\": \"Thanks for reporting!\"" && nextLine == "}" && strings.HasSuffix(prevLine, "{") {
-			// Store [start, end] pair
-			toolCallIdxs = append(toolCallIdxs, []int{toolCallStartIdx, min(len(lines), i+2)})
+		} else if toolCallStartIdx != -1 {
+			if line == "\"message\": \"Thanks for reporting!\"" && nextLine == "}" && strings.HasSuffix(prevLine, "{") {
+				// Store [start, end] pair
+				toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, min(len(lines), i+2), false})
 
-			// Reset to find the next tool call
-			toolCallStartIdx = -1
+				// Reset to find the next tool call
+				toolCallStartIdx = -1
+				newLineAfterToolCall = -1
+			} else if len(line) == 0 {
+				newLineAfterToolCall = i + 1
+			}
+		}
+	}
+
+	// Handle the malformed/partially rendered tool_calls
+	if toolCallStartIdx != -1 {
+		if newLineAfterToolCall != -1 {
+			toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, newLineAfterToolCall, true})
+		} else {
+			toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, len(lines), true})
 		}
 	}
 
@@ -40,10 +62,15 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 
 	// Remove tool calls from the message
 	for i := len(toolCallIdxs) - 1; i >= 0; i-- {
-		idxPair := toolCallIdxs[i]
-		start, end := idxPair[0], idxPair[1]
+		start, end := toolCallIdxs[i].start, toolCallIdxs[i].end
 
-		toolCallMessages = append(toolCallMessages, strings.Join(lines[start:end], "\n"))
+		// If the toolCall is malformed, we don't want to log it
+		if !toolCallIdxs[i].malformed {
+			toolCallMessages = append(toolCallMessages, strings.Join(lines[start:end], "\n"))
+		} else {
+			// [DEBUG] print, will remove before merge
+			fmt.Printf("Found malformed toolCall with newLineAfterToolCall, start: %d, end: %d, toolcall: %s", start, end, strings.Join(lines[start:end], "\n"))
+		}
 
 		lines = append(lines[:start], lines[end:]...)
 	}
