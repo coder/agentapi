@@ -4,7 +4,8 @@ go 1.24.11
 
 require (
 	github.com/ActiveState/termtest/xpty v0.6.0
-	github.com/KooshaPari/phenotype-go-kit v0.0.0
+	github.com/KooshaPari/phenotype-go-middleware v0.0.0
+	github.com/KooshaPari/phenotype-go-config v0.0.0
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/coder/agentapi-sdk-go v0.0.0-20250505131810-560d1d88d225
@@ -247,4 +248,6 @@ tool (
 	mvdan.cc/gofumpt
 )
 
-replace github.com/KooshaPari/phenotype-go-kit => ../../template-commons/phenotype-go-kit
+replace github.com/KooshaPari/phenotype-go-middleware => ../../../template-commons/phenotype-go-middleware
+
+replace github.com/KooshaPari/phenotype-go-config => ../../../template-commons/phenotype-go-config

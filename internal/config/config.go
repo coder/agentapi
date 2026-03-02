@@ -2,7 +2,7 @@
 package config
 
 import (
-	"github.com/KooshaPari/phenotype-go-kit/pkg/config"
+	"github.com/KooshaPari/phenotype-go-config"
 	"github.com/spf13/viper"
 )
 
