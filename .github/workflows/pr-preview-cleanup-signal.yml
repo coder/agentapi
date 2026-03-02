@@ -1,0 +1,25 @@
+name: PR Preview Cleanup Signal
+
+on:
+    pull_request:
+        types: [closed]
+
+
+jobs:
+    cleanup-signal:
+        name: Signal Cleanup
+        runs-on: ubuntu-latest
+        permissions:
+          contents: write
+
+        steps:
+            - name: Save PR number for cleanup
+              run: |
+                  mkdir -p ./cleanup
+                  echo ${{ github.event.pull_request.number }} > ./cleanup/number
+
+            - name: Upload cleanup signal
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+              with:
+                  name: cleanup-signal
+                  path: cleanup/
