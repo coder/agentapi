@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/quartz"
+
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/util"
@@ -18,6 +20,7 @@ const (
 	EventTypeMessageUpdate EventType = "message_update"
 	EventTypeStatusChange  EventType = "status_change"
 	EventTypeScreenUpdate  EventType = "screen_update"
+	EventTypeError         EventType = "agent_error"
 )
 
 type AgentStatus string
@@ -52,6 +55,12 @@ type ScreenUpdateBody struct {
 	Screen string `json:"screen"`
 }
 
+type ErrorBody struct {
+	Message string        `json:"message" doc:"Error message"`
+	Level   st.ErrorLevel `json:"level" doc:"Error level"`
+	Time    time.Time     `json:"time" doc:"Timestamp when the error occurred"`
+}
+
 type Event struct {
 	Type    EventType
 	Payload any
@@ -66,6 +75,8 @@ type EventEmitter struct {
 	chanIdx             int
 	subscriptionBufSize uint
 	screen              string
+	errors              []ErrorBody
+	clock               quartz.Clock
 }
 
 func convertStatus(status st.ConversationStatus) AgentStatus {
@@ -82,6 +93,9 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 }
 
 const defaultSubscriptionBufSize uint = 1024
+
+// maxStoredErrors caps the number of errors retained for late subscribers.
+const maxStoredErrors = 100
 
 type EventEmitterOption func(*EventEmitter)
 
@@ -101,6 +115,12 @@ func WithAgentType(agentType mf.AgentType) EventEmitterOption {
 	}
 }
 
+func WithClock(clock quartz.Clock) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.clock = clock
+	}
+}
+
 func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
 	e := &EventEmitter{
 		messages:            make([]st.ConversationMessage, 0),
@@ -110,6 +130,9 @@ func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
 	}
 	for _, opt := range opts {
 		opt(e)
+	}
+	if e.clock == nil {
+		e.clock = quartz.NewReal()
 	}
 	return e
 }
@@ -137,7 +160,7 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 	}
 }
 
-// Assumes that only the last message can change or new messages can be added.
+// EmitMessages assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
 func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 	e.mu.Lock()
@@ -194,6 +217,25 @@ func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.screen = newScreen
 }
 
+func (e *EventEmitter) EmitError(message string, level st.ErrorLevel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	errorBody := ErrorBody{
+		Message: message,
+		Level:   level,
+		Time:    e.clock.Now(),
+	}
+
+	// Store the error so new subscribers can receive recent errors.
+	e.errors = append(e.errors, errorBody)
+	if len(e.errors) > maxStoredErrors {
+		e.errors = e.errors[len(e.errors)-maxStoredErrors:]
+	}
+
+	e.notifyChannels(EventTypeError, errorBody)
+}
+
 // Assumes the caller holds the lock.
 func (e *EventEmitter) currentStateAsEvents() []Event {
 	events := make([]Event, 0, len(e.messages)+2)
@@ -211,6 +253,15 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 		Type:    EventTypeScreenUpdate,
 		Payload: ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
 	})
+
+	// Include all error events
+	for _, err := range e.errors {
+		events = append(events, Event{
+			Type:    EventTypeError,
+			Payload: err,
+		})
+	}
+
 	return events
 }
 

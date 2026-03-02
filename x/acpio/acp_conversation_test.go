@@ -45,6 +45,8 @@ type mockEmitter struct {
 	lastScreen    string
 }
 
+func (m *mockEmitter) EmitError(_ string, _ screentracker.ErrorLevel) {}
+
 func newMockEmitter() *mockEmitter {
 	m := &mockEmitter{}
 	m.cond = sync.NewCond(&m.mu)

@@ -10,6 +10,7 @@ import (
 
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/quartz"
+	"golang.org/x/xerrors"
 )
 
 // Compile-time assertion that ACPConversation implements st.Conversation
@@ -31,9 +32,9 @@ type ACPConversation struct {
 	cancel            context.CancelFunc
 	agentIO           ChunkableAgentIO
 	messages          []st.ConversationMessage
-	nextID            int  // monotonically increasing message ID
+	nextID            int           // monotonically increasing message ID
 	prompting         bool          // true while agent is processing
-	chunkReceived     chan struct{}  // signals that handleChunk has accumulated a chunk
+	chunkReceived     chan struct{} // signals that handleChunk has accumulated a chunk
 	streamingResponse strings.Builder
 	logger            *slog.Logger
 	emitter           st.Emitter
@@ -47,6 +48,7 @@ type noopEmitter struct{}
 func (noopEmitter) EmitMessages([]st.ConversationMessage) {}
 func (noopEmitter) EmitStatus(st.ConversationStatus)      {}
 func (noopEmitter) EmitScreen(string)                     {}
+func (noopEmitter) EmitError(_ string, _ st.ErrorLevel)   {}
 
 // NewACPConversation creates a new ACPConversation.
 // If emitter is provided, it will receive events when messages/status/screen change.
@@ -283,4 +285,8 @@ func (c *ACPConversation) executePrompt(messageParts []st.MessagePart) error {
 
 	c.logger.Debug("ACPConversation message complete", "responseLen", len(response))
 	return nil
+}
+
+func (c *ACPConversation) SaveState() error {
+	return xerrors.Errorf("ACP mode doesn't support state persistence")
 }

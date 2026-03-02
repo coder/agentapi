@@ -2,6 +2,7 @@ package screentracker
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/coder/agentapi/lib/util"
@@ -33,6 +34,22 @@ var ConversationRoleValues = []ConversationRole{
 	ConversationRoleAgent,
 }
 
+type ErrorLevel string
+
+func (e ErrorLevel) Schema(r huma.Registry) *huma.Schema {
+	return util.OpenAPISchema(r, "ErrorLevel", ErrorLevelValues)
+}
+
+const (
+	ErrorLevelWarning ErrorLevel = "warning"
+	ErrorLevelError   ErrorLevel = "error"
+)
+
+var ErrorLevelValues = []ErrorLevel{
+	ErrorLevelWarning,
+	ErrorLevelError,
+}
+
 var (
 	ErrMessageValidationWhitespace = xerrors.New("message must be trimmed of leading and trailing whitespace")
 	ErrMessageValidationEmpty      = xerrors.New("message must not be empty")
@@ -49,6 +66,14 @@ type MessagePart interface {
 	String() string
 }
 
+func buildStringFromMessageParts(parts []MessagePart) string {
+	var sb strings.Builder
+	for _, part := range parts {
+		sb.WriteString(part.String())
+	}
+	return sb.String()
+}
+
 // Conversation represents a conversation between a user and an agent.
 // It is intended as the primary interface for interacting with a session.
 // Implementations must support the following capabilities:
@@ -63,6 +88,7 @@ type Conversation interface {
 	Start(context.Context)
 	Status() ConversationStatus
 	Text() string
+	SaveState() error
 }
 
 // Emitter receives conversation state updates.
@@ -70,11 +96,18 @@ type Emitter interface {
 	EmitMessages([]ConversationMessage)
 	EmitStatus(ConversationStatus)
 	EmitScreen(string)
+	EmitError(message string, level ErrorLevel)
 }
 
 type ConversationMessage struct {
-	Id      int
-	Message string
-	Role    ConversationRole
-	Time    time.Time
+	Id      int              `json:"id"`
+	Message string           `json:"message"`
+	Role    ConversationRole `json:"role"`
+	Time    time.Time        `json:"time"`
+}
+
+type StatePersistenceConfig struct {
+	StateFile string
+	LoadState bool
+	SaveState bool
 }

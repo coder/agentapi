@@ -6,6 +6,7 @@ import (
 	"time"
 
 	st "github.com/coder/agentapi/lib/screentracker"
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,5 +97,105 @@ func TestEventEmitter(t *testing.T) {
 		default:
 			t.Fatalf("read should not block")
 		}
+	})
+
+	t.Run("error-cap", func(t *testing.T) {
+		emitter := NewEventEmitter(WithSubscriptionBufSize(10))
+
+		for i := range 150 {
+			emitter.EmitError(fmt.Sprintf("error %d", i), st.ErrorLevelError)
+		}
+
+		_, _, stateEvents := emitter.Subscribe()
+
+		var errorEvents []Event
+		for _, ev := range stateEvents {
+			if ev.Type == EventTypeError {
+				errorEvents = append(errorEvents, ev)
+			}
+		}
+
+		assert.Len(t, errorEvents, maxStoredErrors)
+
+		// Errors should be the last 100: "error 50" through "error 149".
+		for i, ev := range errorEvents {
+			body, ok := ev.Payload.(ErrorBody)
+			assert.True(t, ok)
+			assert.Equal(t, fmt.Sprintf("error %d", i+50), body.Message)
+		}
+	})
+
+	t.Run("error-events-in-initial-state", func(t *testing.T) {
+		mockClock := quartz.NewMock(t)
+		fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		mockClock.Set(fixedTime)
+
+		emitter := NewEventEmitter(WithClock(mockClock), WithSubscriptionBufSize(10))
+
+		emitter.EmitError("err1", st.ErrorLevelError)
+		mockClock.Set(fixedTime.Add(1 * time.Second))
+		emitter.EmitError("err2", st.ErrorLevelWarning)
+		mockClock.Set(fixedTime.Add(2 * time.Second))
+		emitter.EmitError("err3", st.ErrorLevelError)
+
+		_, _, stateEvents := emitter.Subscribe()
+
+		var errorEvents []Event
+		for _, ev := range stateEvents {
+			if ev.Type == EventTypeError {
+				errorEvents = append(errorEvents, ev)
+			}
+		}
+
+		assert.Len(t, errorEvents, 3)
+
+		expected := []ErrorBody{
+			{Message: "err1", Level: st.ErrorLevelError, Time: fixedTime},
+			{Message: "err2", Level: st.ErrorLevelWarning, Time: fixedTime.Add(1 * time.Second)},
+			{Message: "err3", Level: st.ErrorLevelError, Time: fixedTime.Add(2 * time.Second)},
+		}
+		for i, ev := range errorEvents {
+			body, ok := ev.Payload.(ErrorBody)
+			assert.True(t, ok)
+			assert.Equal(t, expected[i].Message, body.Message)
+			assert.Equal(t, expected[i].Level, body.Level)
+			assert.Equal(t, expected[i].Time, body.Time)
+		}
+	})
+
+	t.Run("clock-injection", func(t *testing.T) {
+		mockClock := quartz.NewMock(t)
+		fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		mockClock.Set(fixedTime)
+
+		emitter := NewEventEmitter(WithClock(mockClock), WithSubscriptionBufSize(10))
+		_, ch, stateEvents := emitter.Subscribe()
+
+		// Verify initial state events
+		assert.Len(t, stateEvents, 2)
+
+		// Emit an error and verify it uses the mock clock time
+		emitter.EmitError("test error", st.ErrorLevelError)
+
+		event := <-ch
+		assert.Equal(t, EventTypeError, event.Type)
+		errorBody, ok := event.Payload.(ErrorBody)
+		assert.True(t, ok)
+		assert.Equal(t, "test error", errorBody.Message)
+		assert.Equal(t, st.ErrorLevelError, errorBody.Level)
+		assert.Equal(t, fixedTime, errorBody.Time)
+
+		// Advance the clock and emit another error
+		newTime := fixedTime.Add(1 * time.Hour)
+		mockClock.Set(newTime)
+		emitter.EmitError("another error", st.ErrorLevelWarning)
+
+		event = <-ch
+		assert.Equal(t, EventTypeError, event.Type)
+		errorBody, ok = event.Payload.(ErrorBody)
+		assert.True(t, ok)
+		assert.Equal(t, "another error", errorBody.Message)
+		assert.Equal(t, st.ErrorLevelWarning, errorBody.Level)
+		assert.Equal(t, newTime, errorBody.Time)
 	})
 }

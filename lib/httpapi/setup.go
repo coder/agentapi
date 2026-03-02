@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -48,17 +47,6 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 			return nil, err
 		}
 	}
-
-	// Handle SIGINT (Ctrl+C) and send it to the process
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-signalCh
-		if err := process.Close(logger, 5*time.Second); err != nil {
-			logger.Error("Error closing process", "error", err)
-		}
-	}()
-
 	return process, nil
 }
 

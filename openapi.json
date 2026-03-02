@@ -19,6 +19,30 @@
         "title": "ConversationRole",
         "type": "string"
       },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/ErrorLevel",
+            "description": "Error level"
+          },
+          "message": {
+            "description": "Error message",
+            "type": "string"
+          },
+          "time": {
+            "description": "Timestamp when the error occurred",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "message",
+          "time"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -35,6 +59,15 @@
           }
         },
         "type": "object"
+      },
+      "ErrorLevel": {
+        "enum": [
+          "error",
+          "warning"
+        ],
+        "example": "warning",
+        "title": "ErrorLevel",
+        "type": "string"
       },
       "ErrorModel": {
         "additionalProperties": false,
@@ -340,6 +373,32 @@
                   "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
                   "items": {
                     "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ErrorBody"
+                          },
+                          "event": {
+                            "const": "agent_error",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event agent_error",
+                        "type": "object"
+                      },
                       {
                         "properties": {
                           "data": {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
@@ -955,4 +956,37 @@ func TestServer_UploadFiles_Errors(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, string(body), "file size exceeds 10MB limit")
 	})
+}
+
+func TestServer_Stop_Idempotency(t *testing.T) {
+	t.Parallel()
+	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
+	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+		AgentType:      msgfmt.AgentTypeClaude,
+		AgentIO:        nil,
+		Port:           0,
+		ChatBasePath:   "/chat",
+		AllowedHosts:   []string{"*"},
+		AllowedOrigins: []string{"*"},
+	})
+	require.NoError(t, err)
+
+	// First call to Stop should succeed
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = srv.Stop(stopCtx)
+	require.NoError(t, err)
+
+	// Second call to Stop should also succeed (no-op)
+	stopCtx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	err = srv.Stop(stopCtx2)
+	require.NoError(t, err)
+
+	// Third call to Stop should also succeed (no-op)
+	stopCtx3, cancel3 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel3()
+	err = srv.Stop(stopCtx3)
+	require.NoError(t, err)
 }
