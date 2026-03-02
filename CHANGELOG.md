@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.12.0
+
+### Features
+- Experimental ACP integration
+- Introduce state persistence
+
+### Fixes
+- Fix pr-preview workflow errors
+
+### Chore
+- Codebase refactor for abstraction
+- Go version bump to 1.24
+- Use coder/quartz
+
 ## v0.11.8
 
 ### Fix
