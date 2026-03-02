@@ -7,7 +7,7 @@
 - Introduce state persistence
 
 ### Fixes
-- Fix pr-preview workflow errors
+- Fix pr-preview and build-release workflow errors
 
 ### Chore
 - Codebase refactor for abstraction
