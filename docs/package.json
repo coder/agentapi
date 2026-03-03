@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "docs:index": "bash scripts/generate-doc-index.sh",
-    "docs:dev": "vitepress dev .",
-    "docs:build": "bash scripts/generate-doc-index.sh && vitepress build .",
-    "docs:preview": "vitepress preview ."
+    "docs:dev": "node ./node_modules/vitepress/dist/node/cli.js dev .",
+    "docs:build": "bash scripts/generate-doc-index.sh && node ./node_modules/vitepress/dist/node/cli.js build .",
+    "docs:preview": "node ./node_modules/vitepress/dist/node/cli.js preview ."
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

@@ -8,3 +8,19 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=500"]
       - id: detect-private-key
+
+# Local security and fast gate hooks for pre-commit and pre-push stages
+  - repo: local
+    hooks:
+      - id: security-guard-pre-commit
+        name: security-guard pre-commit
+        entry: .github/scripts/security-guard.sh pre-commit
+        language: script
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: security-guard-pre-push
+        name: security-guard pre-push
+        entry: .github/scripts/security-guard.sh pre-push
+        language: script
+        pass_filenames: false
+        stages: [pre-push]

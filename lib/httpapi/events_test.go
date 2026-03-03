@@ -6,9 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
 	st "github.com/coder/agentapi/lib/screentracker"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestEventEmitter(t *testing.T) {

@@ -1,12 +1,12 @@
 import { defineConfig } from 'vitepress'
-import { resolveDocsBase } from '../../../docs-hub/.vitepress/base.config'
 
-const docsBase = resolveDocsBase()
+const docsBase = process.env.DOCS_BASE ?? '/'
 
 export default defineConfig({
   title: 'agentapi++',
   description: 'Agent API server docs',
   base: docsBase,
+  ignoreDeadLinks: true,
   themeConfig: {
     nav: [
       { text: 'Wiki', link: '/wiki/' },

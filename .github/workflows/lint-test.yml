@@ -15,4 +15,4 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: KooshaPari/phenotypeActions/actions/lint-test@main
+      - uses: KooshaPari/phenotypeActions/actions/lint-test@82a674fdba4c69d12e5c2bc677d2a6b8ead4c9ad # main

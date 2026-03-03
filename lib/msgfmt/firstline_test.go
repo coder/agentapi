@@ -8,35 +8,35 @@ import (
 func TestFormatAgentMessage_PreservesFirstLine(t *testing.T) {
 	// Test for issue #126 - first line of response being trimmed
 	// This test ensures the first non-empty line is preserved
-	
+
 	tests := []struct {
-		name     string
+		name      string
 		agentType AgentType
-		message  string
+		message   string
 		userInput string
 	}{
 		{
-			name:     "claude first line",
+			name:      "claude first line",
 			agentType: AgentTypeClaude,
-			message:  "Hello world\nThis is the response",
+			message:   "Hello world\nThis is the response",
 			userInput: "Hello",
 		},
 		{
-			name:     "goose first line",
+			name:      "goose first line",
 			agentType: AgentTypeGoose,
-			message:  "First line\nSecond line",
+			message:   "First line\nSecond line",
 			userInput: "Hi",
 		},
 		{
-			name:     "codex first line",
+			name:      "codex first line",
 			agentType: AgentTypeCodex,
-			message:  "Response here\nMore content",
+			message:   "Response here\nMore content",
 			userInput: "test",
 		},
 		{
-			name:     "opencode first line",
+			name:      "opencode first line",
 			agentType: AgentTypeOpencode,
-			message:  "OpenCode response\nMore lines",
+			message:   "OpenCode response\nMore lines",
 			userInput: "hello",
 		},
 	}
@@ -58,7 +58,7 @@ func TestFormatAgentMessage_PreservesFirstLine(t *testing.T) {
 
 func TestTrimEmptyLines_PreservesContent(t *testing.T) {
 	// Ensure trimEmptyLines doesn't remove actual content
-	
+
 	tests := []struct {
 		input    string
 		expected string

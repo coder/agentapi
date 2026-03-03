@@ -7,4 +7,5 @@
  /diff - show git diff (including untracked files)
  /prompts - show example prompts
 
+▌ Ask Codex to do anything
  ⏎ send   Shift+⏎ newline   Ctrl+C quit

@@ -10,6 +10,32 @@
         "title": "AgentStatus",
         "type": "string"
       },
+      "ConfigResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ConfigResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agent_type": {
+            "description": "Type of the agent",
+            "type": "string"
+          },
+          "port": {
+            "description": "Server port",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_type",
+          "port"
+        ],
+        "type": "object"
+      },
       "ConversationRole": {
         "enum": [
           "agent",
@@ -86,6 +112,83 @@
         },
         "type": "object"
       },
+      "HealthResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/HealthResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "status": {
+            "description": "Health status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "InfoResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/InfoResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agent_type": {
+            "description": "Type of the agent being used by the server.",
+            "type": "string"
+          },
+          "features": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Supported features",
+            "type": "object"
+          },
+          "version": {
+            "description": "AgentAPI version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_type",
+          "features",
+          "version"
+        ],
+        "type": "object"
+      },
+      "LogsResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/LogsResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "logs": {
+            "description": "Server logs",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "logs"
+        ],
+        "type": "object"
+      },
       "Message": {
         "additionalProperties": false,
         "properties": {
@@ -129,12 +232,12 @@
           },
           "content": {
             "description": "Message content",
-            "example": "Hello, agent!",
+            "example": "/help",
             "type": "string"
           },
           "type": {
             "$ref": "#/components/schemas/MessageType",
-            "description": "A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal."
+            "description": "A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal. A 'command' type message sends a slash command directly to the agent (e.g., /help, /resume, /undo)."
           }
         },
         "required": [
@@ -165,6 +268,7 @@
       },
       "MessageType": {
         "enum": [
+          "command",
           "raw",
           "user"
         ],
@@ -202,6 +306,53 @@
         ],
         "type": "object"
       },
+      "MessagesClearResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/MessagesClearResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of messages cleared",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "description": "Whether messages were cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "MessagesCountResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/MessagesCountResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of messages in the conversation history",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
       "MessagesResponseBody": {
         "additionalProperties": false,
         "properties": {
@@ -222,6 +373,32 @@
         },
         "required": [
           "messages"
+        ],
+        "type": "object"
+      },
+      "RateLimitResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/RateLimitResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether rate limiting is enabled",
+            "type": "boolean"
+          },
+          "requests": {
+            "description": "Requests per minute limit",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "requests"
         ],
         "type": "object"
       },
@@ -304,6 +481,26 @@
           "ok"
         ],
         "type": "object"
+      },
+      "VersionResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/VersionResponseBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "version": {
+            "description": "AgentAPI version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
       }
     }
   },
@@ -314,6 +511,35 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/config": {
+      "get": {
+        "description": "Returns the server configuration.",
+        "operationId": "get-config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get config"
+      }
+    },
     "/events": {
       "get": {
         "description": "The events are sent as Server-Sent Events (SSE). Initially, the endpoint returns a list of events needed to reconstruct the current state of the conversation and the agent's status. After that, it only returns events that have occurred since the last event was sent.\n\nNote: When an agent is running, the last message in the conversation history is updated frequently, and the endpoint sends a new message update event each time.",
@@ -401,6 +627,93 @@
         "summary": "Subscribe to events"
       }
     },
+    "/health": {
+      "get": {
+        "description": "Health check endpoint for load balancers.",
+        "operationId": "get-health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get health"
+      }
+    },
+    "/info": {
+      "get": {
+        "description": "Returns information about the server and agent.",
+        "operationId": "get-info",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InfoResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get info"
+      }
+    },
+    "/logs": {
+      "get": {
+        "description": "Returns server logs.",
+        "operationId": "get-logs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get logs"
+      }
+    },
     "/message": {
       "post": {
         "description": "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error.",
@@ -442,8 +755,35 @@
       }
     },
     "/messages": {
+      "delete": {
+        "description": "Clear all messages from conversation history.",
+        "operationId": "delete-messages",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesClearResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete messages"
+      },
       "get": {
-        "description": "Returns a list of messages representing the conversation history with the agent.",
+        "description": "Returns a list of messages representing the conversation history with the agent. Supports ?after=<id> and ?limit=<n> query parameters for pagination.",
         "operationId": "get-messages",
         "responses": {
           "200": {
@@ -468,6 +808,64 @@
           }
         },
         "summary": "Get messages"
+      }
+    },
+    "/messages/count": {
+      "get": {
+        "description": "Returns the count of messages in the conversation.",
+        "operationId": "get-messages-count",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesCountResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get messages count"
+      }
+    },
+    "/rate-limit": {
+      "get": {
+        "description": "Returns rate limit status.",
+        "operationId": "get-rate-limit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get rate limit"
       }
     },
     "/status": {
@@ -552,6 +950,35 @@
           }
         },
         "summary": "Post upload"
+      }
+    },
+    "/version": {
+      "get": {
+        "description": "Returns the server version.",
+        "operationId": "get-version",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponseBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get version"
       }
     }
   }

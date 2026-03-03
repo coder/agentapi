@@ -1,8 +1,10 @@
-// Package config provides configuration management for AgentAPI using phenotype-go-kit.
+// Package config provides configuration management for AgentAPI using Viper.
 package config
 
 import (
-	"github.com/KooshaPari/phenotype-go-config"
+	"os"
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
@@ -26,38 +28,42 @@ type AgentAPIConfig struct {
 
 // AgentConfig represents agent-related configuration.
 type AgentConfig struct {
-	Type           string `mapstructure:"type"`
-	InitialPrompt  string `mapstructure:"initial_prompt"`
+	Type          string `mapstructure:"type"`
+	InitialPrompt string `mapstructure:"initial_prompt"`
 }
 
 // LoadConfig loads the configuration from a file and environment variables.
-// It uses phenotype-go-kit's config loader for consistent configuration handling.
 func LoadConfig(filePath string) (*AgentAPIConfig, error) {
-	loader := config.NewConfigLoader(filePath)
-
-	// Set defaults for server configuration
 	defaults := map[string]any{
-		"server.port":             3284,
-		"server.host":             "localhost",
-		"server.chat_base_path":   "/chat",
-		"server.allowed_hosts":    []string{"localhost", "127.0.0.1", "[::1]"},
-		"server.allowed_origins":  []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"},
-		"server.term_width":       uint16(80),
-		"server.term_height":      uint16(1000),
-		"server.print_openapi":    false,
-		"agent.type":              "",
-		"agent.initial_prompt":    "",
+		"server.port":            3284,
+		"server.host":            "localhost",
+		"server.chat_base_path":  "/chat",
+		"server.allowed_hosts":   []string{"localhost", "127.0.0.1", "[::1]"},
+		"server.allowed_origins": []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"},
+		"server.term_width":      uint16(80),
+		"server.term_height":     uint16(1000),
+		"server.print_openapi":   false,
+		"agent.type":             "",
+		"agent.initial_prompt":   "",
 	}
 
-	// Load configuration with defaults
-	if err := loader.LoadWithDefaults(defaults); err != nil {
-		// If file doesn't exist, continue with defaults from environment
-		viper.SetEnvPrefix("AGENTAPI")
-		viper.AutomaticEnv()
+	viper.SetEnvPrefix("AGENTAPI")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+	if err := BindEnvVars(); err != nil {
+		return nil, err
+	}
+	for key, value := range defaults {
+		viper.SetDefault(key, value)
+	}
 
-		// Set all defaults in viper
-		for key, value := range defaults {
-			viper.SetDefault(key, value)
+	if filePath != "" {
+		viper.SetConfigFile(filePath)
+		if _, statErr := os.Stat(filePath); statErr != nil {
+			return nil, statErr
+		}
+		if err := viper.ReadInConfig(); err != nil {
+			return nil, err
 		}
 	}
 
@@ -81,7 +87,11 @@ func LoadConfigWithEnv(filePath string) (*AgentAPIConfig, error) {
 
 	// Then override with environment variables
 	viper.SetEnvPrefix("AGENTAPI")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	if err := BindEnvVars(); err != nil {
+		return nil, err
+	}
 
 	// Re-unmarshal with environment overrides
 	if err := viper.Unmarshal(cfg); err != nil {
@@ -94,15 +104,16 @@ func LoadConfigWithEnv(filePath string) (*AgentAPIConfig, error) {
 // BindEnvVars binds specific environment variables to configuration keys.
 func BindEnvVars() error {
 	envBindings := map[string]string{
-		"server.port":             "AGENTAPI_PORT",
-		"server.host":             "AGENTAPI_HOST",
-		"server.chat_base_path":   "AGENTAPI_CHAT_BASE_PATH",
-		"server.allowed_hosts":    "AGENTAPI_ALLOWED_HOSTS",
-		"server.allowed_origins":  "AGENTAPI_ALLOWED_ORIGINS",
-		"server.term_width":       "AGENTAPI_TERM_WIDTH",
-		"server.term_height":      "AGENTAPI_TERM_HEIGHT",
-		"agent.type":              "AGENTAPI_AGENT_TYPE",
-		"agent.initial_prompt":    "AGENTAPI_INITIAL_PROMPT",
+		"server.port":            "AGENTAPI_PORT",
+		"server.host":            "AGENTAPI_HOST",
+		"server.chat_base_path":  "AGENTAPI_CHAT_BASE_PATH",
+		"server.allowed_hosts":   "AGENTAPI_ALLOWED_HOSTS",
+		"server.allowed_origins": "AGENTAPI_ALLOWED_ORIGINS",
+		"server.term_width":      "AGENTAPI_TERM_WIDTH",
+		"server.term_height":     "AGENTAPI_TERM_HEIGHT",
+		"server.print_openapi":   "AGENTAPI_PRINT_OPENAPI",
+		"agent.type":             "AGENTAPI_AGENT_TYPE",
+		"agent.initial_prompt":   "AGENTAPI_INITIAL_PROMPT",
 	}
 
 	for key, envVar := range envBindings {

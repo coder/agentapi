@@ -1,16 +1,18 @@
-// Package middleware provides HTTP middleware integration for AgentAPI using phenotype-go-kit.
+// Package middleware provides HTTP middleware integration for AgentAPI using chi.
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	gkitmiddleware "github.com/KooshaPari/phenotype-go-middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 )
 
-// ApplyDefaultStack applies the phenotype-go-kit middleware stack to a chi router.
-// This includes panic recovery, request logging, CORS, and request ID tracking.
+// ApplyDefaultStack applies the default middleware stack to a chi router.
+// This includes panic recovery, request logging, and request ID tracking.
 //
 // Parameters:
 //   - router: The chi router to apply middleware to
@@ -18,10 +20,14 @@ import (
 // Returns:
 //   - error: An error if middleware setup fails
 func ApplyDefaultStack(router *chi.Mux) error {
-	return gkitmiddleware.DefaultMiddlewareStack(router)
+	router.Use(chimiddleware.RequestID)
+	router.Use(chimiddleware.RealIP)
+	router.Use(chimiddleware.Recoverer)
+	router.Use(chimiddleware.Logger)
+	return nil
 }
 
-// CORSOptions extends the phenotype-go-kit CORS configuration with AgentAPI-specific settings.
+// CORSOptions defines custom CORS configuration for AgentAPI.
 type CORSOptions struct {
 	AllowedOrigins []string
 	AllowedHosts   []string
@@ -33,29 +39,34 @@ type CORSOptions struct {
 //   - router: The chi router to apply middleware to
 //   - options: CORS configuration options
 func ApplyCustomCORS(router *chi.Mux, options CORSOptions) {
-	// The phenotype-go-kit middleware stack already includes CORS handling
-	// This function provides a hook for future customization
-	ApplyDefaultStack(router)
+	corsOpts := cors.Options{
+		AllowedOrigins: options.AllowedOrigins,
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders: []string{"Link"},
+		MaxAge:         300,
+	}
+	router.Use(cors.Handler(corsOpts))
 }
 
-// HealthCheckRoute registers a health check endpoint using phenotype-go-kit's handler.
+// HealthCheckRoute registers a health check endpoint.
 //
 // Parameters:
 //   - router: The chi router to register the route on
 func HealthCheckRoute(router *chi.Mux) {
-	router.Get("/health", gkitmiddleware.HealthCheckHandler)
+	registerProbe(router, "/health", "ok")
 }
 
-// ReadinessCheckRoute registers a readiness check endpoint using phenotype-go-kit's handler.
+// ReadinessCheckRoute registers a readiness check endpoint.
 //
 // Parameters:
 //   - router: The chi router to register the route on
 func ReadinessCheckRoute(router *chi.Mux) {
-	router.Get("/readiness", gkitmiddleware.ReadinessCheckHandler)
+	registerProbe(router, "/readiness", "ready")
 }
 
 // RequestIDHandler is a helper that allows callers to extract or use request IDs
-// from the middleware applied by phenotype-go-kit.
+// from the middleware applied by the default stack.
 type RequestIDHandler struct {
 	timeout time.Duration
 }
@@ -82,4 +93,12 @@ func NewRequestIDHandler(timeout time.Duration) *RequestIDHandler {
 //   - http.Handler: The wrapped handler
 func (h *RequestIDHandler) WrapHandler(next http.Handler) http.Handler {
 	return http.TimeoutHandler(next, h.timeout, "Request timeout")
+}
+
+func registerProbe(router *chi.Mux, path string, body string) {
+	router.Get(path, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": body})
+	})
 }

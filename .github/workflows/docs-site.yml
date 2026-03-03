@@ -41,6 +41,8 @@ jobs:
 
       - name: Build docs
         working-directory: docs
+        env:
+          DOCS_BASE: /agentapi-plusplus/
         run: npm run docs:build
 
       - name: Upload artifact
@@ -50,6 +52,7 @@ jobs:
 
   deploy:
     needs: docs-build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

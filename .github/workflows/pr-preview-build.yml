@@ -3,13 +3,20 @@ name: PR Preview Build
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number for manual runs (optional)"
+        required: false
+        type: string
 
 jobs:
   build:
     name: Build Release Binaries
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
+    env:
+      PR_ID: ${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -53,14 +60,14 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: agentapi-build-${{ github.event.pull_request.number }}
+          name: agentapi-build-${{ env.PR_ID }}
           path: ${{ github.workspace }}/out
           retention-days: 7
 
       - name: Save PR number
         run: |
           mkdir -p ./pr
-          echo ${{ github.event.pull_request.number }} > ./pr/number
+          printf '%s\n' "${{ env.PR_ID }}" > ./pr/number
 
       - name: Upload PR number
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -50,6 +50,7 @@ tasks:
   docs:build:
     dir: docs
     cmds:
+      - npm ci
       - npm run docs:build
 
   quality:

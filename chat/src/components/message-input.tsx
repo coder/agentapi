@@ -10,7 +10,6 @@ import {
   CornerDownLeftIcon,
   DeleteIcon,
   Mic,
-  MicOff,
   SendIcon,
   Upload,
   Square,
@@ -26,10 +25,41 @@ import {getErrorMessage} from "@/lib/error-utils";
 // TypeScript declarations for Web Speech API
 declare global {
   interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 interface MessageInputProps {
   onSendMessage: (message: string, type: "user" | "raw") => void;
@@ -74,10 +104,10 @@ export default function MessageInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {uploadFiles} = useChat();
   const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   // Voice input handler
   const handleVoiceInput = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast.error("Voice input not supported in this browser");
       return;
@@ -94,7 +124,7 @@ export default function MessageInput({
       recognition.interimResults = true;
       recognition.lang = "en-US";
       
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
         let finalTranscript = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
@@ -106,7 +136,7 @@ export default function MessageInput({
         }
       };
       
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
         console.error("Voice input error:", event.error);
         setIsListening(false);
         toast.error("Voice input failed");
@@ -342,7 +372,6 @@ export default function MessageInput({
                   }
 
                   {inputMode === "text" && serverStatus !== "running" && (
-                  {inputMode === "text" && serverStatus !== "running" && (
                     <div className="flex items-center gap-1">
                       <Button
                         type="button"
@@ -366,7 +395,6 @@ export default function MessageInput({
                         <span className="sr-only">Send</span>
                       </Button>
                     </div>
-                  )}
                   )}
 
                   {inputMode === "text" && serverStatus === "running" && (
