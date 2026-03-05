@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.12.1
+
+### Fixes
+- Prevent terminal echo from being captured as agent messages
+- Update codex message box detection
+
 ## v0.12.0
 
 ### Features
