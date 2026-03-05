@@ -45,7 +45,7 @@ func isOpencodeAgentReadyForInitialPrompt(message string) bool {
 
 func isCodexAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
-	messageWithoutInputBox := removeCodexInputBox(message)
+	messageWithoutInputBox := removeCodexMessageBox(message)
 	return len(messageWithoutInputBox) != len(message)
 }
 
