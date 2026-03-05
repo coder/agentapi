@@ -124,6 +124,9 @@ type PTYConversation struct {
 	// Set under lock in the snapshot loop when signaling, cleared under
 	// lock in the send loop after sendMessage returns.
 	sendingMessage bool
+	// writingMessage is true while writeStabilize is executing.
+	// When true, updateLastAgentMessageLocked skips updates to avoid capturing terminal echo.
+	writingMessage bool
 	// stableSignal is used by the snapshot loop to signal the send loop
 	// when the agent is stable and there are items in the outbound queue.
 	stableSignal chan struct{}
@@ -177,6 +180,7 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PT
 		dirty:                         false,
 		userSentMessageAfterLoadState: false,
 		loadStateStatus:               LoadStatePending,
+		writingMessage:                false,
 	}
 	if c.cfg.ReadyForInitialPrompt == nil {
 		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
@@ -295,6 +299,9 @@ func (c *PTYConversation) lastMessage(role ConversationRole) ConversationMessage
 
 // caller MUST hold c.lock
 func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp time.Time) {
+	if c.writingMessage {
+		return
+	}
 	agentMessage := screenDiff(c.screenBeforeLastUserMessage, screen, c.cfg.AgentType)
 	lastUserMessage := c.lastMessage(ConversationRoleUser)
 	var toolCalls []string
@@ -380,23 +387,17 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	now := c.cfg.Clock.Now()
 	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
+	c.writingMessage = true
 	c.lock.Unlock()
 
 	if err := c.writeStabilize(ctx, messageParts...); err != nil {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.writingMessage = false
 		return xerrors.Errorf("failed to send message: %w", err)
 	}
 
 	c.lock.Lock()
-	// Re-apply the pre-send agent message from the screen captured before
-	// the write. While the lock was released during writeStabilize, the
-	// snapshot loop continued taking snapshots and calling
-	// updateLastAgentMessageLocked with whatever was on screen at each
-	// tick (typically echoed user input or intermediate terminal state).
-	// Those updates corrupt the agent message for this turn. Restoring it
-	// here ensures the conversation history is correct. The next line sets
-	// screenBeforeLastUserMessage so the *next* agent message will be
-	// diffed relative to the pre-send screen.
-	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
 	c.screenBeforeLastUserMessage = screenBeforeMessage
 	c.messages = append(c.messages, ConversationMessage{
 		Id:      len(c.messages),
@@ -405,7 +406,7 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 		Time:    now,
 	})
 	c.userSentMessageAfterLoadState = true
-
+	c.writingMessage = false
 	c.lock.Unlock()
 	return nil
 }

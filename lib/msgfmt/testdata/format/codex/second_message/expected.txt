@@ -7,4 +7,4 @@
 codex
 There are 2 untracked files (`.env` and `forge.yaml`).
 
- ⏎ send   Ctrl+J newline   Ctrl+C quit   18724 tokens used   96% context left
+gpt-5.1-codex-max default · 100% left · ~/Documents/work/coder_o…
