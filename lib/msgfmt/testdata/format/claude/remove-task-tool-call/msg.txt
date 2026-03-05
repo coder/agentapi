@@ -72,6 +72,13 @@
        "message": "Thanks for reporting!"
      }
 
+ coder - coder_report_task (MCP)(summary: "Snake game created
+                                  successfully at snake-game.html",
+                                  link: "file:///home/coder/snake-ga
+                                  me.html", state: "working")
+
+ Above is a malformed tool call message
+
 
 ───────────────────────────────────────────────────────────────────
 ❯
