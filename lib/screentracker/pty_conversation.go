@@ -398,11 +398,6 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 	}
 
 	c.lock.Lock()
-	// Re-apply the pre-send agent message from the screen captured before
-	// the write. While the lock was released during writeStabilize, the
-	// writingMessage flag prevented the snapshot loop from creating spurious
-	// agent messages from terminal echo. Now we update with the correct
-	// pre-send screen state to ensure the conversation history is accurate.
 	c.screenBeforeLastUserMessage = screenBeforeMessage
 	c.messages = append(c.messages, ConversationMessage{
 		Id:      len(c.messages),
