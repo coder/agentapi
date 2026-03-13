@@ -1,0 +1,1 @@
+{"version":1,"messages":[{"id":0,"message":"Hello! Ready to help.","role":"agent","time":"2025-01-01T00:00:00.5Z"},{"id":1,"message":"test prompt","role":"user","time":"2025-01-01T00:00:00.5Z"},{"id":2,"message":"Response to test prompt","role":"agent","time":"2025-01-01T00:00:01.9Z"}],"initial_prompt":"test prompt","initial_prompt_sent":true}

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.12.1
+
+### Fixes
+- Prevent terminal echo from being captured as agent messages
+- Update codex message box detection
+
+## v0.12.0
+
+### Features
+- Experimental ACP integration
+- Introduce state persistence
+
+### Fixes
+- Fix pr-preview and build-release workflow errors
+
+### Chore
+- Codebase refactor for abstraction
+- Go version bump to 1.24
+- Use coder/quartz
+
 ## v0.11.8
 
 ### Fix

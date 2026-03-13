@@ -2,9 +2,11 @@ package screentracker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -25,6 +27,25 @@ type MessagePartText struct {
 	Alias   string
 	Hidden  bool
 }
+
+type AgentState struct {
+	Version           int                   `json:"version"`
+	Messages          []ConversationMessage `json:"messages"`
+	InitialPrompt     string                `json:"initial_prompt"`
+	InitialPromptSent bool                  `json:"initial_prompt_sent"`
+}
+
+// LoadStateStatus represents the state of loading persisted conversation state.
+type LoadStateStatus int
+
+const (
+	// LoadStatePending indicates state loading has not been attempted yet.
+	LoadStatePending LoadStateStatus = iota
+	// LoadStateSucceeded indicates state was successfully loaded.
+	LoadStateSucceeded
+	// LoadStateFailed indicates state loading was attempted but failed.
+	LoadStateFailed
+)
 
 var _ MessagePart = &MessagePartText{}
 
@@ -67,10 +88,9 @@ type PTYConversationConfig struct {
 	// FormatToolCall removes the coder report_task tool call from the agent message and also returns the array of removed tool calls
 	FormatToolCall func(message string) (string, []string)
 	// InitialPrompt is the initial prompt to send to the agent once ready
-	InitialPrompt []MessagePart
-	// OnSnapshot is called after each snapshot with current status, messages, and screen content
-	OnSnapshot func(status ConversationStatus, messages []ConversationMessage, screen string)
-	Logger     *slog.Logger
+	InitialPrompt          []MessagePart
+	Logger                 *slog.Logger
+	StatePersistenceConfig StatePersistenceConfig
 }
 
 func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
@@ -86,7 +106,8 @@ func (cfg PTYConversationConfig) getStableSnapshotsThreshold() int {
 // PTYConversation is a conversation that uses a pseudo-terminal (PTY) for communication.
 // It uses a combination of polling and diffs to detect changes in the screen.
 type PTYConversation struct {
-	cfg PTYConversationConfig
+	cfg     PTYConversationConfig
+	emitter Emitter
 	// How many stable snapshots are required to consider the screen stable
 	stableSnapshotsThreshold    int
 	snapshotBuffer              *RingBuffer[screenSnapshot]
@@ -103,25 +124,47 @@ type PTYConversation struct {
 	// Set under lock in the snapshot loop when signaling, cleared under
 	// lock in the send loop after sendMessage returns.
 	sendingMessage bool
+	// writingMessage is true while writeStabilize is executing.
+	// When true, updateLastAgentMessageLocked skips updates to avoid capturing terminal echo.
+	writingMessage bool
 	// stableSignal is used by the snapshot loop to signal the send loop
 	// when the agent is stable and there are items in the outbound queue.
 	stableSignal chan struct{}
 	// toolCallMessageSet keeps track of the tool calls that have been detected & logged in the current agent message
 	toolCallMessageSet map[string]bool
+	// dirty tracks whether the conversation state has changed since the last save
+	dirty bool
+	// userSentMessageAfterLoadState tracks if the user has sent their first message after we load the state
+	userSentMessageAfterLoadState bool
+	// loadStateStatus tracks the status of loading conversation state from file.
+	loadStateStatus LoadStateStatus
 	// initialPromptReady is set to true when ReadyForInitialPrompt returns true.
 	// Checked inline in the snapshot loop on each tick.
 	initialPromptReady bool
+	// initialPromptSent is set to true when the initial prompt has been enqueued to the outbound queue.
+	initialPromptSent bool
 }
 
 var _ Conversation = &PTYConversation{}
 
-func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
+type noopEmitter struct{}
+
+func (noopEmitter) EmitMessages([]ConversationMessage) {}
+func (noopEmitter) EmitStatus(ConversationStatus)      {}
+func (noopEmitter) EmitScreen(string)                  {}
+func (noopEmitter) EmitError(_ string, _ ErrorLevel)   {}
+
+func NewPTY(ctx context.Context, cfg PTYConversationConfig, emitter Emitter) *PTYConversation {
 	if cfg.Clock == nil {
 		cfg.Clock = quartz.NewReal()
+	}
+	if emitter == nil {
+		emitter = noopEmitter{}
 	}
 	threshold := cfg.getStableSnapshotsThreshold()
 	c := &PTYConversation{
 		cfg:                      cfg,
+		emitter:                  emitter,
 		stableSnapshotsThreshold: threshold,
 		snapshotBuffer:           NewRingBuffer[screenSnapshot](threshold),
 		messages: []ConversationMessage{
@@ -131,16 +174,13 @@ func NewPTY(ctx context.Context, cfg PTYConversationConfig) *PTYConversation {
 				Time:    cfg.Clock.Now(),
 			},
 		},
-		outboundQueue:      make(chan outboundMessage, 1),
-		stableSignal:       make(chan struct{}, 1),
-		toolCallMessageSet: make(map[string]bool),
-	}
-	// If we have an initial prompt, enqueue it
-	if len(cfg.InitialPrompt) > 0 {
-		c.outboundQueue <- outboundMessage{parts: cfg.InitialPrompt, errCh: nil}
-	}
-	if c.cfg.OnSnapshot == nil {
-		c.cfg.OnSnapshot = func(ConversationStatus, []ConversationMessage, string) {}
+		outboundQueue:                 make(chan outboundMessage, 1),
+		stableSignal:                  make(chan struct{}, 1),
+		toolCallMessageSet:            make(map[string]bool),
+		dirty:                         false,
+		userSentMessageAfterLoadState: false,
+		loadStateStatus:               LoadStatePending,
+		writingMessage:                false,
 	}
 	if c.cfg.ReadyForInitialPrompt == nil {
 		c.cfg.ReadyForInitialPrompt = func(string) bool { return true }
@@ -163,6 +203,29 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		if !c.initialPromptReady && c.cfg.ReadyForInitialPrompt(screen) {
 			c.initialPromptReady = true
 		}
+
+		var loadErr string
+		if c.initialPromptReady && c.loadStateStatus == LoadStatePending && c.cfg.StatePersistenceConfig.LoadState {
+			if err, shouldEmit := c.loadStateLocked(); err != nil {
+				c.loadStateStatus = LoadStateFailed
+				if shouldEmit {
+					c.cfg.Logger.Error("Failed to load state", "error", err)
+					loadErr = fmt.Sprintf("Failed to restore previous session: %v", err)
+				}
+			} else {
+				c.loadStateStatus = LoadStateSucceeded
+			}
+		}
+
+		if c.initialPromptReady && len(c.cfg.InitialPrompt) > 0 && !c.initialPromptSent {
+			// Safe to send under lock: the queue is guaranteed empty here because
+			// statusLocked blocks Send until the snapshot buffer fills, which
+			// cannot happen before this first enqueue completes.
+			c.outboundQueue <- outboundMessage{parts: c.cfg.InitialPrompt, errCh: nil}
+			c.initialPromptSent = true
+			c.dirty = true
+		}
+
 		if c.initialPromptReady && len(c.outboundQueue) > 0 && c.isScreenStableLocked() {
 			select {
 			case c.stableSignal <- struct{}{}:
@@ -173,7 +236,12 @@ func (c *PTYConversation) Start(ctx context.Context) {
 		}
 		c.lock.Unlock()
 
-		c.cfg.OnSnapshot(status, messages, screen)
+		if loadErr != "" {
+			c.emitter.EmitError(loadErr, ErrorLevelWarning)
+		}
+		c.emitter.EmitStatus(status)
+		c.emitter.EmitMessages(messages)
+		c.emitter.EmitScreen(screen)
 		return nil
 	}, "snapshot")
 
@@ -231,11 +299,18 @@ func (c *PTYConversation) lastMessage(role ConversationRole) ConversationMessage
 
 // caller MUST hold c.lock
 func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp time.Time) {
+	if c.writingMessage {
+		return
+	}
 	agentMessage := screenDiff(c.screenBeforeLastUserMessage, screen, c.cfg.AgentType)
 	lastUserMessage := c.lastMessage(ConversationRoleUser)
 	var toolCalls []string
 	if c.cfg.FormatMessage != nil {
 		agentMessage = c.cfg.FormatMessage(agentMessage, lastUserMessage.Message)
+	}
+	if c.loadStateStatus == LoadStateSucceeded && !c.userSentMessageAfterLoadState && len(c.messages) > 0 &&
+		c.messages[len(c.messages)-1].Role == ConversationRoleAgent {
+		agentMessage = c.messages[len(c.messages)-1].Message
 	}
 	if c.cfg.FormatToolCall != nil {
 		agentMessage, toolCalls = c.cfg.FormatToolCall(agentMessage)
@@ -266,6 +341,8 @@ func (c *PTYConversation) updateLastAgentMessageLocked(screen string, timestamp 
 		c.messages[len(c.messages)-1] = conversationMessage
 	}
 	c.messages[len(c.messages)-1].Id = len(c.messages) - 1
+
+	c.dirty = true
 }
 
 // caller MUST hold c.lock
@@ -280,11 +357,7 @@ func (c *PTYConversation) snapshotLocked(screen string) {
 
 func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 	// Validate message content before enqueueing
-	var sb strings.Builder
-	for _, part := range messageParts {
-		sb.WriteString(part.String())
-	}
-	message := sb.String()
+	message := buildStringFromMessageParts(messageParts)
 	if message != msgfmt.TrimWhitespace(message) {
 		return ErrMessageValidationWhitespace
 	}
@@ -308,33 +381,23 @@ func (c *PTYConversation) Send(messageParts ...MessagePart) error {
 // around the parts that access shared state, but releases it during
 // writeStabilize to avoid blocking the snapshot loop.
 func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...MessagePart) error {
-	var sb strings.Builder
-	for _, part := range messageParts {
-		sb.WriteString(part.String())
-	}
-	message := sb.String()
+	message := buildStringFromMessageParts(messageParts)
 
 	c.lock.Lock()
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	now := c.cfg.Clock.Now()
 	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
+	c.writingMessage = true
 	c.lock.Unlock()
 
 	if err := c.writeStabilize(ctx, messageParts...); err != nil {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.writingMessage = false
 		return xerrors.Errorf("failed to send message: %w", err)
 	}
 
 	c.lock.Lock()
-	// Re-apply the pre-send agent message from the screen captured before
-	// the write. While the lock was released during writeStabilize, the
-	// snapshot loop continued taking snapshots and calling
-	// updateLastAgentMessageLocked with whatever was on screen at each
-	// tick (typically echoed user input or intermediate terminal state).
-	// Those updates corrupt the agent message for this turn. Restoring it
-	// here ensures the conversation history is correct. The next line sets
-	// screenBeforeLastUserMessage so the *next* agent message will be
-	// diffed relative to the pre-send screen.
-	c.updateLastAgentMessageLocked(screenBeforeMessage, now)
 	c.screenBeforeLastUserMessage = screenBeforeMessage
 	c.messages = append(c.messages, ConversationMessage{
 		Id:      len(c.messages),
@@ -342,6 +405,8 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 		Role:    ConversationRoleUser,
 		Time:    now,
 	})
+	c.userSentMessageAfterLoadState = true
+	c.writingMessage = false
 	c.lock.Unlock()
 	return nil
 }
@@ -488,4 +553,155 @@ func (c *PTYConversation) Text() string {
 		return ""
 	}
 	return snapshots[len(snapshots)-1].screen
+}
+
+func (c *PTYConversation) SaveState() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	stateFile := c.cfg.StatePersistenceConfig.StateFile
+	saveState := c.cfg.StatePersistenceConfig.SaveState
+
+	if !saveState {
+		c.cfg.Logger.Info("State persistence is disabled")
+		return nil
+	}
+
+	// Skip if not dirty
+	if !c.dirty {
+		c.cfg.Logger.Info("Skipping state save: no changes since last save")
+		return nil
+	}
+
+	conversation := c.messagesLocked()
+
+	// Serialize initial prompt from message parts
+	var initialPromptStr string
+	if len(c.cfg.InitialPrompt) > 0 {
+		initialPromptStr = buildStringFromMessageParts(c.cfg.InitialPrompt)
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(stateFile)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return xerrors.Errorf("failed to create state directory: %w", err)
+	}
+
+	// Use atomic write: write to temp file, then rename to target path
+	tempFile := stateFile + ".tmp"
+	f, err := os.OpenFile(tempFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return xerrors.Errorf("failed to create temp state file: %w", err)
+	}
+
+	// Clean up temp file on error (before successful rename)
+	var renamed bool
+	defer func() {
+		if !renamed {
+			if removeErr := os.Remove(tempFile); removeErr != nil && !os.IsNotExist(removeErr) {
+				c.cfg.Logger.Warn("Failed to clean up temp state file", "path", tempFile, "err", removeErr)
+			}
+		}
+	}()
+
+	// Encode directly to file to avoid loading entire JSON into memory
+	encoder := json.NewEncoder(f)
+	if err := encoder.Encode(AgentState{
+		Version:           1,
+		Messages:          conversation,
+		InitialPrompt:     initialPromptStr,
+		InitialPromptSent: c.initialPromptSent,
+	}); err != nil {
+		_ = f.Close()
+		return xerrors.Errorf("failed to encode state: %w", err)
+	}
+
+	// Flush to disk before rename for crash safety
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return xerrors.Errorf("failed to sync state file: %w", err)
+	}
+
+	// Close file before rename
+	if err := f.Close(); err != nil {
+		return xerrors.Errorf("failed to close temp state file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempFile, stateFile); err != nil {
+		return xerrors.Errorf("failed to rename state file: %w", err)
+	}
+	renamed = true
+
+	// Clear dirty flag after successful save
+	c.dirty = false
+
+	c.cfg.Logger.Info("State saved successfully", "path", stateFile)
+
+	return nil
+}
+
+// loadStateLocked loads the state, this method assumes that caller holds the Lock.
+// Returns (error, shouldEmit) where shouldEmit indicates if the error should be emitted to the user.
+func (c *PTYConversation) loadStateLocked() (error, bool) {
+	stateFile := c.cfg.StatePersistenceConfig.StateFile
+	loadState := c.cfg.StatePersistenceConfig.LoadState
+
+	if !loadState || c.loadStateStatus != LoadStatePending {
+		return nil, false
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		c.cfg.Logger.Info("No previous state to load (file does not exist)", "path", stateFile)
+		return xerrors.Errorf("No previous state to load (file does not exist)"), false
+	}
+
+	// Open state file
+	f, err := os.Open(stateFile)
+	if err != nil {
+		return xerrors.Errorf("failed to open state file: %w", err), true
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			c.cfg.Logger.Warn("Failed to close state file", "path", stateFile, "err", closeErr)
+		}
+	}()
+
+	var agentState AgentState
+	decoder := json.NewDecoder(f)
+	if err := decoder.Decode(&agentState); err != nil {
+		return xerrors.Errorf("failed to unmarshal state (corrupted or invalid JSON): %w", err), true
+	}
+
+	// Validate version
+	if agentState.Version != 1 {
+		return xerrors.Errorf("unsupported state file version %d (expected 1)", agentState.Version), true
+	}
+
+	// Handle initial prompt restoration:
+	// - If a new initial prompt was provided via flags, check if it differs from the saved one.
+	//   If different, mark as not sent (will be sent). If same, preserve sent status.
+	// - If no new prompt provided, restore the saved prompt and its sent status.
+	c.initialPromptSent = agentState.InitialPromptSent
+	if len(c.cfg.InitialPrompt) > 0 {
+		isDifferent := buildStringFromMessageParts(c.cfg.InitialPrompt) != agentState.InitialPrompt
+		if isDifferent {
+			c.initialPromptSent = false
+		}
+		// If same prompt, keep agentState.InitialPromptSent
+	} else if agentState.InitialPrompt != "" {
+		c.cfg.InitialPrompt = []MessagePart{MessagePartText{
+			Content: agentState.InitialPrompt,
+			Alias:   "",
+			Hidden:  false,
+		}}
+	}
+
+	c.messages = agentState.Messages
+
+	c.dirty = false
+
+	c.cfg.Logger.Info("Successfully loaded state", "path", stateFile, "messages", len(c.messages))
+	return nil, false
 }

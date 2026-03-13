@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/quartz"
+
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/util"
@@ -18,6 +20,7 @@ const (
 	EventTypeMessageUpdate EventType = "message_update"
 	EventTypeStatusChange  EventType = "status_change"
 	EventTypeScreenUpdate  EventType = "screen_update"
+	EventTypeError         EventType = "agent_error"
 )
 
 type AgentStatus string
@@ -52,6 +55,12 @@ type ScreenUpdateBody struct {
 	Screen string `json:"screen"`
 }
 
+type ErrorBody struct {
+	Message string        `json:"message" doc:"Error message"`
+	Level   st.ErrorLevel `json:"level" doc:"Error level"`
+	Time    time.Time     `json:"time" doc:"Timestamp when the error occurred"`
+}
+
 type Event struct {
 	Type    EventType
 	Payload any
@@ -64,8 +73,10 @@ type EventEmitter struct {
 	agentType           mf.AgentType
 	chans               map[int]chan Event
 	chanIdx             int
-	subscriptionBufSize int
+	subscriptionBufSize uint
 	screen              string
+	errors              []ErrorBody
+	clock               quartz.Clock
 }
 
 func convertStatus(status st.ConversationStatus) AgentStatus {
@@ -81,20 +92,49 @@ func convertStatus(status st.ConversationStatus) AgentStatus {
 	}
 }
 
-// subscriptionBufSize is the size of the buffer for each subscription.
-// Once the buffer is full, the channel will be closed.
-// Listeners must actively drain the channel, so it's important to
-// set this to a value that is large enough to handle the expected
-// number of events.
-func NewEventEmitter(subscriptionBufSize int) *EventEmitter {
-	return &EventEmitter{
-		mu:                  sync.Mutex{},
+const defaultSubscriptionBufSize uint = 1024
+
+// maxStoredErrors caps the number of errors retained for late subscribers.
+const maxStoredErrors = 100
+
+type EventEmitterOption func(*EventEmitter)
+
+func WithSubscriptionBufSize(size uint) EventEmitterOption {
+	return func(e *EventEmitter) {
+		if size == 0 {
+			e.subscriptionBufSize = defaultSubscriptionBufSize
+		} else {
+			e.subscriptionBufSize = size
+		}
+	}
+}
+
+func WithAgentType(agentType mf.AgentType) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.agentType = agentType
+	}
+}
+
+func WithClock(clock quartz.Clock) EventEmitterOption {
+	return func(e *EventEmitter) {
+		e.clock = clock
+	}
+}
+
+func NewEventEmitter(opts ...EventEmitterOption) *EventEmitter {
+	e := &EventEmitter{
 		messages:            make([]st.ConversationMessage, 0),
 		status:              AgentStatusRunning,
 		chans:               make(map[int]chan Event),
-		chanIdx:             0,
-		subscriptionBufSize: subscriptionBufSize,
+		subscriptionBufSize: defaultSubscriptionBufSize,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	if e.clock == nil {
+		e.clock = quartz.NewReal()
+	}
+	return e
 }
 
 // Assumes the caller holds the lock.
@@ -120,9 +160,9 @@ func (e *EventEmitter) notifyChannels(eventType EventType, payload any) {
 	}
 }
 
-// Assumes that only the last message can change or new messages can be added.
+// EmitMessages assumes that only the last message can change or new messages can be added.
 // If a new message is injected between existing messages (identified by Id), the behavior is undefined.
-func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.ConversationMessage) {
+func (e *EventEmitter) EmitMessages(newMessages []st.ConversationMessage) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -137,6 +177,9 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 			newMsg = newMessages[i]
 		}
 		if oldMsg != newMsg {
+			if i >= len(newMessages) {
+				continue
+			}
 			e.notifyChannels(EventTypeMessageUpdate, MessageUpdateBody{
 				Id:      newMessages[i].Id,
 				Role:    newMessages[i].Role,
@@ -149,7 +192,7 @@ func (e *EventEmitter) UpdateMessagesAndEmitChanges(newMessages []st.Conversatio
 	e.messages = newMessages
 }
 
-func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatus, agentType mf.AgentType) {
+func (e *EventEmitter) EmitStatus(newStatus st.ConversationStatus) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -158,12 +201,11 @@ func (e *EventEmitter) UpdateStatusAndEmitChanges(newStatus st.ConversationStatu
 		return
 	}
 
-	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: agentType})
+	e.notifyChannels(EventTypeStatusChange, StatusChangeBody{Status: newAgentStatus, AgentType: e.agentType})
 	e.status = newAgentStatus
-	e.agentType = agentType
 }
 
-func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
+func (e *EventEmitter) EmitScreen(newScreen string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -173,6 +215,25 @@ func (e *EventEmitter) UpdateScreenAndEmitChanges(newScreen string) {
 
 	e.notifyChannels(EventTypeScreenUpdate, ScreenUpdateBody{Screen: strings.TrimRight(newScreen, mf.WhiteSpaceChars)})
 	e.screen = newScreen
+}
+
+func (e *EventEmitter) EmitError(message string, level st.ErrorLevel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	errorBody := ErrorBody{
+		Message: message,
+		Level:   level,
+		Time:    e.clock.Now(),
+	}
+
+	// Store the error so new subscribers can receive recent errors.
+	e.errors = append(e.errors, errorBody)
+	if len(e.errors) > maxStoredErrors {
+		e.errors = e.errors[len(e.errors)-maxStoredErrors:]
+	}
+
+	e.notifyChannels(EventTypeError, errorBody)
 }
 
 // Assumes the caller holds the lock.
@@ -192,6 +253,15 @@ func (e *EventEmitter) currentStateAsEvents() []Event {
 		Type:    EventTypeScreenUpdate,
 		Payload: ScreenUpdateBody{Screen: strings.TrimRight(e.screen, mf.WhiteSpaceChars)},
 	})
+
+	// Include all error events
+	for _, err := range e.errors {
+		events = append(events, Event{
+			Type:    EventTypeError,
+			Payload: err,
+		})
+	}
+
 	return events
 }
 

@@ -8,9 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/coder/agentapi/lib/screentracker"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -19,6 +23,7 @@ import (
 	"github.com/coder/agentapi/lib/httpapi"
 	"github.com/coder/agentapi/lib/logctx"
 	"github.com/coder/agentapi/lib/msgfmt"
+	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
 )
 
@@ -103,12 +108,76 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		}
 	}
 
-	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
-	var process *termexec.Process
-	if printOpenAPI {
-		process = nil
+	// Get the variables related to state management
+	stateFile := viper.GetString(FlagStateFile)
+	loadState := false
+	saveState := false
+
+	// Validate state file configuration
+	if stateFile != "" {
+		if !viper.IsSet(FlagLoadState) {
+			loadState = true
+		} else {
+			loadState = viper.GetBool(FlagLoadState)
+		}
+
+		if !viper.IsSet(FlagSaveState) {
+			saveState = true
+		} else {
+			saveState = viper.GetBool(FlagSaveState)
+		}
 	} else {
-		process, err = httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
+		if viper.IsSet(FlagLoadState) && viper.GetBool(FlagLoadState) {
+			return xerrors.Errorf("--load-state requires --state-file to be set")
+		}
+		if viper.IsSet(FlagSaveState) && viper.GetBool(FlagSaveState) {
+			return xerrors.Errorf("--save-state requires --state-file to be set")
+		}
+	}
+
+	experimentalACP := viper.GetBool(FlagExperimentalACP)
+
+	if experimentalACP && (saveState || loadState) {
+		return xerrors.Errorf("ACP mode doesn't support state persistence")
+	}
+
+	pidFile := viper.GetString(FlagPidFile)
+
+	// Write PID file if configured
+	if pidFile != "" {
+		if err := writePIDFile(pidFile, logger); err != nil {
+			return xerrors.Errorf("failed to write PID file: %w", err)
+		}
+		defer cleanupPIDFile(pidFile, logger)
+	}
+
+	printOpenAPI := viper.GetBool(FlagPrintOpenAPI)
+
+	if printOpenAPI && experimentalACP {
+		return xerrors.Errorf("flags --%s and --%s are mutually exclusive", FlagPrintOpenAPI, FlagExperimentalACP)
+	}
+
+	var agentIO st.AgentIO
+	transport := "pty"
+	var process *termexec.Process
+	var acpResult *httpapi.SetupACPResult
+
+	if printOpenAPI {
+		agentIO = nil
+	} else if experimentalACP {
+		var err error
+		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
+			Program:     agent,
+			ProgramArgs: argsToPass[1:],
+		})
+		if err != nil {
+			return xerrors.Errorf("failed to setup ACP: %w", err)
+		}
+		acpIO := acpResult.AgentIO
+		agentIO = acpIO
+		transport = "acp"
+	} else {
+		proc, err := httpapi.SetupProcess(ctx, httpapi.SetupProcessConfig{
 			Program:        agent,
 			ProgramArgs:    argsToPass[1:],
 			TerminalWidth:  termWidth,
@@ -118,17 +187,26 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		if err != nil {
 			return xerrors.Errorf("failed to setup process: %w", err)
 		}
+		process = proc
+		agentIO = proc
 	}
 	port := viper.GetInt(FlagPort)
 	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
 		AgentType:      agentType,
-		Process:        process,
+		AgentIO:        agentIO,
+		Transport:      httpapi.Transport(transport),
 		Port:           port,
 		ChatBasePath:   viper.GetString(FlagChatBasePath),
 		AllowedHosts:   viper.GetStringSlice(FlagAllowedHosts),
 		AllowedOrigins: viper.GetStringSlice(FlagAllowedOrigins),
 		InitialPrompt:  initialPrompt,
+		StatePersistenceConfig: screentracker.StatePersistenceConfig{
+			StateFile: stateFile,
+			LoadState: loadState,
+			SaveState: saveState,
+		},
 	})
+
 	if err != nil {
 		return xerrors.Errorf("failed to create server: %w", err)
 	}
@@ -136,28 +214,82 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		fmt.Println(srv.GetOpenAPI())
 		return nil
 	}
+
+	// Create a context for graceful shutdown
+	gracefulCtx, gracefulCancel := context.WithCancel(ctx)
+	defer gracefulCancel()
+
+	// Setup signal handlers (they will call gracefulCancel)
+	handleSignals(gracefulCtx, gracefulCancel, logger, srv)
+
 	logger.Info("Starting server on port", "port", port)
+
+	// Monitor process exit
 	processExitCh := make(chan error, 1)
-	go func() {
-		defer close(processExitCh)
-		if err := process.Wait(); err != nil {
-			if errors.Is(err, termexec.ErrNonZeroExitCode) {
-				processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
-			} else {
-				processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+	if process != nil {
+		go func() {
+			defer close(processExitCh)
+			defer gracefulCancel()
+			if err := process.Wait(); err != nil {
+				if errors.Is(err, termexec.ErrNonZeroExitCode) {
+					processExitCh <- xerrors.Errorf("========\n%s\n========\n: %w", strings.TrimSpace(process.ReadScreen()), err)
+				} else {
+					processExitCh <- xerrors.Errorf("failed to wait for process: %w", err)
+				}
 			}
-		}
-		if err := srv.Stop(ctx); err != nil {
-			logger.Error("Failed to stop server", "error", err)
+		}()
+	}
+	if acpResult != nil {
+		go func() {
+			defer close(processExitCh)
+			defer close(acpResult.Done) // Signal cleanup goroutine to exit
+			if err := acpResult.Wait(); err != nil {
+				processExitCh <- xerrors.Errorf("ACP process exited: %w", err)
+			}
+			if err := srv.Stop(ctx); err != nil {
+				logger.Error("Failed to stop server", "error", err)
+			}
+		}()
+	}
+
+	// Start the server
+	serverErrCh := make(chan error, 1)
+	go func() {
+		defer close(serverErrCh)
+		if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- err
 		}
 	}()
-	if err := srv.Start(); err != nil && err != context.Canceled && err != http.ErrServerClosed {
-		return xerrors.Errorf("failed to start server: %w", err)
+
+	select {
+	case err := <-serverErrCh:
+		if err != nil {
+			return xerrors.Errorf("failed to start server: %w", err)
+		}
+	case <-gracefulCtx.Done():
 	}
+
+	if err := srv.SaveState("shutdown"); err != nil {
+		logger.Error("Failed to save state during shutdown", "error", err)
+	}
+
+	// Stop the HTTP server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Stop(shutdownCtx); err != nil {
+		logger.Error("Failed to stop HTTP server", "error", err)
+	}
+
 	select {
 	case err := <-processExitCh:
-		return xerrors.Errorf("agent exited with error: %w", err)
+		if err != nil {
+			return xerrors.Errorf("agent exited with error: %w", err)
+		}
 	default:
+		// Close the process
+		if err := process.Close(logger, 5*time.Second); err != nil {
+			logger.Error("Failed to close process cleanly", "error", err)
+		}
 	}
 	return nil
 }
@@ -171,6 +303,61 @@ var agentNames = (func() []string {
 	return names
 })()
 
+// writePIDFile writes the current process ID to the specified file
+func writePIDFile(pidFile string, logger *slog.Logger) error {
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(pidFile)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return xerrors.Errorf("failed to create PID file directory: %w", err)
+	}
+
+	// Check if PID file already exists
+	if existingPIDData, err := os.ReadFile(pidFile); err == nil {
+		existingPIDStr := strings.TrimSpace(string(existingPIDData))
+		if existingPID, err := strconv.Atoi(existingPIDStr); err == nil {
+			if isProcessRunning(existingPID) {
+				return xerrors.Errorf("another instance is already running with PID %d (PID file: %s)", existingPID, pidFile)
+			}
+			logger.Warn("Found stale PID file, will overwrite", "pidFile", pidFile, "stalePID", existingPID)
+		}
+	} else if !os.IsNotExist(err) {
+		return xerrors.Errorf("failed to read existing PID file: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(pidFile, []byte(pidContent), 0o600); err != nil {
+		return xerrors.Errorf("failed to write PID file: %w", err)
+	}
+
+	logger.Info("Wrote PID file", "pidFile", pidFile, "pid", pid)
+	return nil
+}
+
+// cleanupPIDFile removes the PID file if it was written by this process.
+func cleanupPIDFile(pidFile string, logger *slog.Logger) {
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Error("Failed to read PID file for cleanup", "pidFile", pidFile, "error", err)
+		}
+		return
+	}
+	pidStr := strings.TrimSpace(string(data))
+	filePID, err := strconv.Atoi(pidStr)
+	if err != nil || filePID != os.Getpid() {
+		logger.Info("PID file belongs to another process, skipping cleanup", "pidFile", pidFile, "filePID", pidStr)
+		return
+	}
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		logger.Error("Failed to remove PID file", "pidFile", pidFile, "error", err)
+	} else if err == nil {
+		logger.Info("Removed PID file", "pidFile", pidFile)
+	}
+}
+
 type flagSpec struct {
 	name         string
 	shorthand    string
@@ -180,16 +367,21 @@ type flagSpec struct {
 }
 
 const (
-	FlagType           = "type"
-	FlagPort           = "port"
-	FlagPrintOpenAPI   = "print-openapi"
-	FlagChatBasePath   = "chat-base-path"
-	FlagTermWidth      = "term-width"
-	FlagTermHeight     = "term-height"
-	FlagAllowedHosts   = "allowed-hosts"
-	FlagAllowedOrigins = "allowed-origins"
-	FlagExit           = "exit"
-	FlagInitialPrompt  = "initial-prompt"
+	FlagType            = "type"
+	FlagPort            = "port"
+	FlagPrintOpenAPI    = "print-openapi"
+	FlagChatBasePath    = "chat-base-path"
+	FlagTermWidth       = "term-width"
+	FlagTermHeight      = "term-height"
+	FlagAllowedHosts    = "allowed-hosts"
+	FlagAllowedOrigins  = "allowed-origins"
+	FlagExit            = "exit"
+	FlagInitialPrompt   = "initial-prompt"
+	FlagStateFile       = "state-file"
+	FlagLoadState       = "load-state"
+	FlagSaveState       = "save-state"
+	FlagPidFile         = "pid-file"
+	FlagExperimentalACP = "experimental-acp"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -228,6 +420,11 @@ func CreateServerCmd() *cobra.Command {
 		// localhost:3284 is the default origin when you open the chat interface in your browser. localhost:3000 and 3001 are used during development.
 		{FlagAllowedOrigins, "o", []string{"http://localhost:3284", "http://localhost:3000", "http://localhost:3001"}, "HTTP allowed origins. Use '*' for all, comma-separated list via flag, space-separated list via AGENTAPI_ALLOWED_ORIGINS env var", "stringSlice"},
 		{FlagInitialPrompt, "I", "", "Initial prompt for the agent. Recommended only if the agent doesn't support initial prompt in interaction mode. Will be read from stdin if piped (e.g., echo 'prompt' | agentapi server -- my-agent)", "string"},
+		{FlagStateFile, "s", "", "Path to file for saving/loading server state", "string"},
+		{FlagLoadState, "", false, "Load state from state-file on startup (defaults to true when state-file is set)", "bool"},
+		{FlagSaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
+		{FlagPidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
+		{FlagExperimentalACP, "", false, "Use experimental ACP transport instead of PTY", "bool"},
 	}
 
 	for _, spec := range flagSpecs {

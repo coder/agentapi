@@ -51,12 +51,11 @@ func removeMessageBox(msg string) string {
 	return strings.Join(lines, "\n")
 }
 
-func removeCodexInputBox(msg string) string {
+func removeCodexMessageBox(msg string) string {
 	lines := strings.Split(msg, "\n")
-	// Remove the input box, we need to match the exact pattern, because thinking follows the same pattern of ▌ followed by text
-	if len(lines) >= 2 && strings.Contains(lines[len(lines)-2], "▌ Ask Codex to do anything") {
-		idx := len(lines) - 2
-		lines = append(lines[:idx], lines[idx+1:]...)
+	if len(lines) >= 3 && strings.Contains(lines[len(lines)-3], "›") {
+		idx := len(lines) - 3
+		lines = append(lines[:idx], lines[idx+2])
 	}
 	return strings.Join(lines, "\n")
 }

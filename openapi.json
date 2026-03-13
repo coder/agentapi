@@ -19,6 +19,30 @@
         "title": "ConversationRole",
         "type": "string"
       },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/ErrorLevel",
+            "description": "Error level"
+          },
+          "message": {
+            "description": "Error message",
+            "type": "string"
+          },
+          "time": {
+            "description": "Timestamp when the error occurred",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "message",
+          "time"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -35,6 +59,15 @@
           }
         },
         "type": "object"
+      },
+      "ErrorLevel": {
+        "enum": [
+          "error",
+          "warning"
+        ],
+        "example": "warning",
+        "title": "ErrorLevel",
+        "type": "string"
       },
       "ErrorModel": {
         "additionalProperties": false,
@@ -272,13 +305,27 @@
           "status": {
             "$ref": "#/components/schemas/AgentStatus",
             "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
+          },
+          "transport": {
+            "$ref": "#/components/schemas/Transport",
+            "description": "Backend transport being used ('acp' or 'pty')."
           }
         },
         "required": [
           "agent_type",
-          "status"
+          "status",
+          "transport"
         ],
         "type": "object"
+      },
+      "Transport": {
+        "enum": [
+          "acp",
+          "pty"
+        ],
+        "example": "pty",
+        "title": "Transport",
+        "type": "string"
       },
       "UploadResponseBody": {
         "additionalProperties": false,
@@ -310,7 +357,7 @@
   "info": {
     "description": "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi",
     "title": "AgentAPI",
-    "version": "0.11.8"
+    "version": "0.12.1"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -326,6 +373,32 @@
                   "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
                   "items": {
                     "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ErrorBody"
+                          },
+                          "event": {
+                            "const": "agent_error",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event agent_error",
+                        "type": "object"
+                      },
                       {
                         "properties": {
                           "data": {
