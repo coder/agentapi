@@ -1,7 +1,6 @@
 package msgfmt
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -67,9 +66,6 @@ func removeClaudeReportTaskToolCall(msg string) (string, []string) {
 		// If the toolCall is malformed, we don't want to log it
 		if !toolCallIdxs[i].malformed {
 			toolCallMessages = append(toolCallMessages, strings.Join(lines[start:end], "\n"))
-		} else {
-			// [DEBUG] print, will remove before merge
-			fmt.Printf("Found malformed toolCall with newLineAfterToolCall, start: %d, end: %d, toolcall: %s", start, end, strings.Join(lines[start:end], "\n"))
 		}
 
 		lines = append(lines[:start], lines[end:]...)
