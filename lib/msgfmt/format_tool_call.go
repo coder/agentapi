@@ -125,6 +125,68 @@ func removeCodexReportTaskToolCall(msg string) (string, []string) {
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n"), toolCallMessages
 }
 
+func removeCopilotReportTaskToolCall(msg string) (string, []string) {
+	msg = "\n" + msg // This handles the case where the message starts with a tool call
+
+	// Remove all tool calls that start with `● coder_report_task:`
+	lines := strings.Split(msg, "\n")
+
+	toolCallStartIdx := -1
+	newLineAfterToolCall := -1
+
+	// Store all tool call start and end indices [[start, end], ...]
+	var toolCallIdxs []toolCallRange
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.Trim(strings.TrimSpace(lines[i]), "\n")
+
+		if strings.Contains(line, "● coder_report_task:") {
+			toolCallStartIdx = i
+		} else if toolCallStartIdx != -1 {
+			if strings.Contains(line, "{\"message\":\"Thanks for reporting!\"}") {
+				// Store [start, end] pair
+				toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, min(len(lines), i+2), false})
+
+				// Reset to find the next tool call
+				toolCallStartIdx = -1
+				newLineAfterToolCall = -1
+			} else if len(line) == 0 {
+				newLineAfterToolCall = i + 1
+			}
+		}
+	}
+
+	// Handle the malformed/partially rendered tool_calls
+	// Note: This case has not yet been observed in Copilot
+	if toolCallStartIdx != -1 {
+		if newLineAfterToolCall != -1 {
+			toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, newLineAfterToolCall, true})
+		} else {
+			toolCallIdxs = append(toolCallIdxs, toolCallRange{toolCallStartIdx, len(lines), true})
+		}
+	}
+
+	// If no tool calls found, return original message
+	if len(toolCallIdxs) == 0 {
+		return strings.TrimLeft(msg, "\n"), []string{}
+	}
+
+	toolCallMessages := make([]string, 0)
+
+	// Remove tool calls from the message
+	for i := len(toolCallIdxs) - 1; i >= 0; i-- {
+		start, end := toolCallIdxs[i].start, toolCallIdxs[i].end
+
+		// If the toolCall is malformed, we don't want to log it
+		if !toolCallIdxs[i].malformed {
+			toolCallMessages = append(toolCallMessages, strings.Join(lines[start:end], "\n"))
+		}
+
+		lines = append(lines[:start], lines[end:]...)
+	}
+	return strings.TrimLeft(strings.Join(lines, "\n"), "\n"), toolCallMessages
+}
+
 func FormatToolCall(agentType AgentType, message string) (string, []string) {
 	switch agentType {
 	case AgentTypeClaude:
@@ -138,7 +200,7 @@ func FormatToolCall(agentType AgentType, message string) (string, []string) {
 	case AgentTypeGemini:
 		return message, []string{}
 	case AgentTypeCopilot:
-		return message, []string{}
+		return removeCopilotReportTaskToolCall(message)
 	case AgentTypeAmp:
 		return message, []string{}
 	case AgentTypeCursor:
