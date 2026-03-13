@@ -40,3 +40,6 @@
   Open the HTML file in your web browser and use the arrow keys
    to move the snake. Collect the red food to grow and increase
    your score!
+
+
+ Above is a malformed tool call message
