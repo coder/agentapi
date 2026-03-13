@@ -8,4 +8,4 @@
 
  ● Connected to GitHub MCP Server
 
- ~/Documents/work/agentapi [⎇ feat-github-cli*]
+ ~/Documents/work/.../agentapi [⎇ main*]     claude-haiku-4.5 (1x)
