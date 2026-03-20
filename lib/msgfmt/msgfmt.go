@@ -254,6 +254,14 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 	return message
 }
 
+func formatCopilotMessage(message string, userInput string) string {
+	message = RemoveUserInput(message, userInput, AgentTypeCopilot)
+	message = removeMessageBox(message)
+	message = removeCopilotFooter(message)
+	message = trimEmptyLines(message)
+	return message
+}
+
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeCodex)
 	message = removeCodexMessageBox(message)
@@ -288,7 +296,7 @@ func FormatAgentMessage(agentType AgentType, message string, userInput string) s
 	case AgentTypeGemini:
 		return formatGenericMessage(message, userInput, agentType)
 	case AgentTypeCopilot:
-		return formatGenericMessage(message, userInput, agentType)
+		return formatCopilotMessage(message, userInput)
 	case AgentTypeAmp:
 		return formatAmpMessage(message, userInput)
 	case AgentTypeCursor:

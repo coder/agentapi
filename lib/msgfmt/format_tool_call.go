@@ -184,7 +184,7 @@ func removeCopilotReportTaskToolCall(msg string) (string, []string) {
 
 		lines = append(lines[:start], lines[end:]...)
 	}
-	return strings.TrimLeft(strings.Join(lines, "\n"), "\n"), toolCallMessages
+	return strings.Trim(strings.Join(lines, "\n"), "\n"), toolCallMessages
 }
 
 func FormatToolCall(agentType AgentType, message string) (string, []string) {

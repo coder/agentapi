@@ -108,5 +108,3 @@
    - ✓ Pygame installed and configured                             
                                                                    
   Ready to play! 🐍                                                 
-
- ~/projects                                  claude-haiku-4.5 (1x) 

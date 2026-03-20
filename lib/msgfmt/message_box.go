@@ -113,3 +113,19 @@ func removeAmpMessageBox(msg string) string {
 	}
 	return formattedMsg
 }
+
+func removeCopilotFooter(msg string) string {
+	lines := strings.Split(msg, "\n")
+
+	firstEmptyLine := 0
+
+	// From the end strip until we discover an empty line
+	for i := len(lines) - 1; i >= 0; i-- {
+		if len(strings.TrimSpace(lines[i])) == 0 {
+			firstEmptyLine = i
+			break
+		}
+	}
+
+	return strings.Join(lines[:firstEmptyLine], "\n")
+}
