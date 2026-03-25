@@ -94,10 +94,12 @@ func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusRespons
 // getMessages handles GET /messages
 //
 //	@param after (query) int "Return messages after this ID"
+//	@param offset (query) int "Skip the first N messages"
 //	@param limit (query) int "Limit number of messages returned"
 func (s *Server) getMessages(ctx context.Context, input *struct {
-	After *int `json:"after,optional"`
-	Limit *int `json:"limit,optional"`
+	After  *int `json:"after,optional"`
+	Offset *int `json:"offset,optional"`
+	Limit  *int `json:"limit,optional"`
 }) (*MessagesResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -115,6 +117,16 @@ func (s *Server) getMessages(ctx context.Context, input *struct {
 			}
 		}
 		messages = filtered
+	}
+
+	// Apply offset
+	if input.Offset != nil && *input.Offset > 0 {
+		offset := *input.Offset
+		if offset >= len(messages) {
+			messages = []st.ConversationMessage{}
+		} else {
+			messages = messages[offset:]
+		}
 	}
 
 	// Apply limit
