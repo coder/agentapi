@@ -1,9 +1,3 @@
-import DefaultTheme from 'vitepress/theme'
-import CategorySwitcher from '../components/CategorySwitcher.vue'
+import PhenoDocsTheme from '@phenodocs-theme'
 
-export default {
-  ...DefaultTheme,
-  enhanceApp({ app }) {
-    app.component('CategorySwitcher', CategorySwitcher)
-  }
-}
+export default PhenoDocsTheme
