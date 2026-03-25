@@ -1,6 +1,6 @@
 module github.com/coder/agentapi
 
-go 1.24.11
+go 1.24.3
 
 require (
 	github.com/ActiveState/termtest/xpty v0.6.0
