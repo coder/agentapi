@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.11.9
+
+### Features
+- Integrate shared phenotype-go-kit packages (#328, #329)
+- Modernize tooling with oxc linter and bun (#330)
+- Add pagination support for messages endpoint (#335)
+
+### Fixes
+- Resolve PR303 contract and gate blockers (#333)
+- Stabilize policy federation and docs CI (#336)
+- Normalize OpenAPI contract hygiene (#334)
+- Fix TypeScript lint issues (#332)
+
 ## v0.11.8
 
 ### Fix
