@@ -1,0 +1,21 @@
+#!/bin/bash
+# Sync script for agentapi-plusplus (no upstream)
+
+set -e
+
+BRANCH="${1:-main}"
+
+echo "=== Syncing agentapi-plusplus ==="
+git fetch origin
+
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/$BRANCH)
+
+if git merge-base --is-ancestor $LOCAL $REMOTE; then
+    echo "Already up-to-date"
+else
+    git merge --no-ff origin/$BRANCH -m "Merge origin/$BRANCH"
+fi
+
+echo "=== Done ==="
+git log --oneline -3
