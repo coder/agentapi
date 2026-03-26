@@ -3,12 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "docs:index": "bash scripts/generate-doc-index.sh",
-    "docs:dev": "node ./node_modules/vitepress/dist/node/cli.js dev .",
-    "docs:build": "bash scripts/generate-doc-index.sh && node ./node_modules/vitepress/dist/node/cli.js build .",
-    "docs:preview": "node ./node_modules/vitepress/dist/node/cli.js preview ."
+    "postinstall": "cd ../vendor/phenodocs/packages/docs && bun install",
+    "dev": "vitepress dev .",
+    "build": "vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "dependencies": {
+    "@phenotype/docs": "file:../vendor/phenodocs/packages/docs"
   },
   "devDependencies": {
-    "vitepress": "^1.6.4"
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.0"
   }
 }
