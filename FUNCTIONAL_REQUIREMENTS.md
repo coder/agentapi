@@ -265,3 +265,32 @@
 ### FR-SEC-005
 **SHALL NOT** log the content of agent prompts or responses at `INFO` level or below; only metadata (agent name, session ID, model, duration) may be logged at `INFO`.
 - Traces to: G-1
+
+---
+
+## FR-BIFROST — AgentBifrost Routing Layer
+
+### FR-BIFROST-001
+**SHALL** define `AgentBifrost` struct with fields: `cliproxyURL` (string), `client` (*http.Client with 30 s default timeout), `sessions` (map[string]*AgentSession, RW-mutex protected), `rules` (map[string]RoutingRule, RW-mutex protected), `benchmarks` (*benchmarks.Store).
+- Traces to: E5.S1
+- Code: `internal/routing/agent_bifrost.go`
+
+### FR-BIFROST-002
+**SHALL** define `AgentSession` with fields: `ID`, `Agent`, `Started` (time.Time), `Models` ([]string), `Metadata` (map[string]interface{}); sessions SHALL be created on first contact for each agent and reused across requests.
+- Traces to: E5.S1
+- Code: `internal/routing/agent_bifrost.go`
+
+### FR-BIFROST-003
+**SHALL** define `RoutingRule` with fields: `Agent`, `PreferredModel`, `FallbackModels` ([]string), `MaxRetries` (int), `Timeout` (int, seconds); rules SHALL be loadable from configuration at startup and updatable at runtime without restart.
+- Traces to: E5.S1
+- Code: `internal/routing/agent_bifrost.go`
+
+### FR-BIFROST-004
+**SHALL** implement `RouteRequest(ctx, agent, prompt)` that constructs a cliproxy request using the agent-specific `RoutingRule.PreferredModel`, attaches the session ID, and forwards to the configured `cliproxyURL`; on failure it SHALL retry up to `RoutingRule.MaxRetries` times with exponential backoff.
+- Traces to: E5.S1
+- Code: `internal/routing/agent_bifrost.go`
+
+### FR-BIFROST-005
+**SHALL** integrate `benchmarks.Store` (from `internal/benchmarks/`) to record per-agent, per-model token counts and latency; routing decisions SHALL use benchmark data to prefer models with lower P95 latency when costs are equal.
+- Traces to: E5.S1
+- Code: `internal/routing/agent_bifrost.go`, `internal/benchmarks/`
