@@ -1,0 +1,15 @@
+linters:
+  disable:
+    - errcheck
+  enable:
+    - dupword
+    - misspell
+    - musttag
+    - nolintlint
+    - perfsprint
+    - prealloc
+    - tenv
+    - testifylint
+    - unparam
+    - unconvert
+    - wastedassign

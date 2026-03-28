@@ -1,0 +1,5 @@
+ignore:
+  - benchmark
+  - examples
+  - adapters
+  - cookie.go

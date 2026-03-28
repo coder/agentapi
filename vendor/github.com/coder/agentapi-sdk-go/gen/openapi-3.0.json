@@ -1,0 +1,468 @@
+{
+    "components": {
+        "schemas": {
+            "AgentStatus": {
+                "enum": [
+                    "stable",
+                    "running"
+                ],
+                "example": "stable",
+                "title": "AgentStatus",
+                "type": "string"
+            },
+            "ConversationRole": {
+                "enum": [
+                    "user",
+                    "agent"
+                ],
+                "example": "user",
+                "title": "ConversationRole",
+                "type": "string"
+            },
+            "ErrorDetail": {
+                "additionalProperties": false,
+                "properties": {
+                    "location": {
+                        "description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                        "type": "string"
+                    },
+                    "message": {
+                        "description": "Error message text",
+                        "type": "string"
+                    },
+                    "value": {
+                        "description": "The value at the given location"
+                    }
+                },
+                "type": "object"
+            },
+            "ErrorModel": {
+                "additionalProperties": false,
+                "properties": {
+                    "$schema": {
+                        "description": "A URL to the JSON Schema for this object.",
+                        "example": "https://example.com/schemas/ErrorModel.json",
+                        "format": "uri",
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "detail": {
+                        "description": "A human-readable explanation specific to this occurrence of the problem.",
+                        "example": "Property foo is required but is missing.",
+                        "type": "string"
+                    },
+                    "errors": {
+                        "description": "Optional list of individual error details",
+                        "items": {
+                            "$ref": "#/components/schemas/ErrorDetail"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                    },
+                    "instance": {
+                        "description": "A URI reference that identifies the specific occurrence of the problem.",
+                        "example": "https://example.com/error-log/abc123",
+                        "format": "uri",
+                        "type": "string"
+                    },
+                    "status": {
+                        "description": "HTTP status code",
+                        "example": 400,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "title": {
+                        "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "example": "Bad Request",
+                        "type": "string"
+                    },
+                    "type": {
+                        "default": "about:blank",
+                        "description": "A URI reference to human-readable documentation for the error.",
+                        "example": "https://example.com/errors/example",
+                        "format": "uri",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "Message": {
+                "additionalProperties": false,
+                "properties": {
+                    "content": {
+                        "description": "Message content. The message is formatted as it appears in the agent's terminal session, meaning it consists of lines of text with 80 characters per line.",
+                        "example": "Hello world",
+                        "type": "string"
+                    },
+                    "id": {
+                        "description": "Unique identifier for the message. This identifier also represents the order of the message in the conversation history.",
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ConversationRole",
+                        "description": "Role of the message author"
+                    },
+                    "time": {
+                        "description": "Timestamp of the message",
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "content",
+                    "role",
+                    "time"
+                ],
+                "type": "object"
+            },
+            "MessageRequestBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "$schema": {
+                        "description": "A URL to the JSON Schema for this object.",
+                        "example": "https://example.com/schemas/MessageRequestBody.json",
+                        "format": "uri",
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "content": {
+                        "description": "Message content",
+                        "example": "Hello, agent!",
+                        "type": "string"
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageType",
+                        "description": "A 'user' type message will be logged as a user message in the conversation history and submitted to the agent. AgentAPI will wait until the agent starts carrying out the task described in the message before responding. A 'raw' type message will be written directly to the agent's terminal session as keystrokes and will not be saved in the conversation history. 'raw' messages are useful for sending escape sequences to the terminal."
+                    }
+                },
+                "required": [
+                    "content",
+                    "type"
+                ],
+                "type": "object"
+            },
+            "MessageResponseBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "$schema": {
+                        "description": "A URL to the JSON Schema for this object.",
+                        "example": "https://example.com/schemas/MessageResponseBody.json",
+                        "format": "uri",
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "ok": {
+                        "description": "Indicates whether the message was sent successfully. For messages of type 'user', success means detecting that the agent began executing the task described. For messages of type 'raw', success means the keystrokes were sent to the terminal.",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "ok"
+                ],
+                "type": "object"
+            },
+            "MessageType": {
+                "enum": [
+                    "user",
+                    "raw"
+                ],
+                "example": "user",
+                "title": "MessageType",
+                "type": "string"
+            },
+            "MessageUpdateBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "description": "Unique identifier for the message. This identifier also represents the order of the message in the conversation history.",
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "message": {
+                        "description": "Message content. The message is formatted as it appears in the agent's terminal session, meaning it consists of lines of text with 80 characters per line.",
+                        "type": "string"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ConversationRole",
+                        "description": "Role of the message author"
+                    },
+                    "time": {
+                        "description": "Timestamp of the message",
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "role",
+                    "message",
+                    "time"
+                ],
+                "type": "object"
+            },
+            "MessagesResponseBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "$schema": {
+                        "description": "A URL to the JSON Schema for this object.",
+                        "example": "https://example.com/schemas/MessagesResponseBody.json",
+                        "format": "uri",
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "messages": {
+                        "description": "List of messages",
+                        "items": {
+                            "$ref": "#/components/schemas/Message"
+                        },
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "messages"
+                ],
+                "type": "object"
+            },
+            "ScreenUpdateBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "screen": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "screen"
+                ],
+                "type": "object"
+            },
+            "StatusChangeBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/AgentStatus",
+                        "description": "Agent status"
+                    }
+                },
+                "required": [
+                    "status"
+                ],
+                "type": "object"
+            },
+            "StatusResponseBody": {
+                "additionalProperties": false,
+                "properties": {
+                    "$schema": {
+                        "description": "A URL to the JSON Schema for this object.",
+                        "example": "https://example.com/schemas/StatusResponseBody.json",
+                        "format": "uri",
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AgentStatus",
+                        "description": "Current agent status. 'running' means that the agent is processing a message, 'stable' means that the agent is idle and waiting for input."
+                    }
+                },
+                "required": [
+                    "status"
+                ],
+                "type": "object"
+            }
+        }
+    },
+    "info": {
+        "description": "HTTP API for Claude Code, Goose, and Aider.\n\nhttps://github.com/coder/agentapi",
+        "title": "AgentAPI",
+        "version": "0.1.0"
+    },
+    "openapi": "3.0.3",
+    "paths": {
+        "/events": {
+            "get": {
+                "description": "The events are sent as Server-Sent Events (SSE). Initially, the endpoint returns a list of events needed to reconstruct the current state of the conversation and the agent's status. After that, it only returns events that have occurred since the last event was sent.\n\nNote: When an agent is running, the last message in the conversation history is updated frequently, and the endpoint sends a new message update event each time.",
+                "operationId": "subscribeEvents",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
+                                    "items": {
+                                        "oneOf": [
+                                            {
+                                                "properties": {
+                                                    "data": {
+                                                        "$ref": "#/components/schemas/MessageUpdateBody"
+                                                    },
+                                                    "event": {
+                                                        "const": "message_update",
+                                                        "description": "The event name.",
+                                                        "type": "string"
+                                                    },
+                                                    "id": {
+                                                        "description": "The event ID.",
+                                                        "type": "integer"
+                                                    },
+                                                    "retry": {
+                                                        "description": "The retry time in milliseconds.",
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "data",
+                                                    "event"
+                                                ],
+                                                "title": "Event message_update",
+                                                "type": "object"
+                                            },
+                                            {
+                                                "properties": {
+                                                    "data": {
+                                                        "$ref": "#/components/schemas/StatusChangeBody"
+                                                    },
+                                                    "event": {
+                                                        "const": "status_change",
+                                                        "description": "The event name.",
+                                                        "type": "string"
+                                                    },
+                                                    "id": {
+                                                        "description": "The event ID.",
+                                                        "type": "integer"
+                                                    },
+                                                    "retry": {
+                                                        "description": "The retry time in milliseconds.",
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "data",
+                                                    "event"
+                                                ],
+                                                "title": "Event status_change",
+                                                "type": "object"
+                                            }
+                                        ]
+                                    },
+                                    "title": "Server Sent Events",
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "default": {
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorModel"
+                                }
+                            }
+                        },
+                        "description": "Error"
+                    }
+                },
+                "summary": "Subscribe to events"
+            }
+        },
+        "/message": {
+            "post": {
+                "description": "Send a message to the agent. For messages of type 'user', the agent's status must be 'stable' for the operation to complete successfully. Otherwise, this endpoint will return an error.",
+                "operationId": "post-message",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageRequestBody",
+                                "description": "Message content and type"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageResponseBody"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "default": {
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorModel"
+                                }
+                            }
+                        },
+                        "description": "Error"
+                    }
+                },
+                "summary": "Post message"
+            }
+        },
+        "/messages": {
+            "get": {
+                "description": "Returns a list of messages representing the conversation history with the agent.",
+                "operationId": "get-messages",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessagesResponseBody"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "default": {
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorModel"
+                                }
+                            }
+                        },
+                        "description": "Error"
+                    }
+                },
+                "summary": "Get messages"
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "Returns the current status of the agent.",
+                "operationId": "get-status",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponseBody"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "default": {
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorModel"
+                                }
+                            }
+                        },
+                        "description": "Error"
+                    }
+                },
+                "summary": "Get status"
+            }
+        }
+    }
+}

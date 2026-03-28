@@ -55,6 +55,13 @@ func (s *Server) getVersion(ctx context.Context, input *struct{}) (*VersionRespo
 	return resp, nil
 }
 
+// getReady handles GET /ready
+func (s *Server) getReady(ctx context.Context, input *struct{}) (*ReadyResponse, error) {
+	resp := &ReadyResponse{}
+	resp.Body.Ready = true
+	return resp, nil
+}
+
 // getInfo handles GET /info
 func (s *Server) getInfo(ctx context.Context, input *struct{}) (*InfoResponse, error) {
 	s.mu.RLock()
