@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	mf "github.com/coder/agentapi/lib/msgfmt"
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/agentapi/lib/termexec"
+	"github.com/coder/agentapi/x/acpio"
 	"github.com/coder/quartz"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -33,14 +35,18 @@ type Server struct {
 	port         int
 	srv          *http.Server
 	mu           sync.RWMutex
+	stopOnce     sync.Once
 	logger       *slog.Logger
 	conversation st.Conversation
-	agentio      *termexec.Process
+	agentio      st.AgentIO
 	agentType    mf.AgentType
 	emitter      *EventEmitter
 	chatBasePath string
 	tempDir      string
 	clock        quartz.Clock
+	shutdownCtx  context.Context
+	shutdown     context.CancelFunc
+	transport    Transport
 }
 
 func (s *Server) NormalizeSchema(schema any) any {
@@ -90,14 +96,16 @@ func (s *Server) GetOpenAPI() string {
 const snapshotInterval = 25 * time.Millisecond
 
 type ServerConfig struct {
-	AgentType      mf.AgentType
-	Process        *termexec.Process
-	Port           int
-	ChatBasePath   string
-	AllowedHosts   []string
-	AllowedOrigins []string
-	InitialPrompt  string
-	Clock          quartz.Clock
+	AgentType              mf.AgentType
+	AgentIO                st.AgentIO
+	Transport              Transport
+	Port                   int
+	ChatBasePath           string
+	AllowedHosts           []string
+	AllowedOrigins         []string
+	InitialPrompt          string
+	Clock                  quartz.Clock
+	StatePersistenceConfig st.StatePersistenceConfig
 }
 
 // NewServer creates a new server instance
@@ -161,18 +169,33 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 		initialPrompt = FormatMessage(config.AgentType, config.InitialPrompt)
 	}
 
-	conversation := st.NewPTY(ctx, st.PTYConversationConfig{
-		AgentType:             config.AgentType,
-		AgentIO:               config.Process,
-		Clock:                 config.Clock,
-		SnapshotInterval:      snapshotInterval,
-		ScreenStabilityLength: 2 * time.Second,
-		FormatMessage:         formatMessage,
-		ReadyForInitialPrompt: isAgentReadyForInitialPrompt,
-		FormatToolCall:        formatToolCall,
-		InitialPrompt:         initialPrompt,
-		Logger:                logger,
-	}, emitter)
+	var conversation st.Conversation
+	if config.Transport == TransportACP {
+		// For ACP, cast AgentIO to *acpio.ACPAgentIO
+		acpIO, ok := config.AgentIO.(*acpio.ACPAgentIO)
+		if !ok {
+			return nil, fmt.Errorf("ACP transport requires ACPAgentIO")
+		}
+		conversation = acpio.NewACPConversation(ctx, acpIO, logger, initialPrompt, emitter, config.Clock)
+	} else {
+		proc, ok := config.AgentIO.(*termexec.Process)
+		if !ok && config.AgentIO != nil {
+			return nil, fmt.Errorf("PTY transport requires termexec.Process")
+		}
+		conversation = st.NewPTY(ctx, st.PTYConversationConfig{
+			AgentType:              config.AgentType,
+			AgentIO:                proc,
+			Clock:                  config.Clock,
+			SnapshotInterval:       snapshotInterval,
+			ScreenStabilityLength:  2 * time.Second,
+			FormatMessage:          formatMessage,
+			ReadyForInitialPrompt:  isAgentReadyForInitialPrompt,
+			FormatToolCall:         formatToolCall,
+			InitialPrompt:          initialPrompt,
+			Logger:                 logger,
+			StatePersistenceConfig: config.StatePersistenceConfig,
+		}, emitter)
+	}
 
 	// Create temporary directory for uploads
 	tempDir, err := os.MkdirTemp("", "agentapi-uploads-")
@@ -181,30 +204,35 @@ func NewServer(ctx context.Context, config ServerConfig) (*Server, error) {
 	}
 	logger.Info("Created temporary directory for uploads", "tempDir", tempDir)
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	s := &Server{
 		router:       router,
 		api:          api,
 		port:         config.Port,
 		conversation: conversation,
 		logger:       logger,
-		agentio:      config.Process,
+		agentio:      config.AgentIO,
 		agentType:    config.AgentType,
 		emitter:      emitter,
 		chatBasePath: strings.TrimSuffix(config.ChatBasePath, "/"),
 		tempDir:      tempDir,
 		clock:        config.Clock,
+		shutdownCtx:  shutdownCtx,
+		shutdown:     shutdownCancel,
+		transport:    config.Transport,
 	}
 
 	// Register API routes
 	s.registerRoutes()
 
-	// Start the conversation polling loop if we have a process.
-	// Process is nil only when --print-openapi is used (no agent runs).
-	// The process is already running at this point - termexec.StartProcess()
-	// blocks until the PTY is created and the process is active. Agent
-	// readiness (waiting for the prompt) is handled asynchronously inside
-	// conversation.Start() via ReadyForInitialPrompt.
-	if config.Process != nil {
+	// Start the conversation polling loop if we have an agent IO.
+	// AgentIO is nil only when --print-openapi is used (no agent runs).
+	// For PTY transport, the process is already running at this point -
+	// termexec.StartProcess() blocks until the PTY is created and the process
+	// is active. Agent readiness (waiting for the prompt) is handled
+	// asynchronously inside conversation.Start() via ReadyForInitialPrompt.
+	if config.AgentIO != nil {
 		s.conversation.Start(ctx)
 	}
 
@@ -292,6 +320,7 @@ func (s *Server) registerRoutes() {
 		// Mapping of event type name to Go struct for that event.
 		"message_update": MessageUpdateBody{},
 		"status_change":  StatusChangeBody{},
+		"agent_error":    ErrorBody{},
 	}, s.subscribeEvents)
 
 	sse.Register(s.api, huma.Operation{
@@ -311,6 +340,185 @@ func (s *Server) registerRoutes() {
 	s.registerStaticFileRoutes()
 }
 
+// getStatus handles GET /status
+func (s *Server) getStatus(ctx context.Context, input *struct{}) (*StatusResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := s.conversation.Status()
+	agentStatus := convertStatus(status)
+
+	resp := &StatusResponse{}
+	resp.Body.Status = agentStatus
+	resp.Body.AgentType = s.agentType
+	resp.Body.Transport = s.transport
+
+	return resp, nil
+}
+
+// getMessages handles GET /messages
+func (s *Server) getMessages(ctx context.Context, input *struct{}) (*MessagesResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	resp := &MessagesResponse{}
+	resp.Body.Messages = make([]Message, len(s.conversation.Messages()))
+	for i, msg := range s.conversation.Messages() {
+		resp.Body.Messages[i] = Message{
+			Id:      msg.Id,
+			Role:    msg.Role,
+			Content: msg.Message,
+			Time:    msg.Time,
+		}
+	}
+
+	return resp, nil
+}
+
+// createMessage handles POST /message
+func (s *Server) createMessage(ctx context.Context, input *MessageRequest) (*MessageResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch input.Body.Type {
+	case MessageTypeUser:
+		if err := s.conversation.Send(FormatMessage(s.agentType, input.Body.Content)...); err != nil {
+			return nil, xerrors.Errorf("failed to send message: %w", err)
+		}
+	case MessageTypeRaw:
+		if _, err := s.agentio.Write([]byte(input.Body.Content)); err != nil {
+			return nil, xerrors.Errorf("failed to send message: %w", err)
+		}
+	}
+
+	resp := &MessageResponse{}
+	resp.Body.Ok = true
+
+	return resp, nil
+}
+
+// uploadFiles handles POST /upload
+func (s *Server) uploadFiles(ctx context.Context, input *struct {
+	RawBody huma.MultipartFormFiles[UploadRequest]
+},
+) (*UploadResponse, error) {
+	formData := input.RawBody.Data()
+
+	file := formData.File.File
+
+	// Limit file size to 10MB
+	const maxFileSize = 10 << 20 // 10MB
+	buf, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to upload file: %w", err)
+	}
+	if len(buf) > maxFileSize {
+		return nil, huma.Error400BadRequest("file size exceeds 10MB limit")
+	}
+
+	// Calculate checksum of the uploaded file to create unique subdirectory
+	hash := sha256.Sum256(buf)
+	checksum := hex.EncodeToString(hash[:8]) // Use first 8 bytes (16 hex chars)
+
+	// Create checksum-based subdirectory in tempDir
+	uploadDir := filepath.Join(s.tempDir, checksum)
+	err = os.MkdirAll(uploadDir, 0o755)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create upload directory: %w", err)
+	}
+
+	// Save individual file with original filename (extract just the base filename for security)
+	filename := filepath.Base(formData.File.Filename)
+
+	outPath := filepath.Join(uploadDir, filename)
+	err = os.WriteFile(outPath, buf, 0o644)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to write file: %w", err)
+	}
+
+	resp := &UploadResponse{}
+	resp.Body.Ok = true
+	resp.Body.FilePath = outPath
+	return resp, nil
+}
+
+// subscribeEvents is an SSE endpoint that sends events to the client
+func (s *Server) subscribeEvents(ctx context.Context, input *struct{}, send sse.Sender) {
+	subscriberId, ch, stateEvents := s.emitter.Subscribe()
+	defer s.emitter.Unsubscribe(subscriberId)
+
+	s.logger.Info("New subscriber", "subscriberId", subscriberId)
+	for _, event := range stateEvents {
+		if event.Type == EventTypeScreenUpdate {
+			continue
+		}
+		if err := send.Data(event.Payload); err != nil {
+			s.logger.Error("Failed to send event", "subscriberId", subscriberId, "error", err)
+			return
+		}
+	}
+
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				s.logger.Info("Channel closed", "subscriberId", subscriberId)
+				return
+			}
+			if event.Type == EventTypeScreenUpdate {
+				continue
+			}
+			if err := send.Data(event.Payload); err != nil {
+				s.logger.Error("Failed to send event", "subscriberId", subscriberId, "error", err)
+				return
+			}
+		case <-s.shutdownCtx.Done():
+			s.logger.Info("Server stop initiated, unsubscribing.", "subscriberId", subscriberId)
+			return
+		case <-ctx.Done():
+			s.logger.Info("Context done", "subscriberId", subscriberId)
+			return
+		}
+	}
+}
+
+func (s *Server) subscribeScreen(ctx context.Context, input *struct{}, send sse.Sender) {
+	subscriberId, ch, stateEvents := s.emitter.Subscribe()
+	defer s.emitter.Unsubscribe(subscriberId)
+	s.logger.Info("New screen subscriber", "subscriberId", subscriberId)
+	for _, event := range stateEvents {
+		if event.Type != EventTypeScreenUpdate {
+			continue
+		}
+		if err := send.Data(event.Payload); err != nil {
+			s.logger.Error("Failed to send screen event", "subscriberId", subscriberId, "error", err)
+			return
+		}
+	}
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				s.logger.Info("Screen channel closed", "subscriberId", subscriberId)
+				return
+			}
+			if event.Type != EventTypeScreenUpdate {
+				continue
+			}
+			if err := send.Data(event.Payload); err != nil {
+				s.logger.Error("Failed to send screen event", "subscriberId", subscriberId, "error", err)
+				return
+			}
+		case <-s.shutdownCtx.Done():
+			s.logger.Info("Server stop initiated, unsubscribing.", "subscriberId", subscriberId)
+			return
+		case <-ctx.Done():
+			s.logger.Info("Screen context done", "subscriberId", subscriberId)
+			return
+		}
+	}
+}
+
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
@@ -322,15 +530,22 @@ func (s *Server) Start() error {
 	return s.srv.ListenAndServe()
 }
 
-// Stop gracefully stops the HTTP server
+// Stop gracefully stops the HTTP server. It is safe to call multiple times.
 func (s *Server) Stop(ctx context.Context) error {
-	// Clean up temporary directory
-	s.cleanupTempDir()
+	var err error
+	s.stopOnce.Do(func() {
+		s.shutdown()
 
-	if s.srv != nil {
-		return s.srv.Shutdown(ctx)
-	}
-	return nil
+		// Clean up temporary directory
+		s.cleanupTempDir()
+
+		if s.srv != nil {
+			if err = s.srv.Shutdown(ctx); errors.Is(err, http.ErrServerClosed) {
+				err = nil
+			}
+		}
+	})
+	return err
 }
 
 // cleanupTempDir removes the temporary directory and all its contents
@@ -340,6 +555,14 @@ func (s *Server) cleanupTempDir() {
 	} else {
 		s.logger.Info("Cleaned up temporary directory", "tempDir", s.tempDir)
 	}
+}
+
+func (s *Server) SaveState(source string) error {
+	if err := s.conversation.SaveState(); err != nil {
+		s.logger.Error("Failed to save conversation state", "source", source, "error", err)
+		return err
+	}
+	return nil
 }
 
 // registerStaticFileRoutes sets up routes for serving static files

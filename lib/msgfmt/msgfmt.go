@@ -43,8 +43,8 @@ func IndexSubslice[T comparable](s, sub []T) int {
 // Return the runes, the lines, and the rune to line location mapping.
 func normalizeAndGetRuneLineMapping(msgRaw string) ([]rune, []string, []int) {
 	msgLines := strings.Split(msgRaw, "\n")
-	msgRuneLineLocations := []int{}
-	runes := []rune{}
+	var msgRuneLineLocations []int
+	var runes []rune
 	for lineIdx, line := range msgLines {
 		for _, r := range line {
 			if !strings.ContainsRune(WhiteSpaceChars, r) {
@@ -271,7 +271,7 @@ func formatGenericMessage(message string, userInput string, agentType AgentType)
 
 func formatCodexMessage(message string, userInput string) string {
 	message = RemoveUserInput(message, userInput, AgentTypeCodex)
-	message = removeCodexInputBox(message)
+	message = removeCodexMessageBox(message)
 	message = trimEmptyLines(message)
 	return message
 }

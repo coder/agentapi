@@ -16,7 +16,7 @@ on:
 jobs:
   build:
     name: Build Release Binaries
-    runs-on: depot-ubuntu-22.04-4
+    runs-on: ubuntu-latest-8-cores
     if: ${{ github.repository_owner == 'coder' }}
 
     steps:

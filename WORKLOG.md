@@ -35,7 +35,6 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 - **Status:** OPEN
 - **Summary:** Add offset/limit query params to GET /messages
 - **Issue:** #187 (Feature request: Pagination support for messages endpoint)
-- **Usage:** `GET /messages?offset=0&limit=100`
 - **Files:** `lib/httpapi/server.go`
 
 ### 5. PR #5: AskUserQuestion input support
@@ -169,7 +168,7 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 |-------|-------|-----|
 | #191 | e2e: use asciinema recordings | #2 |
 | #187 | Pagination support for messages endpoint | #4 |
-| #178 | afero.Walk: failed to walk: open 404\index.html | #6 |
+| #178 | afero.Walk: failed to walk: open 404\\index.html | #6 |
 | #174 | screenDiff returns wrong content for AgentTypeOpencode | #3 |
 | #171 | Support for AskUserQuestion input | #5 |
 | #117 | Support For Slash Commands | #8 |
@@ -184,7 +183,7 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 | # | Title |
 |---|-------|
 | 180 | feat: Add voice input with Web Speech API |
-| 178 | afero.Walk: failed to walk: open 404\index.html |
+| 178 | afero.Walk: failed to walk: open 404\\index.html |
 | 156 | curl: (23) Failure writing output to destination |
 | 146 | Better support of OpenCode |
 | 138 | Create a python client library plus CLI |
@@ -198,12 +197,3 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 
 All PRs pass:
 - `go build ./...` ✅
-- `go test ./lib/screentracker/...` ✅
-
----
-
-## Notes
-
-- Created 5 PRs to KooshaPari/agentapi-plusplus
-- All targeting main branch
-- Ready for review/merge

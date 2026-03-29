@@ -9,4 +9,4 @@ The `formatCodexMessage` function is defined in:
 
 `lib/msgfmt/msgfmt.go` (around line 219)
 
- Ctrl+C again to quit   12437 tokens used   96% context left 
+gpt-5.1-codex-max default · 100% left · ~/Documents/work/coder_o…

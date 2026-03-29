@@ -7,5 +7,6 @@
  /diff - show git diff (including untracked files)
  /prompts - show example prompts
 
-▌ Ask Codex to do anything
- ⏎ send   Shift+⏎ newline   Ctrl+C quit
+› A for Apple
+
+gpt-5.1-codex-max default · 100% left · ~/Documents/work/coder_o…
