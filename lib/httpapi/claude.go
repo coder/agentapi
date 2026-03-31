@@ -5,6 +5,11 @@ import (
 	st "github.com/coder/agentapi/lib/screentracker"
 )
 
+// formatPaste wraps message in bracketed paste escape sequences.
+// These sequences start with ESC (\x1b), which TUI selection
+// widgets (e.g. Claude Code's numbered-choice prompt) interpret
+// as "cancel". For selection prompts, callers should use
+// MessageTypeRaw to send raw keystrokes directly instead.
 func formatPaste(message string) []st.MessagePart {
 	return []st.MessagePart{
 		// Bracketed paste mode start sequence

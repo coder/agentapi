@@ -18,14 +18,16 @@ import (
 )
 
 const (
-	// writeStabilizeEchoTimeout is the maximum time to wait for
-	// the screen to change after writing message text to the PTY
-	// (echo detection). This is intentionally short: terminal
-	// echo is near-instant when it occurs. Non-echoing agents
-	// (e.g. TUI agents using bracketed paste) will hit this
-	// timeout, which is non-fatal — see the Phase 1 error
-	// handler in writeStabilize. Move to PTYConversationConfig
-	// if agents need different echo detection windows.
+	// writeStabilizeEchoTimeout is the timeout for the echo
+	// detection WaitFor loop in writeStabilize Phase 1. The
+	// effective ceiling may be slightly longer because the 1s
+	// stability check inside the condition runs outside
+	// WaitFor's timeout select. Non-echoing agents (e.g. TUI
+	// agents using bracketed paste) will hit this timeout,
+	// which is non-fatal.
+	//
+	// TODO: move to PTYConversationConfig if agents need
+	// different echo detection windows.
 	writeStabilizeEchoTimeout = 2 * time.Second
 
 	// writeStabilizeProcessTimeout is the maximum time to wait
@@ -478,7 +480,7 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 		// internally). Proceed to Phase 2 to send the carriage
 		// return.
 		c.cfg.Logger.Info(
-			"screen did not stabilize after writing message, proceeding to send carriage return",
+			"echo detection timed out, sending carriage return",
 			"timeout", writeStabilizeEchoTimeout,
 		)
 	}

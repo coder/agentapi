@@ -1,7 +1,6 @@
 package screentracker_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -450,139 +449,106 @@ func TestMessages(t *testing.T) {
 		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
 	})
 
-		t.Run("send-no-echo-agent-reacts", func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-			t.Cleanup(cancel)
+	t.Run("send-message-no-echo-agent-reacts", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
 
-			// Given: an agent that doesn't echo typed input but
-			// reacts to carriage return by updating the screen.
-			agent := &testAgent{screen: "prompt"}
-			agent.onWrite = func(data []byte) {
+		// Given: an agent that doesn't echo typed input but
+		// reacts to carriage return by updating the screen.
+		c, _, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {
 				if string(data) == "\r" {
-					agent.screen = "processing..."
+					a.screen = "processing..."
 				}
 			}
-			mClock := quartz.NewMock(t)
-			mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-			cfg := st.PTYConversationConfig{
-				Clock:                 mClock,
-				AgentIO:               agent,
-				SnapshotInterval:      interval,
-				ScreenStabilityLength: 200 * time.Millisecond,
-				Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
-			}
-			c := st.NewPTY(ctx, cfg, &testEmitter{})
-			c.Start(ctx)
-			advanceFor(ctx, t, mClock, interval*threshold)
-
-			// When: a message is sent. Phase 1 times out (no echo),
-			// Phase 2 writes \r and the agent reacts.
-			sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "hello"})
-
-			// Then: Send succeeds and the user message is recorded.
-			msgs := c.Messages()
-			require.True(t, len(msgs) >= 2)
-			var foundUserMsg bool
-			for _, msg := range msgs {
-				if msg.Role == st.ConversationRoleUser && msg.Message == "hello" {
-					foundUserMsg = true
-					break
-				}
-			}
-			assert.True(t, foundUserMsg, "expected user message 'hello' in conversation")
+			cfg.AgentIO = a
 		})
-		t.Run("send-no-echo-no-react", func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-			t.Cleanup(cancel)
+		advanceFor(ctx, t, mClock, interval*threshold)
 
-			// Given: an agent that is completely unresponsive — it
-			// neither echoes input nor reacts to carriage return.
-			agent := &testAgent{screen: "prompt"}
-			agent.onWrite = func(data []byte) {}
-			mClock := quartz.NewMock(t)
-			mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-			cfg := st.PTYConversationConfig{
-				Clock:                 mClock,
-				AgentIO:               agent,
-				SnapshotInterval:      interval,
-				ScreenStabilityLength: 200 * time.Millisecond,
-				Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		// When: a message is sent. Phase 1 times out (no echo),
+		// Phase 2 writes \r and the agent reacts.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "hello"})
+
+		// Then: Send succeeds and the user message is recorded.
+		msgs := c.Messages()
+		require.True(t, len(msgs) >= 2)
+		var foundUserMsg bool
+		for _, msg := range msgs {
+			if msg.Role == st.ConversationRoleUser && msg.Message == "hello" {
+				foundUserMsg = true
+				break
 			}
-			c := st.NewPTY(ctx, cfg, &testEmitter{})
-			c.Start(ctx)
-			advanceFor(ctx, t, mClock, interval*threshold)
+		}
+		assert.True(t, foundUserMsg, "expected user message 'hello' in conversation")
+	})
 
-			// When: a message is sent. Both Phase 1 (echo) and
-			// Phase 2 (processing) time out.
-			// Note: can't use sendAndAdvance here because it calls
-			// require.NoError internally.
-			var sendErr error
-			var sendDone atomic.Bool
-			go func() {
-				sendErr = c.Send(st.MessagePartText{Content: "hello"})
-				sendDone.Store(true)
-			}()
-			advanceUntil(ctx, t, mClock, func() bool { return sendDone.Load() })
+	t.Run("send-message-no-echo-no-react", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
 
-			// Then: Send fails with a Phase 2 error (not Phase 1).
-			require.Error(t, sendErr)
-			assert.Contains(t, sendErr.Error(), "failed to wait for processing to start")
+		// Given: an agent that is completely unresponsive — it
+		// neither echoes input nor reacts to carriage return.
+		c, _, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {}
+			cfg.AgentIO = a
 		})
-		t.Run("send-tui-selection-esc-cancels", func(t *testing.T) {
-			// Documents a known limitation: when a TUI agent shows a
-			// selection prompt, sending a user message wraps it in
-			// bracketed paste. The ESC (\x1b) in the paste-start
-			// sequence cancels the selection widget. The user's
-			// intended choice never reaches the selection handler.
-			// For selection prompts, callers should use
-			// MessageTypeRaw to send raw keystrokes directly.
-			//
-			// See lib/httpapi/claude.go formatClaudeCodeMessage for
-			// the full format; this test focuses on the ESC
-			// invariant only.
-			ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-			t.Cleanup(cancel)
+		advanceFor(ctx, t, mClock, interval*threshold)
 
-			// Given: a TUI agent showing a selection prompt where
-			// ESC cancels the selection and changes the screen.
-			agent := &testAgent{screen: "selection prompt"}
-			selectionCancelled := false
-			agent.onWrite = func(data []byte) {
-				if bytes.Contains(data, []byte("\x1b")) {
-					selectionCancelled = true
-					agent.screen = "selection cancelled"
-				} else if string(data) == "\r" {
-					agent.screen = "post-cancel"
-				}
-			}
-			mClock := quartz.NewMock(t)
-			mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-			cfg := st.PTYConversationConfig{
-				Clock:                 mClock,
-				AgentIO:               agent,
-				SnapshotInterval:      interval,
-				ScreenStabilityLength: 200 * time.Millisecond,
-				Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
-			}
-			c := st.NewPTY(ctx, cfg, &testEmitter{})
-			c.Start(ctx)
-			advanceFor(ctx, t, mClock, interval*threshold)
+		// When: a message is sent. Both Phase 1 (echo) and
+		// Phase 2 (processing) time out.
+		// Note: can't use sendAndAdvance here because it calls
+		// require.NoError internally.
+		var sendErr error
+		var sendDone atomic.Bool
+		go func() {
+			sendErr = c.Send(st.MessagePartText{Content: "hello"})
+			sendDone.Store(true)
+		}()
+		advanceUntil(ctx, t, mClock, func() bool { return sendDone.Load() })
 
-			// When: a message is sent using bracketed paste, which
-			// contains ESC in the start sequence (\x1b[200~).
-			sendAndAdvance(ctx, t, c, mClock,
-				st.MessagePartText{Content: "\x1b[200~", Hidden: true},
-				st.MessagePartText{Content: "2"},
-				st.MessagePartText{Content: "\x1b[201~", Hidden: true},
-			)
+		// Then: Send fails with a Phase 2 error (not Phase 1).
+		require.Error(t, sendErr)
+		assert.Contains(t, sendErr.Error(), "failed to wait for processing to start")
+	})
 
-			// Then: Send succeeds, but the selection was cancelled
-			// by ESC — option "2" was never delivered to the
-			// selection handler.
-			assert.True(t, selectionCancelled,
-				"ESC in bracketed paste cancels TUI selection prompts; "+
-					"use MessageTypeRaw for selection prompts instead")
-		})}
+	t.Run("send-message-no-echo-context-cancelled", func(t *testing.T) {
+		// Given: a non-echoing agent and a cancellable context.
+		sendCtx, sendCancel := context.WithCancel(context.Background())
+		t.Cleanup(sendCancel)
+
+		c, _, mClock := newConversation(sendCtx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {}
+			cfg.AgentIO = a
+		})
+		advanceFor(sendCtx, t, mClock, interval*threshold)
+
+		// When: a message is sent and the context is cancelled
+		// during Phase 1 (before echo detection completes).
+		var sendErr error
+		var sendDone atomic.Bool
+		go func() {
+			sendErr = c.Send(st.MessagePartText{Content: "hello"})
+			sendDone.Store(true)
+		}()
+
+		// Advance past the snapshot interval so the send loop
+		// picks up the message, then cancel the context.
+		advanceFor(sendCtx, t, mClock, interval)
+		sendCancel()
+
+		// Wait for Send to complete (it should fail quickly
+		// after cancellation).
+		require.Eventually(t, sendDone.Load, 5*time.Second, 10*time.Millisecond)
+
+		// Then: the error wraps context.Canceled, not a Phase 2 error.
+		require.Error(t, sendErr)
+		assert.ErrorIs(t, sendErr, context.Canceled)
+		assert.NotContains(t, sendErr.Error(), "failed to wait for processing to start")
+	})
+}
 
 func TestStatePersistence(t *testing.T) {
 	t.Run("SaveState creates file with correct structure", func(t *testing.T) {
