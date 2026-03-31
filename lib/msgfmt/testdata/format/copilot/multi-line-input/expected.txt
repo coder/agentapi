@@ -105,5 +105,3 @@
    seen in the chat/src/components/chat-provider.tsx file where an EventSource
    connection is established to listen for message updates and status changes from
    the server.
-
- ~/Documents/work/agentapi [⎇ feat-github-cli*]

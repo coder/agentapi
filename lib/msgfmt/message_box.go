@@ -1,8 +1,11 @@
 package msgfmt
 
 import (
+	"regexp"
 	"strings"
 )
+
+var genericSlimMessageBoxPattern = regexp.MustCompile(`(?m)^.*─{15,}.*\n.*[|│❯].*\n(?:.*\n)?.*─{15,}.*`)
 
 // Usually something like
 // ───────────────
@@ -26,14 +29,25 @@ func findGreaterThanMessageBox(lines []string) int {
 // |
 // ───────────────
 func findGenericSlimMessageBox(lines []string) int {
-	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
-		if strings.Contains(lines[i], "───────────────") &&
-			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│") || strings.Contains(lines[i+1], "❯")) &&
-			strings.Contains(lines[i+2], "───────────────") {
-			return i
-		}
+	// genericSlimMessageBoxPattern matches a message box pattern like:
+	// ───────────────
+	// | or │ or ❯
+	//
+	// (optional line(s))
+	// ───────────────
+
+	// Search within the last ~9 lines for the message box pattern
+	startIdx := max(len(lines)-9, 0)
+	searchText := strings.Join(lines[startIdx:], "\n")
+
+	loc := genericSlimMessageBoxPattern.FindStringIndex(searchText)
+	if loc == nil {
+		return -1
 	}
-	return -1
+
+	// Count newlines before the match to find the line number
+	linesBeforeMatch := strings.Count(searchText[:loc[0]], "\n")
+	return startIdx + linesBeforeMatch
 }
 
 func removeMessageBox(msg string) string {
@@ -98,4 +112,20 @@ func removeAmpMessageBox(msg string) string {
 		return "Welcome to Amp"
 	}
 	return formattedMsg
+}
+
+func removeCopilotFooter(msg string) string {
+	lines := strings.Split(msg, "\n")
+
+	firstEmptyLine := 0
+
+	// From the end strip until we discover an empty line
+	for i := len(lines) - 1; i >= 0; i-- {
+		if len(strings.TrimSpace(lines[i])) == 0 {
+			firstEmptyLine = i
+			break
+		}
+	}
+
+	return strings.Join(lines[:firstEmptyLine], "\n")
 }

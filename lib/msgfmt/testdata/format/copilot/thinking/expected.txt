@@ -5,5 +5,3 @@
    ↪ 1 line...
 
  ◉ Thinking (Esc to cancel)
-
- ~/Documents/work/agentapi [⎇ feat-github-cli*]

@@ -7,5 +7,3 @@
  ● Logged in with gh as user: 35C4n0r
 
  ● Connected to GitHub MCP Server
-
- ~/Documents/work/agentapi [⎇ feat-github-cli*]
