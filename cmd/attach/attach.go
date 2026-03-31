@@ -14,7 +14,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coder/agentapi/lib/httpapi"
-	"github.com/coder/agentapi/lib/util"
 	"github.com/coder/quartz"
 	"github.com/spf13/cobra"
 	sse "github.com/tmaxmax/go-sse"
@@ -239,9 +238,11 @@ func runAttach(remoteURL string) error {
 	}
 
 	p.Send(finishMsg{})
+	graceTimer := quartz.NewReal().NewTimer(1 * time.Second)
+	defer graceTimer.Stop()
 	select {
 	case <-pErrCh:
-	case <-util.After(quartz.NewReal(), 1*time.Second):
+	case <-graceTimer.C:
 	}
 
 	return err
