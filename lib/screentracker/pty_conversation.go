@@ -428,11 +428,14 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 	}, func() (bool, error) {
 		screen := c.cfg.AgentIO.ReadScreen()
 		if screen != screenBeforeMessage {
+			stabilityTimer := c.cfg.Clock.NewTimer(1 * time.Second)
 			select {
 			case <-ctx.Done():
+				stabilityTimer.Stop()
 				return false, ctx.Err()
-			case <-util.After(c.cfg.Clock, 1*time.Second):
+			case <-stabilityTimer.C:
 			}
+			stabilityTimer.Stop()
 			newScreen := c.cfg.AgentIO.ReadScreen()
 			return newScreen == screen, nil
 		}
@@ -458,11 +461,14 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 				return false, xerrors.Errorf("failed to write carriage return: %w", err)
 			}
 		}
+		crTimer := c.cfg.Clock.NewTimer(25 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			crTimer.Stop()
 			return false, ctx.Err()
-		case <-util.After(c.cfg.Clock, 25*time.Millisecond):
+		case <-crTimer.C:
 		}
+		crTimer.Stop()
 		screen := c.cfg.AgentIO.ReadScreen()
 
 		return screen != screenBeforeCarriageReturn, nil
