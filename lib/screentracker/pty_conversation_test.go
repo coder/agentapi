@@ -515,18 +515,27 @@ func TestMessages(t *testing.T) {
 
 	t.Run("send-message-no-echo-context-cancelled", func(t *testing.T) {
 		// Given: a non-echoing agent and a cancellable context.
+		// The onWrite signals when writeStabilize starts writing
+		// message parts — this is used to synchronize the cancel.
 		sendCtx, sendCancel := context.WithCancel(context.Background())
 		t.Cleanup(sendCancel)
 
+		writeStarted := make(chan struct{}, 1)
 		c, _, mClock := newConversation(sendCtx, t, func(cfg *st.PTYConversationConfig) {
 			a := &testAgent{screen: "prompt"}
-			a.onWrite = func(data []byte) {}
+			a.onWrite = func(data []byte) {
+				select {
+				case writeStarted <- struct{}{}:
+				default:
+				}
+			}
 			cfg.AgentIO = a
 		})
 		advanceFor(sendCtx, t, mClock, interval*threshold)
 
 		// When: a message is sent and the context is cancelled
-		// during Phase 1 (before echo detection completes).
+		// during Phase 1 (after the message is written to the
+		// PTY, before echo detection completes).
 		var sendErr error
 		var sendDone atomic.Bool
 		go func() {
@@ -534,16 +543,31 @@ func TestMessages(t *testing.T) {
 			sendDone.Store(true)
 		}()
 
-		// Advance past the snapshot interval so the send loop
-		// picks up the message, then cancel the context.
-		advanceFor(sendCtx, t, mClock, interval)
+		// Advance tick-by-tick until writeStabilize starts
+		// (onWrite fires). This gives the send loop goroutine
+		// scheduling time between advances.
+		advanceUntil(sendCtx, t, mClock, func() bool {
+			select {
+			case <-writeStarted:
+				return true
+			default:
+				return false
+			}
+		})
+
+		// writeStabilize Phase 1 is now running. Its WaitFor is
+		// blocked on a mock timer sleep select. Cancel: the
+		// select sees ctx.Done() immediately.
 		sendCancel()
 
-		// Wait for Send to complete (it should fail quickly
-		// after cancellation).
+		// WaitFor returns ctx.Err(). The errors.Is guard in
+		// Phase 1 propagates it as fatal. Use Eventually since
+		// the goroutine needs scheduling time.
 		require.Eventually(t, sendDone.Load, 5*time.Second, 10*time.Millisecond)
 
-		// Then: the error wraps context.Canceled, not a Phase 2 error.
+		// Then: the error wraps context.Canceled, not a Phase 2
+		// timeout. This validates the errors.Is(WaitTimedOut)
+		// guard.
 		require.Error(t, sendErr)
 		assert.ErrorIs(t, sendErr, context.Canceled)
 		assert.NotContains(t, sendErr.Error(), "failed to wait for processing to start")
