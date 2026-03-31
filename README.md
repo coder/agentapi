@@ -184,6 +184,10 @@ for event in client.events():
 | `lib/screentracker/` | Output parsing |
 | `lib/msgfmt/` | Agent-specific message formatting |
 | `chat/` | Next.js web UI |
+| `internal/harness/` | **Swappable agent runner registry** (Composio pattern) |
+
+> **Plugin Architecture**: `HarnessRegistry` + `Runner` interface enables hot-swapping agent backends.
+> Similar pattern to Composio's provider plugins. See `internal/harness/base.go` and `run_harness.go`.
 
 ---
 
