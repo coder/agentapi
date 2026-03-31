@@ -1,6 +1,7 @@
 package screentracker_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,6 +448,137 @@ func TestMessages(t *testing.T) {
 	t.Run("send-message-empty-message", func(t *testing.T) {
 		c, _, _ := newConversation(context.Background(), t)
 		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
+	})
+
+	t.Run("send-no-echo-agent-reacts", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		agent := &testAgent{screen: "prompt"}
+		// Agent doesn't echo input text, but reacts to carriage return.
+		agent.onWrite = func(data []byte) {
+			if string(data) == "\r" {
+				agent.screen = "processing..."
+			}
+		}
+		mClock := quartz.NewMock(t)
+		mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			AgentIO:               agent,
+			SnapshotInterval:      interval,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Stabilize: fill snapshot buffer so status becomes stable.
+		advanceFor(ctx, t, mClock, interval*threshold)
+
+		// Send and advance. Phase 1 times out (2s, non-fatal),
+		// Phase 2 writes \r → onWrite changes screen → succeeds.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "hello"})
+
+		// User message was recorded.
+		msgs := c.Messages()
+		require.True(t, len(msgs) >= 2)
+		assert.Equal(t, st.ConversationRoleUser, msgs[len(msgs)-1].Role)
+		assert.Equal(t, "hello", msgs[len(msgs)-1].Message)
+	})
+
+	t.Run("send-no-echo-no-react", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		agent := &testAgent{screen: "prompt"}
+		// Agent is completely unresponsive: no echo, no reaction.
+		agent.onWrite = func(data []byte) {}
+		mClock := quartz.NewMock(t)
+		mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			AgentIO:               agent,
+			SnapshotInterval:      interval,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Stabilize.
+		advanceFor(ctx, t, mClock, interval*threshold)
+
+		// Send in a goroutine; can't use sendAndAdvance because it
+		// calls require.NoError internally.
+		var sendErr error
+		var sendDone atomic.Bool
+		go func() {
+			sendErr = c.Send(st.MessagePartText{Content: "hello"})
+			sendDone.Store(true)
+		}()
+		advanceUntil(ctx, t, mClock, func() bool { return sendDone.Load() })
+
+		require.Error(t, sendErr)
+		assert.Contains(t, sendErr.Error(), "failed to wait for processing to start")
+	})
+
+	t.Run("send-tui-selection-esc-cancels", func(t *testing.T) {
+		// Documents a known limitation: when a TUI agent shows a
+		// selection prompt, sending a user message wraps it in
+		// bracketed paste. The ESC (\x1b) in the paste-start
+		// sequence cancels the selection widget. The user's intended
+		// choice never reaches the selection handler.
+		//
+		// For selection prompts, callers should use MessageTypeRaw
+		// to send raw keystrokes directly to the PTY.
+		//
+		// See lib/httpapi/claude.go for the full formatClaudeCodeMessage
+		// format; this test focuses on the ESC invariant only.
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		agent := &testAgent{screen: "selection prompt"}
+		selectionCancelled := false
+		agent.onWrite = func(data []byte) {
+			// Simulate TUI selection widget: ESC cancels the
+			// selection, changing the screen.
+			if bytes.Contains(data, []byte("\x1b")) {
+				selectionCancelled = true
+				agent.screen = "selection cancelled"
+			} else if string(data) == "\r" {
+				agent.screen = "post-cancel"
+			}
+		}
+		mClock := quartz.NewMock(t)
+		mClock.Set(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+		cfg := st.PTYConversationConfig{
+			Clock:                 mClock,
+			AgentIO:               agent,
+			SnapshotInterval:      interval,
+			ScreenStabilityLength: 200 * time.Millisecond,
+			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		c := st.NewPTY(ctx, cfg, &testEmitter{})
+		c.Start(ctx)
+
+		// Stabilize.
+		advanceFor(ctx, t, mClock, interval*threshold)
+
+		// Send using bracketed paste, which contains ESC. The
+		// test focuses on the ESC invariant — any input wrapped
+		// in bracketed paste will trigger this.
+		sendAndAdvance(ctx, t, c, mClock,
+			st.MessagePartText{Content: "\x1b[200~", Hidden: true},
+			st.MessagePartText{Content: "2"},
+			st.MessagePartText{Content: "\x1b[201~", Hidden: true},
+		)
+
+		// The send succeeded, but the selection was cancelled by
+		// ESC — not option "2" being selected.
+		assert.True(t, selectionCancelled,
+			"ESC in bracketed paste cancels TUI selection prompts; "+
+				"use MessageTypeRaw for selection prompts instead")
 	})
 }
 
