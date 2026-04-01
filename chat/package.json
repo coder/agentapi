@@ -25,6 +25,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "chromatic": "^16.0.0",
     "eslint-plugin-storybook": "^9.0.17",
     "gh-pages": "^6.3.0",
     "oxlint": "^1.57.0",
@@ -46,7 +47,8 @@
     "lint": "oxlint src/",
     "serve-static": "npx serve out",
     "start": "next start",
-    "storybook": "storybook dev -p 6006"
+    "storybook": "storybook dev -p 6006",
+    "chromatic": "npx chromatic --exit-zero-on-changes"
   },
   "version": "0.12.1"
 }
