@@ -1,0 +1,59 @@
+rules:
+  - id: unsafe-deserialization
+    patterns:
+      - pattern-either:
+          - pattern: |
+              serde_json::from_str($X)
+          - pattern: |
+              bincode::deserialize($X)
+    message: Unsafe deserialization without validation. Consider using `serde` with validation attributes.
+    languages: [rust]
+    severity: MEDIUM
+
+  - id: unwrap-without-context
+    patterns:
+      - pattern: |
+          $X.unwrap()
+      - metavariable-comparison:
+          metavariable: $X
+          comparison: match_regex
+          regex: |
+            (?!(log|debug|info|warn|error)).*
+    message: Use of unwrap() without error handling context. Prefer `?` operator or explicit error handling.
+    languages: [rust]
+    severity: MEDIUM
+
+  - id: todo-without-issue
+    patterns:
+      - pattern: |
+          todo!($MSG)
+    message: Untracked todo!() macro. Please file an issue and reference it in a comment.
+    languages: [rust]
+    severity: LOW
+
+  - id: unsafe-sql
+    patterns:
+      - pattern: |
+          format!($QUERY, $ARG)
+    message: SQL queries built with format!() are vulnerable to injection. Use parameterized queries.
+    languages: [rust]
+    severity: CRITICAL
+
+  - id: hardcoded-localhost
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "localhost:$PORT"
+          - pattern: |
+              "127.0.0.1:$PORT"
+    message: Hardcoded localhost in production code. Use environment variables or configuration.
+    languages: [rust]
+    severity: MEDIUM
+
+  - id: missing-error-context
+    patterns:
+      - pattern: |
+          return Err(e)
+    message: Error propagated without context. Consider using `.context()` from `anyhow` or `.map_err()`.
+    languages: [rust]
+    severity: LOW

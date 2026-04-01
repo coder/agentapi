@@ -24,3 +24,15 @@ repos:
         language: script
         pass_filenames: false
         stages: [pre-push]
+
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.45.0
+    hooks:
+      - id: semgrep
+        args: ['--config=.semgrep-rules/', '--error']
+
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.63.0
+    hooks:
+      - id: trufflehog
+        args: ['filesystem', '.', '--only-verified', '--fail']
