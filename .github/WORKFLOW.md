@@ -8,9 +8,9 @@
 ## Git Settings
 
 ```bash
-pull.rebase = false    # Use merge (not rebase)
+pull.rebase = false    # Do not rewrite shared history
 pull.ff = only         # Fast-forward only pulls
-merge.ff = false       # Create merge commits
+merge.ff = false       # Preserve explicit merge commits when they are intentional
 ```
 
 ## Worktree Setup
@@ -32,6 +32,18 @@ git worktree prune
 - `fix/*` - Fixes
 - `chore/*` - Maintenance
 - `refactor/*` - Refactoring
+- `stack/*` - stacked PR chain roots
+- `layer/*` - stacked PR chain layers
+- `preview/*` - preview or release-lane branches
+
+## Protected Branch Policy
+
+- `main` and `master` must not be force-pushed.
+- Shared protected branches require pull requests, resolved review threads, and
+  green non-billing CI before merge.
+- `CHANGES_REQUESTED` and unresolved review comments block merge.
+- Billing-only CI exceptions must be explicitly documented in the PR body and
+  labeled before they can be accepted.
 
 ## Daily Workflow
 
@@ -46,7 +58,8 @@ gh pr create --base main --title "feat: my feature"
 
 ## Sync Rules
 
-1. Use worktrees for features
-2. No rebase on pushed branches
-3. Merge commits preserve history
-4. Keep branches small and focused
+1. Use worktrees for features.
+2. Prefer stacked PRs for multi-step work.
+3. Do not force-push protected branches.
+4. Do not merge with unresolved comments or `CHANGES_REQUESTED`.
+5. Keep branches small and focused.

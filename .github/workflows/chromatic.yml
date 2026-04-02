@@ -20,6 +20,9 @@ jobs:
   chromatic:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chat
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,8 +44,9 @@ jobs:
         run: bun run build-storybook
 
       - name: Publish to Chromatic
-        uses: chromaui/action@v1
+        uses: chromaui/action@016b2b6bd92fef54e5764ea1f15ada32f65939ce # v11
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: chat
           exitOnceUploaded: true
           exitZeroOnChanges: true

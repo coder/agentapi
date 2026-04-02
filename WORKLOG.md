@@ -1,6 +1,6 @@
 # AgentAPI++ Worklog
 
-## Date: 2026-02-24
+## Date: 2026-04-01
 
 ### Summary
 Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, and other agents.
@@ -8,6 +8,16 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 ---
 
 ## Work Items
+
+### Audit Snapshot
+
+Current state: the repo still carries 20 open PR lanes, with the active surface concentrated in
+endpoint additions, screen-diff/initial-prompt fixes, and one remaining sync lane.
+
+Stabilization priorities:
+- Keep the existing open PRs aligned with upstream/main before opening any new feature lanes.
+- Treat `fix/voice-input` as the only clearly uncommitted backlog item in the current list.
+- Revalidate the issue/PR mapping for `#171`, `#174`, `#178`, and `#191` before the next batch.
 
 ### 1. PR #1: Sync upstream/main
 - **Branch:** `fix/sync-upstream`
@@ -195,5 +205,5 @@ Fork of coder/agentapi with enhancements and bug fixes for Claude Code, Codex, a
 
 ## Build & Test Status
 
-All PRs pass:
+Last recorded build status:
 - `go build ./...` ✅
