@@ -16,7 +16,7 @@ GitHub rulesets for protected branches should enforce:
 - Stacked PRs are preferred for multi-step changes.
 - `stack/*`, `layer/*`, and `preview/*` branches are first-class.
 - Direct `feat/*`, `fix/*`, `chore/*`, and `refactor/*` branches to `main`
-  should be rare and should carry a documented exception.
+  should be rare and should carry a documented exception in the PR body.
 - Merge commits on active PR branches should be avoided.
 
 ## Required Checks
@@ -43,3 +43,9 @@ Only billing-only CI failures may be exempted, and only when:
 - all other checks are green
 - review threads are resolved
 
+## Direct Main Exception
+
+Direct-to-`main` feature PRs are allowed only when:
+
+- the PR body documents the base branch rationale in `## Stack Topology`
+- all other governance requirements still pass

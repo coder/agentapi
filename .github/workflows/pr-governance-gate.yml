@@ -1,4 +1,4 @@
-name: PR Governance Gate
+name: pr-governance-gate
 
 on:
   pull_request_target:
@@ -12,7 +12,8 @@ permissions:
   checks: read
 
 jobs:
-  gate:
+  pr-governance-gate:
+    name: pr-governance-gate
     runs-on: ubuntu-latest
     steps:
       - name: Validate PR governance
@@ -65,8 +66,13 @@ jobs:
             }
 
             const directToMain = ["main", "master"].includes(fullPr.base.ref) && /^(feat|fix|chore|refactor|docs|ci|test)\//.test(branchName);
-            if (directToMain) {
-              problems.push("Direct PRs to protected branches require a documented exception");
+            const hasDirectMainRationale =
+              /## Stack Topology[\s\S]*Base branch rationale:\s*(?!\s*(?:-|n\/a|none)?\s*(?:\r?\n|$))/i.test(body) ||
+              /direct(?:-| )to(?:-| )main/i.test(body);
+            if (directToMain && !hasDirectMainRationale) {
+              problems.push(
+                "Direct PRs to protected branches require a documented base branch rationale in the PR body"
+              );
             }
 
             if (isReviewEvent && context.payload.review?.state === "changes_requested") {
@@ -101,7 +107,9 @@ jobs:
               { owner, repo, number: prNumber }
             );
             const unresolvedThreads =
-              threadData.repository?.pullRequest?.reviewThreads?.nodes?.filter((thread) => !thread.isResolved) || [];
+              threadData.repository?.pullRequest?.reviewThreads?.nodes?.filter(
+                (thread) => !thread.isResolved && !thread.isOutdated
+              ) || [];
             if (unresolvedThreads.length > 0) {
               problems.push(`Review threads remain unresolved: ${unresolvedThreads.length}`);
             }

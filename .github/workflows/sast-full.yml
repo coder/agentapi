@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        language: [python, cpp, javascript]
+        language: [go, javascript]
     steps:
       - uses: actions/checkout@v4
 

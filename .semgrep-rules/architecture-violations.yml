@@ -1,12 +1,12 @@
 rules:
-  - id: circular-module-dependency
+  - id: no-wildcard-imports
     patterns:
       - pattern-either:
           - pattern: |
               use crate::domain::*;
           - pattern: |
               use crate::adapters::*;
-    message: Potential circular dependency. Check module import hierarchy.
+    message: Avoid wildcard imports from core modules to keep boundaries explicit.
     languages: [rust]
     severity: MEDIUM
 
@@ -27,11 +27,11 @@ rules:
       - pattern: |
           async fn $HANDLER(...) {
               ...
-              database.query(...)
+              $DB_CLIENT.$DB_METHOD(...)
               ...
-              api.call(...)
+              $API_CLIENT.$API_METHOD(...)
               ...
-              filesystem.write(...)
+              $FS_CLIENT.$FS_METHOD(...)
               ...
           }
     message: Handler mixes database, API, and filesystem concerns. Consider dependency injection.

@@ -35,7 +35,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -48,5 +48,6 @@ jobs:
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: chat
+          storybookBuildDir: storybook-static
           exitOnceUploaded: true
           exitZeroOnChanges: true

@@ -48,7 +48,7 @@
     "serve-static": "npx serve out",
     "start": "next start",
     "storybook": "storybook dev -p 6006",
-    "chromatic": "npx chromatic --exit-zero-on-changes"
+    "chromatic": "bunx chromatic --exit-zero-on-changes"
   },
   "version": "0.12.1"
 }

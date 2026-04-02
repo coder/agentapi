@@ -34,7 +34,10 @@ rules:
   - id: unsafe-sql
     patterns:
       - pattern: |
-          format!($QUERY, $ARG)
+          format!($QUERY, ...)
+      - metavariable-regex:
+          metavariable: $QUERY
+          regex: '(?i).*(select|insert|update|delete|drop|create|alter|from|where).*'
     message: SQL queries built with format!() are vulnerable to injection. Use parameterized queries.
     languages: [rust]
     severity: CRITICAL

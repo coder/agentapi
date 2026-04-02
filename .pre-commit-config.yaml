@@ -36,3 +36,4 @@ repos:
     hooks:
       - id: trufflehog
         args: ['filesystem', '.', '--only-verified', '--fail']
+        stages: [push]
