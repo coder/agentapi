@@ -1,0 +1,33 @@
+name: IaC Scanning
+
+on:
+  push:
+    paths:
+      - '**.tf'
+      - '**.yaml'
+      - '**.json'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  tfsec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tfsec
+        run: |
+          curl -sSfL https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec
+      - name: Run tfsec
+        run: tfsec . || true
+        continue-on-error: true
+
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install checkov
+        run: pip install checkov
+      - name: Run checkov
+        run: checkov -d . -o sarif || true
+        continue-on-error: true

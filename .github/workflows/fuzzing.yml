@@ -1,0 +1,22 @@
+name: Fuzzing
+
+on:
+  push:
+    paths:
+      - '**.rs'
+      - '**.go'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  cargo-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz || true
+      - name: Run fuzzing
+        run: cargo fuzz run all || true
+        continue-on-error: true

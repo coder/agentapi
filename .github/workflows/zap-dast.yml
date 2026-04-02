@@ -1,0 +1,23 @@
+name: ZAP DAST
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - 'src/**'
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ZAP
+        run: |
+          wget https://github.com/zaproxy/zap-full-bin/releases/download/2.15.0/zap-full-linux-amd64.tar.gz
+          tar -xzf zap-full-linux-amd64.tar.gz
+          mv zap-full-linux-amd64 zap
+      - name: Run ZAP
+        run: |
+          zap/wrapper.sh \
+            -t http://localhost:8080 \
+            -g https://github.com/kooshapari/phenotype-infrakit

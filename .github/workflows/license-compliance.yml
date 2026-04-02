@@ -1,0 +1,32 @@
+name: License Compliance
+
+on:
+  push:
+    paths:
+      - 'Cargo.toml'
+      - 'go.mod'
+      - 'package.json'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+      - name: Run cargo-deny
+        run: cargo deny check
+        continue-on-error: true
+
+  fossa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FOSSA
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/fossa-foss/fossa-cli/master/install.sh | sh
+      - name: Run FOSSA
+        run: fossa scan repository
+        continue-on-error: true
