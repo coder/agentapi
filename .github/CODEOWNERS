@@ -1,2 +1,8 @@
-# Default owner for all files
 * @KooshaPari
+
+.github/workflows/ @KooshaPari
+.github/pull_request_template.md @KooshaPari
+.github/RULESET_BASELINE.md @KooshaPari
+scripts/ @KooshaPari
+lib/ @KooshaPari
+e2e/ @KooshaPari
