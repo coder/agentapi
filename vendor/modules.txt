@@ -195,6 +195,9 @@ github.com/charmbracelet/x/term
 # github.com/ckaznocha/intrange v0.3.1
 ## explicit; go 1.23.0
 github.com/ckaznocha/intrange
+# github.com/coder/acp-go-sdk v0.6.3
+## explicit; go 1.21
+github.com/coder/acp-go-sdk
 # github.com/coder/agentapi-sdk-go v0.0.0-20250505131810-560d1d88d225
 ## explicit; go 1.23.2
 github.com/coder/agentapi-sdk-go
@@ -1006,6 +1009,10 @@ go.augendre.info/fatcontext/pkg/analyzer
 go.uber.org/automaxprocs/internal/cgroups
 go.uber.org/automaxprocs/internal/runtime
 go.uber.org/automaxprocs/maxprocs
+# go.uber.org/goleak v1.3.0
+## explicit; go 1.20
+go.uber.org/goleak
+go.uber.org/goleak/internal/stack
 # go.uber.org/multierr v1.10.0
 ## explicit; go 1.19
 go.uber.org/multierr

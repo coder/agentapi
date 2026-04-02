@@ -1,0 +1,10 @@
+# MacOS files
+.DS_Store
+
+# Go files
+.gocache
+.gopath
+
+# Nix files
+.envrc
+.direnv
