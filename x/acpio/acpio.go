@@ -2,14 +2,17 @@ package acpio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 
 	acp "github.com/coder/acp-go-sdk"
 	st "github.com/coder/agentapi/lib/screentracker"
+	"golang.org/x/xerrors"
 )
 
 // Compile-time assertion that ACPAgentIO implements st.AgentIO
@@ -29,6 +32,10 @@ type ACPAgentIO struct {
 // acpClient implements acp.Client to handle callbacks from the agent
 type acpClient struct {
 	agentIO *ACPAgentIO
+}
+
+type McpConfig struct {
+	McpServers []acp.McpServer `json:"mcpServers"`
 }
 
 var _ acp.Client = (*acpClient)(nil)
@@ -131,7 +138,7 @@ func (a *ACPAgentIO) SetOnChunk(fn func(chunk string)) {
 }
 
 // NewWithPipes creates an ACPAgentIO connected via the provided pipes
-func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, logger *slog.Logger, getwd func() (string, error)) (*ACPAgentIO, error) {
+func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, logger *slog.Logger, getwd func() (string, error), mcpFilePath string) (*ACPAgentIO, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -154,6 +161,12 @@ func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, l
 	}
 	logger.Debug("ACP initialized", "protocolVersion", initResp.ProtocolVersion)
 
+	// Prepare the MCPs for the session
+	supportedMCPList, err := getSupportedMCPConfig(mcpFilePath, logger, &initResp)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create a session
 	cwd, err := getwd()
 	if err != nil {
@@ -162,7 +175,7 @@ func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, l
 	}
 	sessResp, err := conn.NewSession(ctx, acp.NewSessionRequest{
 		Cwd:        cwd,
-		McpServers: []acp.McpServer{},
+		McpServers: supportedMCPList,
 	})
 	if err != nil {
 		logger.Error("Failed to create ACP session", "error", err)
@@ -172,6 +185,36 @@ func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, l
 	logger.Debug("ACP session created", "sessionId", sessResp.SessionId)
 
 	return agentIO, nil
+}
+
+func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *acp.InitializeResponse) ([]acp.McpServer, error) {
+	mcpFile, err := os.Open(mcpFilePath)
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to open mcp file: %v", err)
+	}
+
+	defer func() {
+		if closeErr := mcpFile.Close(); closeErr != nil {
+			logger.Error("Failed to close mcp file", "error", err)
+		}
+	}()
+
+	var allMcpList McpConfig
+	decoder := json.NewDecoder(mcpFile)
+
+	if err = decoder.Decode(&allMcpList); err != nil {
+		return nil, xerrors.Errorf("Failed to decode mcp file: %v", err)
+	}
+
+	// Only send the MCPs that are supported by the agents
+	var supportedMCPList []acp.McpServer
+	for _, mcp := range allMcpList.McpServers {
+		if (mcp.Http != nil && !initResp.AgentCapabilities.McpCapabilities.Http) || (mcp.Sse != nil && !initResp.AgentCapabilities.McpCapabilities.Sse) {
+			continue
+		}
+		supportedMCPList = append(supportedMCPList, mcp)
+	}
+	return supportedMCPList, err
 }
 
 // Write sends a message to the agent via ACP prompt

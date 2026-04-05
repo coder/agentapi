@@ -136,6 +136,11 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	experimentalACP := viper.GetBool(FlagExperimentalACP)
+	acpMCPFile := viper.GetString(FlagMCPFile)
+
+	if acpMCPFile != "" && !experimentalACP {
+		return xerrors.Errorf("--mcp-file requires --experimental-acp requires to be set")
+	}
 
 	if experimentalACP && (saveState || loadState) {
 		return xerrors.Errorf("ACP mode doesn't support state persistence")
@@ -169,6 +174,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
 			Program:     agent,
 			ProgramArgs: argsToPass[1:],
+			MCPFilePath: acpMCPFile,
 		})
 		if err != nil {
 			return xerrors.Errorf("failed to setup ACP: %w", err)
@@ -382,6 +388,7 @@ const (
 	FlagSaveState       = "save-state"
 	FlagPidFile         = "pid-file"
 	FlagExperimentalACP = "experimental-acp"
+	FlagMCPFile         = "mcp-file"
 )
 
 func CreateServerCmd() *cobra.Command {
@@ -425,6 +432,7 @@ func CreateServerCmd() *cobra.Command {
 		{FlagSaveState, "", false, "Save state to state-file on shutdown (defaults to true when state-file is set)", "bool"},
 		{FlagPidFile, "", "", "Path to file where the server process ID will be written for shutdown scripts", "string"},
 		{FlagExperimentalACP, "", false, "Use experimental ACP transport instead of PTY", "bool"},
+		{FlagMCPFile, "", "", "MCP file for the ACP server", "string"},
 	}
 
 	for _, spec := range flagSpecs {

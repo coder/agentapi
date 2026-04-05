@@ -53,6 +53,7 @@ func SetupProcess(ctx context.Context, config SetupProcessConfig) (*termexec.Pro
 type SetupACPConfig struct {
 	Program     string
 	ProgramArgs []string
+	MCPFilePath string
 	Clock       quartz.Clock
 }
 
@@ -88,7 +89,7 @@ func SetupACP(ctx context.Context, config SetupACPConfig) (*SetupACPResult, erro
 		return nil, fmt.Errorf("failed to start process: %w", err)
 	}
 
-	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout, logger, os.Getwd)
+	agentIO, err := acpio.NewWithPipes(ctx, stdin, stdout, logger, os.Getwd, config.MCPFilePath)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to initialize ACP connection: %w", err)
