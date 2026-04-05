@@ -799,3 +799,55 @@ func TestServerCmd_AllowedOrigins(t *testing.T) {
 		})
 	}
 }
+
+func TestServerCmd_MCPFileFlag(t *testing.T) {
+	t.Run("mcp-file default is empty", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "", viper.GetString(FlagMCPFile))
+	})
+
+	t.Run("mcp-file can be set via CLI flag", func(t *testing.T) {
+		isolateViper(t)
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--mcp-file", "/path/to/mcp.json", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/path/to/mcp.json", viper.GetString(FlagMCPFile))
+	})
+
+	t.Run("mcp-file can be set via environment variable", func(t *testing.T) {
+		isolateViper(t)
+		t.Setenv("AGENTAPI_MCP_FILE", "/env/path/to/mcp.json")
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/env/path/to/mcp.json", viper.GetString(FlagMCPFile))
+	})
+
+	t.Run("CLI flag overrides environment variable", func(t *testing.T) {
+		isolateViper(t)
+		t.Setenv("AGENTAPI_MCP_FILE", "/env/path/to/mcp.json")
+
+		serverCmd := CreateServerCmd()
+		setupCommandOutput(t, serverCmd)
+		serverCmd.SetArgs([]string{"--mcp-file", "/cli/path/to/mcp.json", "--exit", "dummy-command"})
+		err := serverCmd.Execute()
+		require.NoError(t, err)
+
+		assert.Equal(t, "/cli/path/to/mcp.json", viper.GetString(FlagMCPFile))
+	})
+}

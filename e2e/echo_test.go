@@ -556,3 +556,41 @@ func getFreePort() (int, error) {
 
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
+
+func TestServerFlagValidation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	t.Run("mcp-file requires experimental-acp", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		binaryPath := os.Getenv("AGENTAPI_BINARY_PATH")
+		if binaryPath == "" {
+			cwd, err := os.Getwd()
+			require.NoError(t, err, "Failed to get current working directory")
+			binaryPath = filepath.Join(cwd, "..", "out", "agentapi")
+			t.Logf("Building binary at %s", binaryPath)
+			buildCmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
+			buildCmd.Dir = filepath.Join(cwd, "..")
+			require.NoError(t, buildCmd.Run(), "Failed to build binary")
+		}
+
+		// Create a temporary MCP file
+		tmpDir := t.TempDir()
+		mcpFile := filepath.Join(tmpDir, "mcp.json")
+		err := os.WriteFile(mcpFile, []byte(`{"mcpServers": []}`), 0o644)
+		require.NoError(t, err, "Failed to create temp MCP file")
+
+		// Run the server with --mcp-file but WITHOUT --experimental-acp
+		cmd := exec.CommandContext(ctx, binaryPath, "server",
+			"--mcp-file", mcpFile,
+			"--", "echo", "test")
+
+		output, err := cmd.CombinedOutput()
+		require.Error(t, err, "Expected server to fail when --mcp-file is used without --experimental-acp")
+		require.Contains(t, string(output), "--mcp-file requires --experimental-acp",
+			"Expected error message about --mcp-file requiring --experimental-acp, got: %s", string(output))
+	})
+}

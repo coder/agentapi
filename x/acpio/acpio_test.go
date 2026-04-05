@@ -70,6 +70,7 @@ func newTestPair(t *testing.T, agent *testAgent) *acpio.ACPAgentIO {
 		clientToAgentW, agentToClientR,
 		nil,
 		func() (string, error) { return os.TempDir(), nil },
+		"", // no MCP file
 	)
 	require.NoError(t, err)
 

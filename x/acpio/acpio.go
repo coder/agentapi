@@ -188,6 +188,10 @@ func NewWithPipes(ctx context.Context, toAgent io.Writer, fromAgent io.Reader, l
 }
 
 func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *acp.InitializeResponse) ([]acp.McpServer, error) {
+	if mcpFilePath == "" {
+		return []acp.McpServer{}, nil
+	}
+
 	mcpFile, err := os.Open(mcpFilePath)
 	if err != nil {
 		return nil, xerrors.Errorf("Failed to open mcp file: %v", err)
