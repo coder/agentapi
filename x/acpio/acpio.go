@@ -199,16 +199,16 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 		}
 	}()
 
-	var claudeConfig AgentapiMcpConfig
+	var mcpConfig AgentapiMcpConfig
 	decoder := json.NewDecoder(mcpFile)
 
-	if err = decoder.Decode(&claudeConfig); err != nil {
+	if err = decoder.Decode(&mcpConfig); err != nil {
 		return nil, xerrors.Errorf("failed to decode mcp file: %w", err)
 	}
 
 	// Convert MCP format to ACP format and filter by agent capabilities
 	var supportedMCPList []acp.McpServer
-	for name, server := range claudeConfig.McpServers {
+	for name, server := range mcpConfig.McpServers {
 		mcpServer, err := server.convertAgentapiMcpToAcp(name)
 		if err != nil {
 			logger.Warn("Skipping invalid MCP server", "name", name, "error", err)
