@@ -134,6 +134,39 @@ agentapi server --allowed-origins 'https://example.com,http://localhost:3000' --
 AGENTAPI_ALLOWED_ORIGINS='https://example.com http://localhost:3000' agentapi server -- claude
 ```
 
+#### MCP configuration (experimental)
+
+When using the experimental ACP transport (`--experimental-acp`), you can provide MCP servers to the agent via a JSON configuration file using the `--mcp-file` flag.
+
+The file uses the same format as Claude's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
+      "env": {
+        "DEBUG": "true"
+      }
+    },
+    "api-server": {
+      "type": "http",
+      "url": "https://api.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer token"
+      }
+    }
+  }
+}
+```
+
+Example usage:
+
+```bash
+agentapi server --experimental-acp --mcp-file ./mcp.json -- claude
+```
+
 ### `agentapi attach`
 
 Attach to a running agent's terminal session.
