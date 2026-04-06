@@ -143,8 +143,8 @@ The file uses the same format as Claude's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "type": "stdio",
     "filesystem": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
       "env": {

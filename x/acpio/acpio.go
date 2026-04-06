@@ -203,6 +203,11 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 	decoder := json.NewDecoder(mcpFile)
 
 	if err = decoder.Decode(&mcpConfig); err != nil {
+		// If file is empty, warn and continue with empty config
+		if err == io.EOF {
+			logger.Warn("MCP file is empty, continuing with no MCP servers", "path", mcpFilePath)
+			return []acp.McpServer{}, nil
+		}
 		return nil, xerrors.Errorf("failed to decode mcp file: %w", err)
 	}
 

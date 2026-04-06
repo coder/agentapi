@@ -40,118 +40,25 @@ func TestGetSupportedMCPConfig(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to decode mcp file")
 	})
 
-	t.Run("stdio servers always included", func(t *testing.T) {
+	t.Run("empty file returns warning and empty slice", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		mcpFile := filepath.Join(tmpDir, "mcp.json")
-		// Claude MCP format: mcpServers is a map with server name as key
-		mcpContent := `{
-			"mcpServers": {
-				"test-stdio": {
-					"command": "/usr/bin/test",
-					"args": ["--stdio"],
-					"env": {
-						"DEBUG": "true"
-					}
-				}
-			}
-		}`
-		err := os.WriteFile(mcpFile, []byte(mcpContent), 0o644)
+		mcpFile := filepath.Join(tmpDir, "empty.json")
+		err := os.WriteFile(mcpFile, []byte(""), 0o644)
 		require.NoError(t, err)
 
-		initResp := &acp.InitializeResponse{
-			AgentCapabilities: acp.AgentCapabilities{
-				McpCapabilities: acp.McpCapabilities{
-					Http: false,
-					Sse:  false,
-				},
-			},
-		}
-		result, err := getSupportedMCPConfig(mcpFile, logger, initResp)
-		require.NoError(t, err)
-		assert.Len(t, result, 1)
-		assert.NotNil(t, result[0].Stdio)
-		assert.Equal(t, "test-stdio", result[0].Stdio.Name)
-		assert.Equal(t, "/usr/bin/test", result[0].Stdio.Command)
-		assert.Equal(t, []string{"--stdio"}, result[0].Stdio.Args)
-		// Check env was converted correctly
-		assert.Len(t, result[0].Stdio.Env, 1)
-		assert.Equal(t, "DEBUG", result[0].Stdio.Env[0].Name)
-		assert.Equal(t, "true", result[0].Stdio.Env[0].Value)
-	})
-
-	t.Run("http servers filtered when capability is false", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		mcpFile := filepath.Join(tmpDir, "mcp.json")
-		mcpContent := `{
-			"mcpServers": {
-				"test-http": {
-					"type": "http",
-					"url": "https://example.com/mcp",
-					"headers": {
-						"Authorization": "Bearer token123"
-					}
-				}
-			}
-		}`
-		err := os.WriteFile(mcpFile, []byte(mcpContent), 0o644)
-		require.NoError(t, err)
-
-		initResp := &acp.InitializeResponse{
-			AgentCapabilities: acp.AgentCapabilities{
-				McpCapabilities: acp.McpCapabilities{
-					Http: false,
-					Sse:  false,
-				},
-			},
-		}
+		initResp := &acp.InitializeResponse{}
 		result, err := getSupportedMCPConfig(mcpFile, logger, initResp)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
 
-	t.Run("http servers included when capability is true", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		mcpFile := filepath.Join(tmpDir, "mcp.json")
-		mcpContent := `{
-			"mcpServers": {
-				"test-http": {
-					"type": "http",
-					"url": "https://example.com/mcp",
-					"headers": {
-						"Authorization": "Bearer token123"
-					}
-				}
-			}
-		}`
-		err := os.WriteFile(mcpFile, []byte(mcpContent), 0o644)
-		require.NoError(t, err)
-
-		initResp := &acp.InitializeResponse{
-			AgentCapabilities: acp.AgentCapabilities{
-				McpCapabilities: acp.McpCapabilities{
-					Http: true,
-					Sse:  false,
-				},
-			},
-		}
-		result, err := getSupportedMCPConfig(mcpFile, logger, initResp)
-		require.NoError(t, err)
-		assert.Len(t, result, 1)
-		assert.NotNil(t, result[0].Http)
-		assert.Equal(t, "test-http", result[0].Http.Name)
-		assert.Equal(t, "https://example.com/mcp", result[0].Http.Url)
-		// Check headers were converted correctly
-		assert.Len(t, result[0].Http.Headers, 1)
-		assert.Equal(t, "Authorization", result[0].Http.Headers[0].Name)
-		assert.Equal(t, "Bearer token123", result[0].Http.Headers[0].Value)
-	})
-
-	t.Run("mixed servers filtered correctly", func(t *testing.T) {
+	t.Run("servers filtered correctly", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		mcpFile := filepath.Join(tmpDir, "mcp.json")
 		mcpContent := `{
 			"mcpServers": {
 				"stdio-server": {
+					"type": "stdio",
 					"command": "/usr/bin/stdio-mcp",
 					"args": []
 				},
@@ -206,6 +113,7 @@ func TestGetSupportedMCPConfig(t *testing.T) {
 		mcpContent := `{
 			"mcpServers": {
 				"invalid-server": {
+					"type": "stdio",
 					"args": ["--foo"]
 				}
 			}
@@ -220,32 +128,24 @@ func TestGetSupportedMCPConfig(t *testing.T) {
 		assert.Empty(t, result)
 	})
 
-	t.Run("http server inferred from url field", func(t *testing.T) {
+	t.Run("server without type is skipped", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		mcpFile := filepath.Join(tmpDir, "mcp.json")
-		// No explicit type, but has url - should be inferred as http
 		mcpContent := `{
 			"mcpServers": {
-				"inferred-http": {
-					"url": "https://example.com/mcp"
+				"no-type-server": {
+					"command": "/usr/bin/test"
 				}
 			}
 		}`
 		err := os.WriteFile(mcpFile, []byte(mcpContent), 0o644)
 		require.NoError(t, err)
 
-		initResp := &acp.InitializeResponse{
-			AgentCapabilities: acp.AgentCapabilities{
-				McpCapabilities: acp.McpCapabilities{
-					Http: true,
-				},
-			},
-		}
+		initResp := &acp.InitializeResponse{}
 		result, err := getSupportedMCPConfig(mcpFile, logger, initResp)
 		require.NoError(t, err)
-		assert.Len(t, result, 1)
-		assert.NotNil(t, result[0].Http)
-		assert.Equal(t, "inferred-http", result[0].Http.Name)
+		// Servers without type are skipped with a warning
+		assert.Empty(t, result)
 	})
 }
 
@@ -315,6 +215,16 @@ func TestConvertAgentapiMcpToAcp(t *testing.T) {
 		}
 
 		_, err := server.convertAgentapiMcpToAcp("bad-server")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported server type")
+	})
+
+	t.Run("returns error for missing type", func(t *testing.T) {
+		server := AgentapiMcpServer{
+			Command: "/usr/bin/test",
+		}
+
+		_, err := server.convertAgentapiMcpToAcp("no-type-server")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported server type")
 	})
