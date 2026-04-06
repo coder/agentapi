@@ -194,12 +194,12 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 
 	mcpFile, err := os.Open(mcpFilePath)
 	if err != nil {
-		return nil, xerrors.Errorf("Failed to open mcp file: %v", err)
+		return nil, xerrors.Errorf("Failed to open mcp file: %w", err)
 	}
 
 	defer func() {
 		if closeErr := mcpFile.Close(); closeErr != nil {
-			logger.Error("Failed to close mcp file", "error", err)
+			logger.Error("Failed to close mcp file", "path", mcpFilePath, "error", closeErr)
 		}
 	}()
 
@@ -207,7 +207,7 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 	decoder := json.NewDecoder(mcpFile)
 
 	if err = decoder.Decode(&allMcpList); err != nil {
-		return nil, xerrors.Errorf("Failed to decode mcp file: %v", err)
+		return nil, xerrors.Errorf("Failed to decode mcp file: %w", err)
 	}
 
 	// Only send the MCPs that are supported by the agents

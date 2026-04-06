@@ -139,7 +139,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	acpMCPFile := viper.GetString(FlagMCPFile)
 
 	if acpMCPFile != "" && !experimentalACP {
-		return xerrors.Errorf("--mcp-file requires --experimental-acp requires to be set")
+		return xerrors.Errorf("--mcp-file requires --experimental-acp")
 	}
 
 	if experimentalACP && (saveState || loadState) {
