@@ -200,7 +200,7 @@ func TestGetSupportedMCPConfig(t *testing.T) {
 		assert.Empty(t, result)
 	})
 
-	t.Run("server without command or url returns error", func(t *testing.T) {
+	t.Run("server without command or url is skipped", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		mcpFile := filepath.Join(tmpDir, "mcp.json")
 		mcpContent := `{
