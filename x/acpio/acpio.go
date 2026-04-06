@@ -34,10 +34,6 @@ type acpClient struct {
 	agentIO *ACPAgentIO
 }
 
-type McpConfig struct {
-	McpServers []acp.McpServer `json:"mcpServers"`
-}
-
 var _ acp.Client = (*acpClient)(nil)
 
 func (c *acpClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
@@ -194,7 +190,7 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 
 	mcpFile, err := os.Open(mcpFilePath)
 	if err != nil {
-		return nil, xerrors.Errorf("Failed to open mcp file: %w", err)
+		return nil, xerrors.Errorf("failed to open mcp file: %w", err)
 	}
 
 	defer func() {
@@ -203,22 +199,35 @@ func getSupportedMCPConfig(mcpFilePath string, logger *slog.Logger, initResp *ac
 		}
 	}()
 
-	var allMcpList McpConfig
+	var claudeConfig AgentapiMcpConfig
 	decoder := json.NewDecoder(mcpFile)
 
-	if err = decoder.Decode(&allMcpList); err != nil {
-		return nil, xerrors.Errorf("Failed to decode mcp file: %w", err)
+	if err = decoder.Decode(&claudeConfig); err != nil {
+		return nil, xerrors.Errorf("failed to decode mcp file: %w", err)
 	}
 
-	// Only send the MCPs that are supported by the agents
+	// Convert MCP format to ACP format and filter by agent capabilities
 	var supportedMCPList []acp.McpServer
-	for _, mcp := range allMcpList.McpServers {
-		if (mcp.Http != nil && !initResp.AgentCapabilities.McpCapabilities.Http) || (mcp.Sse != nil && !initResp.AgentCapabilities.McpCapabilities.Sse) {
+	for name, server := range claudeConfig.McpServers {
+		mcpServer, err := server.convertAgentapiMcpToAcp(name)
+		if err != nil {
+			logger.Warn("Skipping invalid MCP server", "name", name, "error", err)
 			continue
 		}
-		supportedMCPList = append(supportedMCPList, mcp)
+
+		// Filter based on agent capabilities
+		if mcpServer.Http != nil && !initResp.AgentCapabilities.McpCapabilities.Http {
+			logger.Debug("Skipping HTTP MCP server (agent doesn't support HTTP)", "name", name)
+			continue
+		}
+		if mcpServer.Sse != nil && !initResp.AgentCapabilities.McpCapabilities.Sse {
+			logger.Debug("Skipping SSE MCP server (agent doesn't support SSE)", "name", name)
+			continue
+		}
+
+		supportedMCPList = append(supportedMCPList, mcpServer)
 	}
-	return supportedMCPList, err
+	return supportedMCPList, nil
 }
 
 // Write sends a message to the agent via ACP prompt
