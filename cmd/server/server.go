@@ -136,9 +136,9 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 	}
 
 	experimentalACP := viper.GetBool(FlagExperimentalACP)
-	acpMCPFile := viper.GetString(FlagMCPFile)
+	mcpFile := viper.GetString(FlagMCPFile)
 
-	if acpMCPFile != "" && !experimentalACP {
+	if mcpFile != "" && !experimentalACP {
 		return xerrors.Errorf("--mcp-file requires --experimental-acp")
 	}
 
@@ -174,7 +174,7 @@ func runServer(ctx context.Context, logger *slog.Logger, argsToPass []string) er
 		acpResult, err = httpapi.SetupACP(ctx, httpapi.SetupACPConfig{
 			Program:     agent,
 			ProgramArgs: argsToPass[1:],
-			MCPFilePath: acpMCPFile,
+			MCPFilePath: mcpFile,
 		})
 		if err != nil {
 			return xerrors.Errorf("failed to setup ACP: %w", err)
