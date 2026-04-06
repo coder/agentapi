@@ -1,6 +1,8 @@
 package acpio
 
 import (
+	"slices"
+
 	"github.com/coder/acp-go-sdk"
 	"golang.org/x/xerrors"
 )
@@ -13,13 +15,13 @@ type AgentapiMcpConfig struct {
 
 // AgentapiMcpServer represents a single MCP server in Claude's format.
 type AgentapiMcpServer struct {
-	// Type can be "stdio" or "http". Defaults to "stdio" if not specified.
-	Type string `json:"type,omitempty"`
+	// Type can be "stdio", "sse" or "http"
+	Type string `json:"type"`
 	// Stdio transport fields
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
-	// HTTP transport fields
+	// HTTP | SSE transport fields
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
@@ -27,17 +29,9 @@ type AgentapiMcpServer struct {
 // convertAgentapiMcpToAcp converts a Claude MCP server config to the ACP format.
 func (a *AgentapiMcpServer) convertAgentapiMcpToAcp(name string) (acp.McpServer, error) {
 	serverType := a.Type
-	if serverType == "" {
-		// Default to stdio if no type specified and command is present
-		if a.Command != "" {
-			serverType = "stdio"
-		} else if a.URL != "" {
-			serverType = "http"
-		}
-	}
+	acpMCPServer := acp.McpServer{}
 
-	switch serverType {
-	case "stdio", "":
+	if serverType == "stdio" {
 		if a.Command == "" {
 			return acp.McpServer{}, xerrors.Errorf("stdio server %q missing command", name)
 		}
@@ -49,16 +43,14 @@ func (a *AgentapiMcpServer) convertAgentapiMcpToAcp(name string) (acp.McpServer,
 				Value: value,
 			})
 		}
-		return acp.McpServer{
-			Stdio: &acp.McpServerStdio{
-				Name:    name,
-				Command: a.Command,
-				Args:    a.Args,
-				Env:     envVars,
-			},
-		}, nil
 
-	case "http":
+		acpMCPServer.Stdio = &acp.McpServerStdio{
+			Name:    name,
+			Command: a.Command,
+			Args:    a.Args,
+			Env:     envVars,
+		}
+	} else if slices.Contains([]string{"http", "sse"}, serverType) {
 		if a.URL == "" {
 			return acp.McpServer{}, xerrors.Errorf("http server %q missing url", name)
 		}
@@ -70,16 +62,24 @@ func (a *AgentapiMcpServer) convertAgentapiMcpToAcp(name string) (acp.McpServer,
 				Value: value,
 			})
 		}
-		return acp.McpServer{
-			Http: &acp.McpServerHttp{
+
+		if serverType == "sse" {
+			acpMCPServer.Sse = &acp.McpServerSse{
+				Name:    name,
+				Type:    "sse",
+				Url:     a.URL,
+				Headers: headers,
+			}
+		} else {
+			acpMCPServer.Http = &acp.McpServerHttp{
 				Name:    name,
 				Type:    "http",
 				Url:     a.URL,
 				Headers: headers,
-			},
-		}, nil
-
-	default:
+			}
+		}
+	} else {
 		return acp.McpServer{}, xerrors.Errorf("unsupported server type %q for server %q", serverType, name)
 	}
+	return acpMCPServer, nil
 }

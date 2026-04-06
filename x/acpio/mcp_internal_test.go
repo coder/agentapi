@@ -252,6 +252,7 @@ func TestGetSupportedMCPConfig(t *testing.T) {
 func TestConvertAgentapiMcpToAcp(t *testing.T) {
 	t.Run("converts stdio server correctly", func(t *testing.T) {
 		server := AgentapiMcpServer{
+			Type:    "stdio",
 			Command: "/usr/bin/mcp-server",
 			Args:    []string{"--arg1", "--arg2"},
 			Env: map[string]string{

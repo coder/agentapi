@@ -580,7 +580,7 @@ func TestServerFlagValidation(t *testing.T) {
 		// Create a temporary MCP file
 		tmpDir := t.TempDir()
 		mcpFile := filepath.Join(tmpDir, "mcp.json")
-		err := os.WriteFile(mcpFile, []byte(`{"mcpServers": []}`), 0o644)
+		err := os.WriteFile(mcpFile, []byte(`{"mcpServers": {}}`), 0o644)
 		require.NoError(t, err, "Failed to create temp MCP file")
 
 		// Run the server with --mcp-file but WITHOUT --experimental-acp
