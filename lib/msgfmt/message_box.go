@@ -12,7 +12,7 @@ import (
 func findGreaterThanMessageBox(lines []string) int {
 	for i := len(lines) - 1; i >= max(len(lines)-6, 0); i-- {
 		if strings.Contains(lines[i], ">") {
-			if i > 0 && strings.Contains(lines[i-1], "───────────────") {
+			if i > 0 && (strings.Contains(lines[i-1], "───────────────") || strings.Contains(lines[i-1], "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")) {
 				return i - 1
 			}
 			return i
@@ -27,9 +27,9 @@ func findGreaterThanMessageBox(lines []string) int {
 // ───────────────
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
-		if strings.Contains(lines[i], "───────────────") &&
+		if (strings.Contains(lines[i], "───────────────") || strings.Contains(lines[i], "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")) &&
 			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│") || strings.Contains(lines[i+1], "❯")) &&
-			strings.Contains(lines[i+2], "───────────────") {
+			(strings.Contains(lines[i+2], "───────────────") || strings.Contains(lines[i+2], "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")) {
 			return i
 		}
 	}
