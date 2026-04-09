@@ -571,7 +571,7 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 		return ConversationStatusChanging
 	}
 
-	// The send loop gates outbound messages on initialPromptReady.
+	// The send loop gates stableSignal on initialPromptReady.
 	// Report "changing" until readiness is detected so that Send()
 	// rejects with ErrMessageValidationChanging instead of blocking
 	// indefinitely on a stableSignal that will never fire.

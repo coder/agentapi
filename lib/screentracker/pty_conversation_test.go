@@ -1302,7 +1302,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
-	t.Run("no initial prompt - status is changing when readiness never fires", func(t *testing.T) {
+	t.Run("ReadyForInitialPrompt always false - status is changing", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
@@ -1323,7 +1323,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 
 		advanceFor(ctx, t, mClock, 1*time.Second)
 
-		// Even without an initial prompt, the send loop gates on
+		// Even without an initial prompt, stableSignal gates on
 		// initialPromptReady. Status must reflect that Send()
 		// would block.
 		assert.Equal(t, st.ConversationStatusChanging, c.Status())
