@@ -5,9 +5,9 @@ import (
 )
 
 // Usually something like
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // >
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // Used by Claude Code, Goose, and Aider.
 func findGreaterThanMessageBox(lines []string) int {
 	for i := len(lines) - 1; i >= max(len(lines)-6, 0); i-- {
@@ -22,9 +22,9 @@ func findGreaterThanMessageBox(lines []string) int {
 }
 
 // Usually something like
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // |
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
 		if (strings.Contains(lines[i], "───────────────") || strings.Contains(lines[i], "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")) &&

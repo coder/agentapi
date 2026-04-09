@@ -1248,9 +1248,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-			// Agent not ready initially, status should be changing.
-			advanceFor(ctx, t, mClock, 1*time.Second)
-			assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		// Agent not ready initially, status should be changing.
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 		// Agent becomes ready, prompt gets enqueued, status becomes "changing"
 		agent.setScreen("ready")
 		advanceFor(ctx, t, mClock, 1*time.Second)
@@ -1282,9 +1282,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-			// Status is "changing" while waiting for readiness (prompt not yet enqueued).
-			advanceFor(ctx, t, mClock, 1*time.Second)
-			assert.Equal(t, st.ConversationStatusChanging, c.Status())
+		// Status is "changing" while waiting for readiness (prompt not yet enqueued).
+		advanceFor(ctx, t, mClock, 1*time.Second)
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 		// Agent becomes ready. The snapshot loop detects this, enqueues the prompt,
 		// then sees queue + stable + ready and signals the send loop.
 		// writeStabilize runs with onWrite changing the screen, so it completes.
@@ -1736,12 +1736,12 @@ func TestInitialPromptSent(t *testing.T) {
 
 		// Verify no prompt was sent (should only have the initial screen message)
 		messages := c.Messages()
-			for _, msg := range messages {
-				if msg.Role == st.ConversationRoleUser {
-					t.Errorf("Unexpected user message sent: %q (empty prompt should not be restored)", msg.Message)
-				}
+		for _, msg := range messages {
+			if msg.Role == st.ConversationRoleUser {
+				t.Errorf("Unexpected user message sent: %q (empty prompt should not be restored)", msg.Message)
 			}
-		})
+		}
+	})
 }
 
 func TestSendRejectsWhenInitialPromptNotReady(t *testing.T) {
