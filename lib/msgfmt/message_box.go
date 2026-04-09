@@ -4,15 +4,22 @@ import (
 	"strings"
 )
 
+// containsHorizontalBorder reports whether the line contains a
+// horizontal border made of box-drawing characters (─ or ╌).
+func containsHorizontalBorder(line string) bool {
+	return strings.Contains(line, "───────────────") ||
+		strings.Contains(line, "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌")
+}
+
 // Usually something like
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // >
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // Used by Claude Code, Goose, and Aider.
 func findGreaterThanMessageBox(lines []string) int {
 	for i := len(lines) - 1; i >= max(len(lines)-6, 0); i-- {
 		if strings.Contains(lines[i], ">") {
-			if i > 0 && strings.Contains(lines[i-1], "───────────────") {
+			if i > 0 && containsHorizontalBorder(lines[i-1]) {
 				return i - 1
 			}
 			return i
@@ -22,14 +29,14 @@ func findGreaterThanMessageBox(lines []string) int {
 }
 
 // Usually something like
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 // |
-// ───────────────
+// ───────────────  (or ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌)
 func findGenericSlimMessageBox(lines []string) int {
 	for i := len(lines) - 3; i >= max(len(lines)-9, 0); i-- {
-		if strings.Contains(lines[i], "───────────────") &&
+		if containsHorizontalBorder(lines[i]) &&
 			(strings.Contains(lines[i+1], "|") || strings.Contains(lines[i+1], "│") || strings.Contains(lines[i+1], "❯")) &&
-			strings.Contains(lines[i+2], "───────────────") {
+			containsHorizontalBorder(lines[i+2]) {
 			return i
 		}
 	}
