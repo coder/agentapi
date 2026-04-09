@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -473,21 +474,16 @@ func TestMessages(t *testing.T) {
 		// Then: Send succeeds and the user message is recorded.
 		msgs := c.Messages()
 		require.True(t, len(msgs) >= 2)
-		var foundUserMsg bool
-		for _, msg := range msgs {
-			if msg.Role == st.ConversationRoleUser && msg.Message == "hello" {
-				foundUserMsg = true
-				break
-			}
-		}
-		assert.True(t, foundUserMsg, "expected user message 'hello' in conversation")
+		assert.True(t, slices.ContainsFunc(msgs, func(m st.ConversationMessage) bool {
+			return m.Role == st.ConversationRoleUser && m.Message == "hello"
+		}), "expected user message 'hello' in conversation")
 	})
 
 	t.Run("send-message-no-echo-no-react", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 
-		// Given: an agent that is completely unresponsive — it
+		// Given: an agent that is completely unresponsive. It
 		// neither echoes input nor reacts to carriage return.
 		c, _, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
 			a := &testAgent{screen: "prompt"}
@@ -516,7 +512,7 @@ func TestMessages(t *testing.T) {
 	t.Run("send-message-no-echo-context-cancelled", func(t *testing.T) {
 		// Given: a non-echoing agent and a cancellable context.
 		// The onWrite signals when writeStabilize starts writing
-		// message parts — this is used to synchronize the cancel.
+		// message parts. This is used to synchronize the cancel.
 		sendCtx, sendCancel := context.WithCancel(context.Background())
 		t.Cleanup(sendCancel)
 

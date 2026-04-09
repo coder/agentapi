@@ -20,7 +20,7 @@ import (
 const (
 	// writeStabilizeEchoTimeout is the timeout for the echo
 	// detection WaitFor loop in writeStabilize Phase 1. The
-	// effective ceiling may be slightly longer because the 1s
+	// effective ceiling may be slightly longer because the
 	// stability check inside the condition runs outside
 	// WaitFor's timeout select. Non-echoing agents (e.g. TUI
 	// agents using bracketed paste) will hit this timeout,
@@ -438,12 +438,12 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 // Phase 1 (echo detection): writes the message text and waits
 // for the screen to change and stabilize. This detects agents
 // that echo typed input. If the screen doesn't change within
-// writeStabilizeEchoTimeout, this is non-fatal — many TUI
+// writeStabilizeEchoTimeout, this is non-fatal. Many TUI
 // agents buffer bracketed-paste input without rendering it.
 //
 // Phase 2 (processing detection): writes a carriage return
 // and waits for the screen to change, indicating the agent
-// started processing. This phase is fatal on timeout — if the
+// started processing. This phase is fatal on timeout: if the
 // agent doesn't react to Enter, it's unresponsive.
 func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...MessagePart) error {
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
@@ -452,7 +452,8 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 			return xerrors.Errorf("failed to write message part: %w", err)
 		}
 	}
-	// wait for the screen to stabilize after the message is written
+	// Phase 1: wait for the screen to stabilize after the
+	// message is written (echo detection).
 	if err := util.WaitFor(ctx, util.WaitTimeout{
 		Timeout:     writeStabilizeEchoTimeout,
 		MinInterval: 50 * time.Millisecond,
@@ -488,7 +489,8 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 		)
 	}
 
-	// wait for the screen to change after the carriage return is written
+	// Phase 2: wait for the screen to change after the
+	// carriage return is written (processing detection).
 	screenBeforeCarriageReturn := c.cfg.AgentIO.ReadScreen()
 	lastCarriageReturnTime := time.Time{}
 	if err := util.WaitFor(ctx, util.WaitTimeout{
