@@ -1760,7 +1760,7 @@ func TestSendRejectsWhenInitialPromptNotReady(t *testing.T) {
 		SnapshotInterval:      100 * time.Millisecond,
 		ScreenStabilityLength: 200 * time.Millisecond,
 		AgentIO:               agent,
-		ReadyForInitialPrompt: func(screen string) bool {
+		ReadyForInitialPrompt: func(message string) bool {
 			return false // Simulates failed message box detection.
 		},
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
