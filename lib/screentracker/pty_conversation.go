@@ -3,6 +3,7 @@ package screentracker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +15,26 @@ import (
 	"github.com/coder/agentapi/lib/util"
 	"github.com/coder/quartz"
 	"golang.org/x/xerrors"
+)
+
+const (
+	// writeStabilizeEchoTimeout is the timeout for the echo
+	// detection WaitFor loop in writeStabilize Phase 1. The
+	// effective ceiling may be slightly longer because the
+	// stability check inside the condition runs outside
+	// WaitFor's timeout select. Non-echoing agents (e.g. TUI
+	// agents using bracketed paste) will hit this timeout,
+	// which is non-fatal.
+	//
+	// TODO: move to PTYConversationConfig if agents need
+	// different echo detection windows.
+	writeStabilizeEchoTimeout = 2 * time.Second
+
+	// writeStabilizeProcessTimeout is the maximum time to wait
+	// for the screen to change after sending a carriage return.
+	// This detects whether the agent is actually processing the
+	// input.
+	writeStabilizeProcessTimeout = 15 * time.Second
 )
 
 // A screenSnapshot represents a snapshot of the PTY at a specific time.
@@ -411,7 +432,19 @@ func (c *PTYConversation) sendMessage(ctx context.Context, messageParts ...Messa
 	return nil
 }
 
-// writeStabilize writes messageParts to the screen and waits for the screen to stabilize after the message is written.
+// writeStabilize writes messageParts to the PTY and waits for
+// the agent to process them. It operates in two phases:
+//
+// Phase 1 (echo detection): writes the message text and waits
+// for the screen to change and stabilize. This detects agents
+// that echo typed input. If the screen doesn't change within
+// writeStabilizeEchoTimeout, this is non-fatal. Many TUI
+// agents buffer bracketed-paste input without rendering it.
+//
+// Phase 2 (processing detection): writes a carriage return
+// and waits for the screen to change, indicating the agent
+// started processing. This phase is fatal on timeout: if the
+// agent doesn't react to Enter, it's unresponsive.
 func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...MessagePart) error {
 	screenBeforeMessage := c.cfg.AgentIO.ReadScreen()
 	for _, part := range messageParts {
@@ -419,9 +452,10 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 			return xerrors.Errorf("failed to write message part: %w", err)
 		}
 	}
-	// wait for the screen to stabilize after the message is written
+	// Phase 1: wait for the screen to stabilize after the
+	// message is written (echo detection).
 	if err := util.WaitFor(ctx, util.WaitTimeout{
-		Timeout:     15 * time.Second,
+		Timeout:     writeStabilizeEchoTimeout,
 		MinInterval: 50 * time.Millisecond,
 		InitialWait: true,
 		Clock:       c.cfg.Clock,
@@ -441,14 +475,26 @@ func (c *PTYConversation) writeStabilize(ctx context.Context, messageParts ...Me
 		}
 		return false, nil
 	}); err != nil {
-		return xerrors.Errorf("failed to wait for screen to stabilize: %w", err)
+		if !errors.Is(err, util.WaitTimedOut) {
+			// Context cancellation or condition errors are fatal.
+			return xerrors.Errorf("failed to wait for screen to stabilize: %w", err)
+		}
+		// Phase 1 timeout is non-fatal: the agent may not echo
+		// input (e.g. TUI agents buffer bracketed-paste content
+		// internally). Proceed to Phase 2 to send the carriage
+		// return.
+		c.cfg.Logger.Info(
+			"echo detection timed out, sending carriage return",
+			"timeout", writeStabilizeEchoTimeout,
+		)
 	}
 
-	// wait for the screen to change after the carriage return is written
+	// Phase 2: wait for the screen to change after the
+	// carriage return is written (processing detection).
 	screenBeforeCarriageReturn := c.cfg.AgentIO.ReadScreen()
 	lastCarriageReturnTime := time.Time{}
 	if err := util.WaitFor(ctx, util.WaitTimeout{
-		Timeout:     15 * time.Second,
+		Timeout:     writeStabilizeProcessTimeout,
 		MinInterval: 25 * time.Millisecond,
 		Clock:       c.cfg.Clock,
 	}, func() (bool, error) {
@@ -524,6 +570,14 @@ func (c *PTYConversation) statusLocked() ConversationStatus {
 	}
 
 	if !c.isScreenStableLocked() {
+		return ConversationStatusChanging
+	}
+
+	// The send loop gates stableSignal on initialPromptReady.
+	// Report "changing" until readiness is detected so that Send()
+	// rejects with ErrMessageValidationChanging instead of blocking
+	// indefinitely on a stableSignal that will never fire.
+	if !c.initialPromptReady {
 		return ConversationStatusChanging
 	}
 

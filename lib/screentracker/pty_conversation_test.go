@@ -7,7 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,6 +448,125 @@ func TestMessages(t *testing.T) {
 	t.Run("send-message-empty-message", func(t *testing.T) {
 		c, _, _ := newConversation(context.Background(), t)
 		assert.ErrorIs(t, c.Send(st.MessagePartText{Content: ""}), st.ErrMessageValidationEmpty)
+	})
+
+	t.Run("send-message-no-echo-agent-reacts", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		// Given: an agent that doesn't echo typed input but
+		// reacts to carriage return by updating the screen.
+		c, _, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {
+				if string(data) == "\r" {
+					a.screen = "processing..."
+				}
+			}
+			cfg.AgentIO = a
+		})
+		advanceFor(ctx, t, mClock, interval*threshold)
+
+		// When: a message is sent. Phase 1 times out (no echo),
+		// Phase 2 writes \r and the agent reacts.
+		sendAndAdvance(ctx, t, c, mClock, st.MessagePartText{Content: "hello"})
+
+		// Then: Send succeeds and the user message is recorded.
+		msgs := c.Messages()
+		require.True(t, len(msgs) >= 2)
+		assert.True(t, slices.ContainsFunc(msgs, func(m st.ConversationMessage) bool {
+			return m.Role == st.ConversationRoleUser && m.Message == "hello"
+		}), "expected user message 'hello' in conversation")
+	})
+
+	t.Run("send-message-no-echo-no-react", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		t.Cleanup(cancel)
+
+		// Given: an agent that is completely unresponsive. It
+		// neither echoes input nor reacts to carriage return.
+		c, _, mClock := newConversation(ctx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {}
+			cfg.AgentIO = a
+		})
+		advanceFor(ctx, t, mClock, interval*threshold)
+
+		// When: a message is sent. Both Phase 1 (echo) and
+		// Phase 2 (processing) time out.
+		// Note: can't use sendAndAdvance here because it calls
+		// require.NoError internally.
+		var sendErr error
+		var sendDone atomic.Bool
+		go func() {
+			sendErr = c.Send(st.MessagePartText{Content: "hello"})
+			sendDone.Store(true)
+		}()
+		advanceUntil(ctx, t, mClock, func() bool { return sendDone.Load() })
+
+		// Then: Send fails with a Phase 2 error (not Phase 1).
+		require.Error(t, sendErr)
+		assert.Contains(t, sendErr.Error(), "failed to wait for processing to start")
+	})
+
+	t.Run("send-message-no-echo-context-cancelled", func(t *testing.T) {
+		// Given: a non-echoing agent and a cancellable context.
+		// The onWrite signals when writeStabilize starts writing
+		// message parts. This is used to synchronize the cancel.
+		sendCtx, sendCancel := context.WithCancel(context.Background())
+		t.Cleanup(sendCancel)
+
+		writeStarted := make(chan struct{}, 1)
+		c, _, mClock := newConversation(sendCtx, t, func(cfg *st.PTYConversationConfig) {
+			a := &testAgent{screen: "prompt"}
+			a.onWrite = func(data []byte) {
+				select {
+				case writeStarted <- struct{}{}:
+				default:
+				}
+			}
+			cfg.AgentIO = a
+		})
+		advanceFor(sendCtx, t, mClock, interval*threshold)
+
+		// When: a message is sent and the context is cancelled
+		// during Phase 1 (after the message is written to the
+		// PTY, before echo detection completes).
+		var sendErr error
+		var sendDone atomic.Bool
+		go func() {
+			sendErr = c.Send(st.MessagePartText{Content: "hello"})
+			sendDone.Store(true)
+		}()
+
+		// Advance tick-by-tick until writeStabilize starts
+		// (onWrite fires). This gives the send loop goroutine
+		// scheduling time between advances.
+		advanceUntil(sendCtx, t, mClock, func() bool {
+			select {
+			case <-writeStarted:
+				return true
+			default:
+				return false
+			}
+		})
+
+		// writeStabilize Phase 1 is now running. Its WaitFor is
+		// blocked on a mock timer sleep select. Cancel: the
+		// select sees ctx.Done() immediately.
+		sendCancel()
+
+		// WaitFor returns ctx.Err(). The errors.Is guard in
+		// Phase 1 propagates it as fatal. Use Eventually since
+		// the goroutine needs scheduling time.
+		require.Eventually(t, sendDone.Load, 5*time.Second, 10*time.Millisecond)
+
+		// Then: the error wraps context.Canceled, not a Phase 2
+		// timeout. This validates the errors.Is(WaitTimedOut)
+		// guard.
+		require.Error(t, sendErr)
+		assert.ErrorIs(t, sendErr, context.Canceled)
+		assert.NotContains(t, sendErr.Error(), "failed to wait for processing to start")
 	})
 }
 
@@ -1075,7 +1196,7 @@ func TestStatePersistence(t *testing.T) {
 func TestInitialPromptReadiness(t *testing.T) {
 	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	t.Run("agent not ready - status is stable until agent becomes ready", func(t *testing.T) {
+	t.Run("agent not ready - status is changing until agent becomes ready", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
@@ -1098,9 +1219,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		// Take a snapshot with "loading...". Threshold is 1 (stability 0 / interval 1s = 0 + 1 = 1).
 		advanceFor(ctx, t, mClock, 1*time.Second)
 
-		// Screen is stable and agent is not ready, so initial prompt hasn't been enqueued yet.
-		// Status should be stable.
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
+		// Screen is stable but agent is not ready. Status must be
+		// "changing" so that Send() rejects instead of blocking.
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 	})
 
 	t.Run("agent becomes ready - prompt enqueued and status changes to changing", func(t *testing.T) {
@@ -1123,10 +1244,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-		// Agent not ready initially, status should be stable
+		// Agent not ready initially, status should be changing.
 		advanceFor(ctx, t, mClock, 1*time.Second)
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 		// Agent becomes ready, prompt gets enqueued, status becomes "changing"
 		agent.setScreen("ready")
 		advanceFor(ctx, t, mClock, 1*time.Second)
@@ -1158,10 +1278,9 @@ func TestInitialPromptReadiness(t *testing.T) {
 		c := st.NewPTY(ctx, cfg, &testEmitter{})
 		c.Start(ctx)
 
-		// Status is "stable" while waiting for readiness (prompt not yet enqueued).
+		// Status is "changing" while waiting for readiness (prompt not yet enqueued).
 		advanceFor(ctx, t, mClock, 1*time.Second)
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
-
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 		// Agent becomes ready. The snapshot loop detects this, enqueues the prompt,
 		// then sees queue + stable + ready and signals the send loop.
 		// writeStabilize runs with onWrite changing the screen, so it completes.
@@ -1179,7 +1298,7 @@ func TestInitialPromptReadiness(t *testing.T) {
 		assert.Equal(t, st.ConversationStatusStable, c.Status())
 	})
 
-	t.Run("no initial prompt - normal status logic applies", func(t *testing.T) {
+	t.Run("ReadyForInitialPrompt always false - status is changing", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		t.Cleanup(cancel)
 		mClock := quartz.NewMock(t)
@@ -1200,8 +1319,10 @@ func TestInitialPromptReadiness(t *testing.T) {
 
 		advanceFor(ctx, t, mClock, 1*time.Second)
 
-		// Status should be stable because no initial prompt to wait for.
-		assert.Equal(t, st.ConversationStatusStable, c.Status())
+		// Even without an initial prompt, stableSignal gates on
+		// initialPromptReady. Status must reflect that Send()
+		// would block.
+		assert.Equal(t, st.ConversationStatusChanging, c.Status())
 	})
 
 	t.Run("no initial prompt configured - normal status logic applies", func(t *testing.T) {
@@ -1617,4 +1738,39 @@ func TestInitialPromptSent(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestSendRejectsWhenInitialPromptNotReady(t *testing.T) {
+	// Regression test for https://github.com/coder/agentapi/issues/209.
+	// Send() used to block forever when ReadyForInitialPrompt never
+	// returned true, because statusLocked() reported "stable" while
+	// stableSignal required initialPromptReady. Now statusLocked()
+	// returns "changing" and Send() rejects immediately.
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	t.Cleanup(cancel)
+
+	mClock := quartz.NewMock(t)
+	agent := &testAgent{screen: "onboarding screen without message box"}
+	cfg := st.PTYConversationConfig{
+		Clock:                 mClock,
+		SnapshotInterval:      100 * time.Millisecond,
+		ScreenStabilityLength: 200 * time.Millisecond,
+		AgentIO:               agent,
+		ReadyForInitialPrompt: func(message string) bool {
+			return false // Simulates failed message box detection.
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	c := st.NewPTY(ctx, cfg, &testEmitter{})
+	c.Start(ctx)
+
+	// Fill snapshot buffer to reach stability.
+	advanceFor(ctx, t, mClock, 300*time.Millisecond)
+
+	// Status reports "changing" because initialPromptReady is false.
+	assert.Equal(t, st.ConversationStatusChanging, c.Status())
+
+	// Send() rejects immediately instead of blocking forever.
+	err := c.Send(st.MessagePartText{Content: "hello"})
+	assert.ErrorIs(t, err, st.ErrMessageValidationChanging)
 }
