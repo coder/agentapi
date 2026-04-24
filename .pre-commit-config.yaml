@@ -24,3 +24,12 @@ repos:
         language: script
         pass_filenames: false
         stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: quality-gate
+        name: quality-gate orchestrator
+        entry: scripts/quality-gate.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-push]
