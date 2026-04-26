@@ -36,18 +36,23 @@ chmod +x agentapi
 ```
 
 > [!NOTE]
-> When using Claude, Codex, Opencode, Copilot, Gemini, Amp or CursorCLI, always specify the agent type explicitly (eg: `agentapi server --type=codex -- codex`), or message formatting may break.
+> Always specify the agent type explicitly using the `--type` flag (e.g: `agentapi server --type claude -- claude`), otherwise message formatting may break.
 
 An OpenAPI schema is available in [openapi.json](openapi.json).
 
-By default, the server runs on port 3284. Additionally, the server exposes the same OpenAPI schema at http://localhost:3284/openapi.json and the available endpoints in a documentation UI at http://localhost:3284/docs.
+By default, the server runs on port 3284. The server exposes the OpenAPI schema at http://localhost:3284/openapi.json.
 
-There are 4 endpoints:
+### Available Endpoints
+
+The server provides the following REST endpoints:
 
 - GET `/messages` - returns a list of all messages in the conversation with the agent
 - POST `/message` - sends a message to the agent. When a 200 response is returned, AgentAPI has detected that the agent started processing the message
 - GET `/status` - returns the current status of the agent, either "stable" or "running"
 - GET `/events` - an SSE stream of events from the agent: message and status updates
+- GET `/health` - health check endpoint
+- GET `/version` - server version information
+- GET `/info` - server and agent information
 
 #### Allowed hosts
 
@@ -62,15 +67,18 @@ go build -o agentapi main.go
 ### Run
 
 ```bash
-# Start with Claude Code
-./agentapi server -- claude
+# Start with Claude Code (REQUIRED: specify --type)
+./agentapi server --type claude -- claude
 
-# Start with specific agent
-./agentapi server -- cursor
-./agentapi server -- aider --model sonnet
+# Start with specific agent (REQUIRED: specify --type)
+./agentapi server --type cursor -- cursor
+./agentapi server --type aider -- aider
+
+# With specific model
+./agentapi server --type claude -- claude --model claude-3-5-sonnet-20241022
 ```
 
-Server runs on port 3284 with chat UI at http://localhost:3284/chat
+Server runs on port 3284. The chat interface is available at http://localhost:3284/chat (static HTML served from root, redirects to `/chat`).
 
 ---
 
@@ -84,36 +92,40 @@ Server runs on port 3284 with chat UI at http://localhost:3284/chat
 | Goose | `goose` | Independent agent |
 | Codex | `codex` | OpenAI's coding agent |
 | Gemini CLI | `gemini` | Google's CLI |
-| GitHub Copilot | `github-copilot` | GitHub's CLI |
+| GitHub Copilot | `copilot` | GitHub's CLI |
 | Sourcegraph Amp | `amp` | Sourcegraph's agent |
-| Amazon Q | `amazon-q` | AWS's developer agent |
+| Amazon Q | `q` | AWS's developer agent |
 | Auggie | `auggie` | Augment Code's agent |
 
 ---
 
-## API Endpoints
+## API Examples
 
-### Core
+### Send a Message
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v0/chat` | POST | Send message, get response |
-| `/api/v0/agents` | GET | List supported agents |
-| `/api/v0/sessions` | GET | List active sessions |
-| `/api/v0/sessions/{id}` | GET | Get session details |
+```bash
+curl -X POST http://localhost:3284/message \
+  -H "Content-Type: application/json" \
+  -d '{"type":"user","content":"Hello, help me with Python"}'
+```
 
-### Streaming
+### Get Conversation History
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v0/chat/stream` | POST | Streaming responses |
+```bash
+curl http://localhost:3284/messages
+```
 
-### Health
+### Check Agent Status
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/metrics` | GET | Prometheus metrics |
+```bash
+curl http://localhost:3284/status
+```
+
+### Subscribe to Events (SSE)
+
+```bash
+curl http://localhost:3284/events
+```
 
 ---
 
@@ -122,36 +134,32 @@ Server runs on port 3284 with chat UI at http://localhost:3284/chat
 ```python
 import requests
 
-url = "http://localhost:3284/api/v0/chat"
+url = "http://localhost:3284/message"
 payload = {
-    "messages": [
-        {"role": "user", "content": "Hello, help me with Python"}
-    ],
-    "agent": "claude"
+    "type": "user",
+    "content": "Hello, help me with Python"
 }
 
 response = requests.post(url, json=payload)
 print(response.json())
+
+# Get history
+history = requests.get("http://localhost:3284/messages").json()
+print(history)
 ```
 
-### With Streaming
+### With Events (SSE)
 
 ```python
-import sseclient
 import requests
+import sseclient
 
-url = "http://localhost:3284/api/v0/chat/stream"
-payload = {
-    "messages": [{"role": "user", "content": "Write a hello world"}],
-    "agent": "claude"
-}
-
-response = requests.post(url, json=payload, stream=True)
+url = "http://localhost:3284/events"
+response = requests.get(url, stream=True)
 client = sseclient.SSEClient(response)
 
 for event in client.events():
-    if event.data:
-        print(event.data)
+    print(f"{event.event}: {event.data}")
 ```
 
 ---
@@ -193,8 +201,8 @@ for event in client.events():
 
 ```bash
 export AGENTAPI_PORT=3284
-export AGENTAPI_MODEL=claude-3-5-sonnet-20241022
-export AGENTAPI_TIMEOUT=300
+export AGENTAPI_ALLOWED_HOSTS="localhost,127.0.0.1"
+export AGENTAPI_ALLOWED_ORIGINS="http://localhost:3284"
 ```
 
 ### Config File
@@ -223,7 +231,7 @@ mcp:
   servers:
     agentapi:
       command: agentapi
-      args: ["server", "--", "claude"]
+      args: ["server", "--type", "claude", "--", "claude"]
 ```
 
 ### With cliproxy++
@@ -231,7 +239,7 @@ mcp:
 Route LLM requests through cliproxy++ for cost optimization:
 
 ```bash
-./agentapi server -- claude --llm-provider http://localhost:8317
+./agentapi server --type claude -- claude --llm-provider http://localhost:8317
 ```
 
 ---
