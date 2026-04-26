@@ -1,5 +1,8 @@
 name: Build Release Binaries
 
+permissions:
+  contents: read
+
 on:
   release:
     types: [published]

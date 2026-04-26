@@ -1,5 +1,8 @@
 name: IaC Scanning
 
+permissions:
+  contents: read
+
 on:
   push:
     paths:

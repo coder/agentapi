@@ -1,4 +1,7 @@
 name: quality-gate
+
+permissions:
+  contents: read
 on: [pull_request]
 jobs:
   verify:

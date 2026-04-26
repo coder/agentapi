@@ -1,5 +1,8 @@
 name: Generate All SDKs
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]

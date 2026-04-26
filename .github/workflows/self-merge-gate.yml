@@ -1,4 +1,7 @@
 name: self-merge-gate
+
+permissions:
+  contents: read
 on: [pull_request_review]
 jobs:
   check:

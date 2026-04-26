@@ -1,5 +1,8 @@
 name: Fuzzing
 
+permissions:
+  contents: read
+
 on:
   push:
     paths:

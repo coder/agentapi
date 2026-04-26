@@ -1,5 +1,8 @@
 name: ZAP DAST
 
+permissions:
+  contents: read
+
 on:
   push:
     paths:

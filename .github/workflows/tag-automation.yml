@@ -1,4 +1,7 @@
 name: Tag Automation
+
+permissions:
+  contents: read
 on:
   push:
     tags:

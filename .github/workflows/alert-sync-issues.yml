@@ -1,4 +1,7 @@
 name: Alert sync issues
+
+permissions:
+  contents: read
 on:
   schedule:
     - cron: '17 * * * *'
