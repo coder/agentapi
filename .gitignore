@@ -82,3 +82,7 @@ playwright-report/
 
 # Worktree directories (org policy)
 .claude/worktrees/
+
+
+# Docs node_modules explicit (Scorecard BinaryArtifacts FP cleanup)
+docs/node_modules/
