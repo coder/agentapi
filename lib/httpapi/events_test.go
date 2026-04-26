@@ -8,7 +8,6 @@ import (
 	st "github.com/coder/agentapi/lib/screentracker"
 	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
-	st "github.com/coder/agentapi/lib/screentracker"
 )
 
 // Traces to: FR-HTTP-008

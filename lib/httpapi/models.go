@@ -13,7 +13,7 @@ type MessageType string
 
 const (
 	MessageTypeUser    MessageType = "user"
-	MessageTypeRaw    MessageType = "raw"
+	MessageTypeRaw     MessageType = "raw"
 	MessageTypeCommand MessageType = "command"
 )
 
@@ -81,6 +81,13 @@ type HealthResponse struct {
 	}
 }
 
+// VersionResponse represents the server version response.
+type VersionResponse struct {
+	Body struct {
+		Version string `json:"version" doc:"AgentAPI version"`
+	}
+}
+
 // ReadyResponse represents the readiness check response
 type ReadyResponse struct {
 	Body struct {
@@ -101,7 +108,7 @@ type StatusResponse struct {
 type InfoResponse struct {
 	Body struct {
 		Version   string          `json:"version" doc:"AgentAPI version"`
-		AgentType mf.AgentType   `json:"agent_type" doc:"Type of the agent being used by the server."`
+		AgentType mf.AgentType    `json:"agent_type" doc:"Type of the agent being used by the server."`
 		Features  map[string]bool `json:"features" doc:"Supported features"`
 	}
 }

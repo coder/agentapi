@@ -1,12 +1,25 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/agentapi/lib/logctx"
+	"github.com/coder/agentapi/lib/msgfmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Traces to: FR-HTTP-003, FR-HTTP-005
@@ -16,7 +29,7 @@ func TestOpenAPISchema(t *testing.T) {
 	t.Parallel()
 
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+	srv, err := NewServer(ctx, ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
 		AgentIO:        nil,
 		Port:           0,
@@ -24,15 +37,19 @@ func TestOpenAPISchema(t *testing.T) {
 		AllowedHosts:   []string{"*"},
 		AllowedOrigins: []string{"*"},
 	})
+	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
 	req.Host = "evil.com"
 	w := httptest.NewRecorder()
 
-	router.ServeHTTP(w, req)
+	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for wildcard, got %d", w.Code)
+	}
+	if !json.Valid(w.Body.Bytes()) {
+		t.Fatalf("expected valid OpenAPI JSON, got %q", w.Body.String())
 	}
 }
 
@@ -154,12 +171,7 @@ func TestParseAllowedHosts_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	var diskSchema any
-	if err := json.Unmarshal(diskSchemaBytes, &diskSchema); err != nil {
-		t.Fatalf("failed to unmarshal disk schema: %s", err)
-	}
-
-	require.Equal(t, currentSchema, diskSchema)
+	require.Equal(t, []string{"localhost", "example.com"}, hosts)
 }
 
 func TestServer_redirectToChat(t *testing.T) {
@@ -176,7 +188,7 @@ func TestServer_redirectToChat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tCtx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s, err := httpapi.NewServer(tCtx, httpapi.ServerConfig{
+			s, err := NewServer(tCtx, ServerConfig{
 				AgentType:      msgfmt.AgentTypeClaude,
 				AgentIO:        nil,
 				Port:           0,
@@ -340,7 +352,7 @@ func TestServer_AllowedHosts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+			s, err := NewServer(ctx, ServerConfig{
 				AgentType:      msgfmt.AgentTypeClaude,
 				AgentIO:        nil,
 				Port:           0,
@@ -423,7 +435,7 @@ func TestServer_CORSPreflightWithHosts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+			s, err := NewServer(ctx, ServerConfig{
 				AgentType:      msgfmt.AgentTypeClaude,
 				AgentIO:        nil,
 				Port:           0,
@@ -582,7 +594,7 @@ func TestServer_CORSOrigins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+			s, err := NewServer(ctx, ServerConfig{
 				AgentType:      msgfmt.AgentTypeClaude,
 				AgentIO:        nil,
 				Port:           0,
@@ -662,7 +674,7 @@ func TestServer_CORSPreflightOrigins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-			s, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+			s, err := NewServer(ctx, ServerConfig{
 				AgentType:      msgfmt.AgentTypeClaude,
 				AgentIO:        nil,
 				Port:           0,
@@ -713,7 +725,7 @@ func TestServer_CORSPreflightOrigins(t *testing.T) {
 func TestServer_SSEMiddleware_Events(t *testing.T) {
 	t.Parallel()
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+	srv, err := NewServer(ctx, ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
 		AgentIO:        nil,
 		Port:           0,
@@ -760,7 +772,7 @@ func assertSSEHeaders(t testing.TB, resp *http.Response) {
 func TestServer_UploadFiles(t *testing.T) {
 	t.Parallel()
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+	srv, err := NewServer(ctx, ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
 		AgentIO:        nil,
 		Port:           0,
@@ -915,7 +927,7 @@ func TestServer_UploadFiles(t *testing.T) {
 func TestServer_UploadFiles_Errors(t *testing.T) {
 	t.Parallel()
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
-	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+	srv, err := NewServer(ctx, ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
 		AgentIO:        nil,
 		Port:           0,
@@ -1061,7 +1073,7 @@ func TestServer_Stop_Idempotency(t *testing.T) {
 	t.Parallel()
 	ctx := logctx.WithLogger(context.Background(), slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	srv, err := httpapi.NewServer(ctx, httpapi.ServerConfig{
+	srv, err := NewServer(ctx, ServerConfig{
 		AgentType:      msgfmt.AgentTypeClaude,
 		AgentIO:        nil,
 		Port:           0,
