@@ -12,6 +12,7 @@ import (
 
 // ---- parse helpers ----------------------------------------------------------
 
+// Traces to: FR-TELE-001
 func TestParseTokens_InOutPattern(t *testing.T) {
 	t.Parallel()
 	p, c := harness.ParseTokens("Tokens: 1234 input, 567 output")
@@ -47,6 +48,7 @@ func TestParseTokens_NoMatch(t *testing.T) {
 	assert.Equal(t, 0, c)
 }
 
+// Traces to: FR-TELE-002
 func TestParseCost_EqualsPattern(t *testing.T) {
 	t.Parallel()
 	cost := harness.ParseCost("cost_usd=0.0123")
@@ -66,6 +68,7 @@ func TestParseCost_NoMatch(t *testing.T) {
 
 // ---- RunHarness (integration-style with echo) --------------------------------
 
+// Traces to: FR-HARN-001
 func TestRunHarness_UnknownAgent(t *testing.T) {
 	t.Parallel()
 	reg := harness.NewHarnessRegistry()

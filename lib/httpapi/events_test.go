@@ -11,6 +11,7 @@ import (
 	st "github.com/coder/agentapi/lib/screentracker"
 )
 
+// Traces to: FR-HTTP-008
 func TestEventEmitter(t *testing.T) {
 	t.Run("single-subscription", func(t *testing.T) {
 		emitter := NewEventEmitter(WithSubscriptionBufSize(10))

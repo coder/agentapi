@@ -11,6 +11,7 @@ import (
 	"github.com/coder/agentapi/internal/routing"
 )
 
+// Traces to: FR-HTTP-001
 func TestNewServer(t *testing.T) {
 	bifrost, _ := routing.NewAgentBifrost("http://localhost:8080")
 	server := New(8080, bifrost)
@@ -45,6 +46,7 @@ func TestShutdown_NilServer(t *testing.T) {
 	server.Shutdown()
 }
 
+// Traces to: FR-HTTP-009
 func TestHealthHandler(t *testing.T) {
 	bifrost, _ := routing.NewAgentBifrost("http://localhost:8080")
 	server := New(8080, bifrost)
@@ -69,6 +71,7 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
+// Traces to: FR-HTTP-004
 func TestChatCompletionsHandler_InvalidJSON(t *testing.T) {
 	bifrost, _ := routing.NewAgentBifrost("http://localhost:8080")
 	server := New(8080, bifrost)
@@ -84,6 +87,7 @@ func TestChatCompletionsHandler_InvalidJSON(t *testing.T) {
 	}
 }
 
+// Traces to: FR-HTTP-002
 func TestChatCompletionsHandler_DefaultAgent(t *testing.T) {
 	bifrost, _ := routing.NewAgentBifrost("http://localhost:8080")
 	server := New(8080, bifrost)

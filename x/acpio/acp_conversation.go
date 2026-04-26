@@ -84,6 +84,18 @@ func (c *ACPConversation) Messages() []st.ConversationMessage {
 	return slices.Clone(c.messages)
 }
 
+// ClearMessages clears the conversation history and emits the empty message set.
+func (c *ACPConversation) ClearMessages() {
+	c.mu.Lock()
+	c.messages = nil
+	c.nextID = 0
+	c.streamingResponse.Reset()
+	c.mu.Unlock()
+
+	c.emitter.EmitMessages(nil)
+	c.emitter.EmitScreen("")
+}
+
 // Send sends a message to the agent synchronously.
 // It blocks until the agent has finished processing and returns any error
 // from the underlying write. Returns a validation error immediately if

@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// Traces to: FR-ROUTE-001
 func TestNewAgentBifrost(t *testing.T) {
 	bifrost, err := NewAgentBifrost("http://localhost:8080")
 	if err != nil {
@@ -26,6 +27,7 @@ func TestNewAgentBifrost(t *testing.T) {
 	}
 }
 
+// Traces to: FR-ROUTE-002
 func TestGetRule_DefaultRule(t *testing.T) {
 	bifrost, _ := NewAgentBifrost("http://localhost:8080")
 
@@ -52,6 +54,7 @@ func TestGetRule_DefaultRule(t *testing.T) {
 	}
 }
 
+// Traces to: FR-ROUTE-003
 func TestSetRule(t *testing.T) {
 	bifrost, _ := NewAgentBifrost("http://localhost:8080")
 
@@ -80,6 +83,7 @@ func TestSetRule(t *testing.T) {
 	}
 }
 
+// Traces to: FR-SESS-001
 func TestGetOrCreateSession_NewSession(t *testing.T) {
 	bifrost, _ := NewAgentBifrost("http://localhost:8080")
 

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Traces to: FR-HTTP-003, FR-HTTP-005
 // Ensure the OpenAPI schema on disk is up to date.
 // To update the schema, run `go run main.go server --print-openapi dummy > openapi.json`.
 func TestOpenAPISchema(t *testing.T) {
@@ -35,6 +36,7 @@ func TestOpenAPISchema(t *testing.T) {
 	}
 }
 
+// Traces to: FR-SEC-001
 func TestHostAuthorizationMiddleware_AllowedHost(t *testing.T) {
 	allowedHosts := []string{"localhost", "example.com"}
 	router := chi.NewRouter()

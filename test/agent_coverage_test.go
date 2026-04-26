@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// Traces to: FR-ROUTE-004
 // TestBasicAgent tests agent creation
 func TestBasicAgent(t *testing.T) {
 	agents := []string{
@@ -22,6 +23,7 @@ func TestBasicAgent(t *testing.T) {
 	}
 }
 
+// Traces to: FR-HTTP-011
 // TestAgentCommunication tests agent comms
 func TestAgentCommunication(t *testing.T) {
 	ch := make(chan string, 10)
@@ -38,6 +40,7 @@ func TestAgentCommunication(t *testing.T) {
 	}
 }
 
+// Traces to: FR-HTTP-007
 // TestAgentHealth tests health checks
 func TestAgentHealth(t *testing.T) {
 	statuses := []string{"healthy", "busy", "idle", "error"}
@@ -52,6 +55,7 @@ func TestAgentHealth(t *testing.T) {
 	}
 }
 
+// Traces to: FR-TELE-003
 // TestAgentMetrics tests metrics collection
 func TestAgentMetrics(t *testing.T) {
 	metrics := map[string]int{
@@ -69,6 +73,7 @@ func TestAgentMetrics(t *testing.T) {
 	}
 }
 
+// Traces to: FR-HARN-002
 // TestAgentTimeout tests timeout handling
 func TestAgentTimeout(t *testing.T) {
 	timeout := 30
