@@ -79,3 +79,6 @@ playwright-report/
 
 # Worktrees (Phenotype convention)
 .worktrees/
+
+# Worktree directories (org policy)
+.claude/worktrees/
