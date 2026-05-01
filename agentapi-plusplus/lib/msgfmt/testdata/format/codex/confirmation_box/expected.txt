@@ -1,9 +1,0 @@
-> You are running Codex in /Users/jkmr
-
-  Since this folder is not version controlled, we recommend requiring
-  approval of all edits and commands.
-
-  1. Allow Codex to work in this folder without asking for approval
-> 2. Require approval of edits and commands
-
-  Press Enter to continue

@@ -1,8 +1,0 @@
-                                                                                
-⏺ Let me search for this code in the project files.                             
-                                                                                
-⏺ Search(pattern: "// Set up polling for messages and server status")…          
-  ⎿  Found 1 file (ctrl+r to expand)                                            
-                                                                                
-⏺ This code is from                                                             
-  /Users/hugodutka/dev/agentapi/chat/src/components/ChatInterface.tsx          

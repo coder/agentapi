@@ -1,6 +1,0 @@
-starting session | provider: anthropic model: claude-3-5-sonnet-latest          
-    logging to /Users/hugodutka/.local/share/goose/sessions/20250409_131437.json
-l                                                                               
-    working directory: /Users/hugodutka/dev/agentapi                           
-                                                                                
-Goose is running! Enter your instructions, or try asking what goose can do.     
