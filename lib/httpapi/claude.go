@@ -22,10 +22,6 @@ func formatPaste(message string) []st.MessagePart {
 
 func formatClaudeCodeMessage(message string) []st.MessagePart {
 	parts := make([]st.MessagePart, 0)
-	// janky hack: send a random character and then a backspace because otherwise
-	// Claude Code echoes the startSeq back to the terminal.
-	// This basically simulates a user typing and then removing the character.
-	parts = append(parts, st.MessagePartText{Content: "x\b", Hidden: true})
 	parts = append(parts, formatPaste(message)...)
 
 	return parts
