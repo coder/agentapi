@@ -1,5 +1,7 @@
 package msgfmt
 
+import "strings"
+
 func IsAgentReadyForInitialPrompt(agentType AgentType, message string) bool {
 	switch agentType {
 	case AgentTypeClaude:
@@ -17,7 +19,7 @@ func IsAgentReadyForInitialPrompt(agentType AgentType, message string) bool {
 	case AgentTypeAmp:
 		return isAmpAgentReadyForInitialPrompt(message)
 	case AgentTypeCursor:
-		return isGenericAgentReadyForInitialPrompt(message)
+		return isCursorAgentReadyForInitialPrompt(message)
 	case AgentTypeAuggie:
 		return isGenericAgentReadyForInitialPrompt(message)
 	case AgentTypeAmazonQ:
@@ -35,6 +37,15 @@ func isGenericAgentReadyForInitialPrompt(message string) bool {
 	message = trimEmptyLines(message)
 	messageWithoutInputBox := removeMessageBox(message)
 	return len(messageWithoutInputBox) != len(message)
+}
+
+func isCursorAgentReadyForInitialPrompt(message string) bool {
+	if isGenericAgentReadyForInitialPrompt(message) {
+		return true
+	}
+	normalized, _, _ := normalizeAndGetRuneLineMapping(message)
+	return strings.Contains(message, "Cursor Agent") &&
+		strings.Contains(string(normalized), "Plan,search,buildanything")
 }
 
 func isOpencodeAgentReadyForInitialPrompt(message string) bool {
