@@ -180,6 +180,42 @@ AgentAPI automatically removes these.
 
 Splitting the terminal output into a sequence of messages should still work, since it doesn't depend on the TUI structure. The logic for removing extra bits may need to be updated to account for new elements. AgentAPI will still be usable, but some extra TUI elements may become visible in the agent messages.
 
+## Pair a phone with Build Remote Agent
+
+You can spectate an AgentAPI-wrapped **Aider** session from a phone running
+[Build Remote Agent](https://grokbuildremote.com/). Pairing uses the free MIT
+`gbr-agent`. Protocol `gbr/1`. The phone is spectator + veto; AgentAPI stays on
+`:3284` and Aider stays the coding agent.
+
+Independent product. Not affiliated with xAI or SpaceX.
+
+```bash
+# macOS / Linux
+curl -fsSL https://grokbuildremote.com/install.sh | bash
+gbr-agent version          # need v0.6.0+
+gbr-agent pair             # QR in browser + printed 8-char code
+gbr-agent run              # leave running
+agentapi server -- aider --model sonnet
+```
+
+Phone: open Build Remote Agent → scan the QR (or type the 8-char code).
+**Unpair** in Settings before changing PCs.
+
+Attach only:
+
+- HTTP Bot API: `http://127.0.0.1:8788` after `gbr-agent run`
+- MCP stdio: `node GrokBuildRemote-Agents/mcp/gbr-mcp/bin/gbr-mcp.js`
+
+```bash
+curl -sS http://127.0.0.1:8788/health
+curl -sS http://127.0.0.1:8788/v1/sessions
+```
+
+Do not send the phone at AgentAPI `:3284`. Do not commit mailbox keys.
+Phone **Settings → Bot API** is the only place the relay key is copied.
+
+Agent: https://github.com/LinespottingOrg/GrokBuildRemote-Agents (MIT)
+
 ## Roadmap
 
 Pending feedback, we're considering the following features:
