@@ -1,5 +1,8 @@
 # AgentAPI
 
+> [!WARNING]
+> AgentAPI is deprecated and no longer maintained. We recommend using [Coder Agents](https://coder.com/docs/ai-coder/agents) for Coder's own agent harness, or the modules in the [Coder Registry](https://registry.coder.com) that no longer use AgentAPI.
+
 Control [Claude Code](https://github.com/anthropics/claude-code), [AmazonQ](https://aws.amazon.com/developer/learning/q-developer-cli/), [Opencode](https://opencode.ai/), [Goose](https://github.com/block/goose), [Aider](https://github.com/Aider-AI/aider), [Gemini](https://github.com/google-gemini/gemini-cli), [GitHub Copilot](https://github.com/github/copilot-cli), [Sourcegraph Amp](https://ampcode.com/), [Codex](https://github.com/openai/codex), [Auggie](https://docs.augmentcode.com/cli/overview), and [Cursor CLI](https://cursor.com/en/cli) with an HTTP API.
 
 ![agentapi-chat](https://github.com/user-attachments/assets/57032c9f-4146-4b66-b219-09e38ab7690d)
